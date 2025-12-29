@@ -1,0 +1,7 @@
+*.db
+*.png
+*.bmp
+*.y4m
+vendor/
+build/
+.DS_Store

@@ -1,2 +1,10 @@
 # codename-image-cdn-cli
-image conversion and delivery tool, and also a "zcis" containerizer.
+image conversion and delivery tool, and also a ["zcis"](ZCIS.md) containerizer.
+
+```
+cmake -Bbuild -H.
+```
+
+```
+make -C build
+```
