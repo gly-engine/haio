@@ -2,6 +2,10 @@
 *.png
 *.bmp
 *.y4m
+*.ppm
+*.gz
+*.tar
+*.tar.gz
 vendor/
 build/
 .DS_Store
