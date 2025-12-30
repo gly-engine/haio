@@ -84,3 +84,19 @@ FetchContent_Populate(
 target_include_directories(${PROJECT_NAME} PRIVATE ${php_SOURCE_DIR})
 add_library(php_static STATIC ${php_SOURCE_DIR}/picohttpparser.c)
 target_link_libraries(${PROJECT_NAME} PRIVATE php_static)
+
+option(RAIO_TEST "Unit Tests" OFF)
+if(RAIO_TEST)
+    include(CTest)
+    set(tests
+        "test_get_format_from_extension,src/Common_String/extensions.c"
+    )
+    foreach(deps IN LISTS tests)
+        string(REPLACE "," ";${CMAKE_SOURCE_DIR}/" deps "${deps}")
+        list(GET deps 0 tests_name)
+        list(REMOVE_AT deps 0)
+        add_executable("${tests_name}" "${CMAKE_SOURCE_DIR}/tests/${tests_name}.c;${deps}")
+        target_include_directories(${tests_name} PRIVATE ${CMAKE_SOURCE_DIR}/include)
+        add_test(NAME "${tests_name}" COMMAND "${tests_name}")
+    endforeach()
+endif()

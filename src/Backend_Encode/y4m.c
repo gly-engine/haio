@@ -7,7 +7,7 @@
 #include <libavutil/pixfmt.h>
 
 #include "img.h"
-
+/*
 uint8_t *EncodeInternalToY4M(bitmap_t *bmp, size_t *out_size) {
     if (!bmp || !out_size || bmp->buffer_len == 0) return NULL;
 
@@ -85,3 +85,4 @@ uint8_t *EncodeInternalToY4M(bitmap_t *bmp, size_t *out_size) {
 
     return out;
 }
+*/

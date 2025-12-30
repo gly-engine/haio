@@ -1,7 +1,7 @@
 #include <spng.h>
 
 #include "img.h"
-
+/*
 bitmap_t *DecodePngBufferToInternal(const void *png_data, size_t png_size) {
     spng_ctx *ctx = spng_ctx_new(0);
     if (!ctx) return NULL;
@@ -42,3 +42,4 @@ bitmap_t *DecodePngBufferToInternal(const void *png_data, size_t png_size) {
     spng_ctx_free(ctx);
     return bmp;
 }
+*/

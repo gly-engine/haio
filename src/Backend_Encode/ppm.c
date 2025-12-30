@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "img.h"
+/*
 
 uint8_t *EncodeInternalToPPM(bitmap_t *bmp, size_t *out_size) {
     if (!bmp || bmp->buffer_len == 0 || !out_size) return NULL;
@@ -31,3 +32,4 @@ uint8_t *EncodeInternalToPPM(bitmap_t *bmp, size_t *out_size) {
     *out_size = total_size;
     return buffer;
 }
+*/
