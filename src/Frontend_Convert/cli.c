@@ -47,7 +47,7 @@ int FrontendConvertCli(int argc, char* argv[]) {
             break;
         }
 
-        ppm_buffer = EncodeInternalToPPM(bmp, &ppm_size);
+        ppm_buffer = EncodeInternalToY4M(bmp, &ppm_size);
         if (!ppm_buffer) {
             fprintf(stderr, "Failed to generate PPM\n");
             break;

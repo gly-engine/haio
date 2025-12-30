@@ -13,3 +13,4 @@ int FrontendConvertCli(int argc, char* argv[]);
 // Backends:
 bitmap_t *DecodePngBufferToInternal(const void *png_data, size_t png_size);
 uint8_t *EncodeInternalToPPM(bitmap_t *bmp, size_t *out_size);
+uint8_t *EncodeInternalToY4M(bitmap_t *bmp, size_t *out_size);

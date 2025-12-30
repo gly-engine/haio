@@ -51,3 +51,26 @@ set(KLIB_DIR "${CMAKE_SOURCE_DIR}/vendor/klib")
 set(KLIB_DOWNLOAD "https://github.com/attractivechaos/klib/archive/5c1451caa1ee476624d00eed71810532c89b82d1.tar.gz")
 FetchContent_Populate(dep_klib URL "${KLIB_DOWNLOAD}" SOURCE_DIR ${KLIB_DIR})
 target_include_directories(${PROJECT_NAME} PRIVATE ${KLIB_DIR})
+
+set(FFMPEG_VERSION "7.0.2")
+set(FFMPEG_DOWNLOAD "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n${FFMPEG_VERSION}.tar.gz")
+set(FFMPEG_DIR "${CMAKE_SOURCE_DIR}/vendor/ffmpeg")
+if (NOT EXISTS "${FFMPEG_DIR}/libswscale/libswscale.a")
+    FetchContent_Populate(dep_ffmpeg URL ${FFMPEG_DOWNLOAD} SOURCE_DIR ${FFMPEG_DIR})
+    # todo: remove --disable-x86asm
+    execute_process(
+        COMMAND ./configure --prefix=${FFMPEG_DIR}/build --enable-static --disable-shared
+        --disable-avdevice  --disable-avcodec --disable-avformat --disable-swresample --disable-postproc --disable-avfilter
+        --disable-x86asm
+        WORKING_DIRECTORY ${FFMPEG_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+    execute_process(
+        COMMAND ${CMAKE_MAKE_PROGRAM} CC=${CMAKE_C_COMPILER} libswscale/libswscale.a libavutil/libavutil.a
+        WORKING_DIRECTORY ${FFMPEG_DIR}
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+endif()
+target_link_libraries(${PROJECT_NAME} PRIVATE "${FFMPEG_DIR}/libswscale/libswscale.a")
+target_link_libraries(${PROJECT_NAME} PRIVATE "${FFMPEG_DIR}/libavutil/libavutil.a")
+target_include_directories(${PROJECT_NAME} PRIVATE ${FFMPEG_DIR})
