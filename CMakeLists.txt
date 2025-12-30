@@ -74,3 +74,13 @@ endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE "${FFMPEG_DIR}/libswscale/libswscale.a")
 target_link_libraries(${PROJECT_NAME} PRIVATE "${FFMPEG_DIR}/libavutil/libavutil.a")
 target_include_directories(${PROJECT_NAME} PRIVATE ${FFMPEG_DIR})
+
+FetchContent_Populate(
+    php
+    GIT_REPOSITORY https://github.com/h2o/picohttpparser.git
+    GIT_TAG f8326098f63eefabfa2b6ec595d90e9ed5ed958a
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/vendor/php
+)
+target_include_directories(${PROJECT_NAME} PRIVATE ${php_SOURCE_DIR})
+add_library(php_static STATIC ${php_SOURCE_DIR}/picohttpparser.c)
+target_link_libraries(${PROJECT_NAME} PRIVATE php_static)
