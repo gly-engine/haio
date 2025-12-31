@@ -1,7 +1,25 @@
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
-typedef struct raio_step_s raio_step_t; 
+typedef struct {
+    size_t pos;
+    size_t len;
+    size_t capacity;
+    union {
+        char *str;
+        uint8_t *u8;
+    } data;
+} raio_buffer_t;
+
+typedef struct {
+    void* ctx;
+    bool done;
+    uint16_t lines;
+    uint16_t width;
+    uint16_t height;
+    raio_buffer_t buffer_aux; 
+} raio_worker_handle_t;
 
 typedef enum {
     RAIO_TYPE_NULL,
