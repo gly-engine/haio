@@ -5,64 +5,77 @@
 
 #include "img.h"
 
-void EncodeRGBAToPPMBuffer(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
+/**
+ * @pre needs @c handle.width and @c handle.height
+ * @param [in,out] handle
+ * @param [in] src
+ * @param [out] dst
+ */
+void EncodeRGBAToPPMBuffer(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst)
+{
+
     do {
-        if (handle->done) break;
-        if (!src || !dst || !handle) assert(false);
-
-        if (!dst->data.u8) {
-            char header[64];
-            int header_len = snprintf(header, sizeof(header), "P6\n%d %d\n255\n", handle->width, handle->height);
-
-            size_t row_size = handle->width * 3; // RGB
-            size_t initial_capacity = header_len + row_size;
-
-            dst->data.u8 = malloc(initial_capacity);
-            if (!dst->data.u8) assert(false);
-            dst->capacity = initial_capacity;
-            dst->len = 0;
-            dst->pos = 0;
-
-            memcpy(dst->data.u8, header, header_len);
-            dst->pos = header_len;
-
-            handle->buffer_aux.len = row_size;
-            handle->buffer_aux.capacity = row_size;
-            handle->buffer_aux.data.u8 = malloc(row_size);
-            if (!handle->buffer_aux.data.u8) assert(false);
-
-            handle->lines = 0;
-        }
-
-        if (handle->lines < handle->height) {
-            size_t row_size = handle->width * 3;
-            uint8_t *line_src = src->data.u8 + handle->lines * handle->width * 4;
-            uint8_t *line_dst = handle->buffer_aux.data.u8;
-
-            for (int x = 0; x < handle->width; x++) {
-                line_dst[x*3 + 0] = line_src[x*4 + 0]; // R
-                line_dst[x*3 + 1] = line_src[x*4 + 1]; // G
-                line_dst[x*3 + 2] = line_src[x*4 + 2]; // B
-            }
-
-            if (dst->pos + row_size > dst->capacity) {
-                size_t new_capacity = dst->capacity * 2;
-                while (dst->pos + row_size > new_capacity) new_capacity *= 2;
-                uint8_t *new_buf = realloc(dst->data.u8, new_capacity);
-                if (!new_buf) assert(false);
-                dst->data.u8 = new_buf;
-                dst->capacity = new_capacity;
-            }
-
-            memcpy(dst->data.u8 + dst->pos, line_dst, row_size);
-            dst->pos += row_size;
-            handle->lines++;
-
+        if (handle->state == RAIO_FSM_WORKER_DONE) {
             break;
         }
 
-        handle->done = true;
-        free(handle->buffer_aux.data.u8);
+        if (handle->state == RAIO_FSM_WORKER_FINISHING) {
+            handle->state = RAIO_FSM_WORKER_DONE;
+            break;
+        }
 
-    } while(0);
+        // @todo move this to always reset dest
+        dst->len = 0;
+
+        if (handle->state == RAIO_FSM_WORKER_NEW) {
+            if (handle->height == 0 || handle->width == 0) {
+                assert(false);
+            }
+
+            dst->size = 1024;
+            dst->data.str = malloc(1024);
+            assert(dst->data.str);
+            //if (dst->size < 32) {
+            //    assert(false);
+            //}
+
+            handle->progress.nbytes.count = 0;
+            handle->progress.nbytes.total = handle->width * handle->height * 3;
+            dst->len += snprintf(dst->data.str, dst->size, "P6\n%d %d\n255\n", handle->width, handle->height);
+        }
+
+        if (src->len % 4 != 0) {
+            assert(false);
+        }
+
+        size_t nbytes_rgb = ((src->len / 4) * 3);
+        uint8_t *dst_ptr = &dst->data.u8[dst->len];
+        uint8_t *dst_end = dst_ptr + nbytes_rgb;
+        uint8_t *src_ptr = src->data.u8;
+        uint8_t channel = 0;
+
+        dst->len += nbytes_rgb;
+        handle->progress.nbytes.count += nbytes_rgb;
+
+        if (dst->len > dst->size) {
+            uint8_t *new_buf = realloc(dst->data.u8, dst->len);
+            if (!new_buf) {
+                assert(false);
+            }
+            dst->data.u8 = new_buf;
+        }
+
+        // @todo otimze with SSSE3
+        while (dst_ptr < dst_end) {
+            if ((channel++ & 3) != 3) {
+                *dst_ptr++ = *src_ptr++;
+            } else {
+                src_ptr++;
+            }
+        }
+
+        if (handle->progress.nbytes.count >= handle->progress.nbytes.total) {
+            handle->state = RAIO_FSM_WORKER_FINISHING;
+        }
+    } while (0);
 }

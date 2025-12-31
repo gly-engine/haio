@@ -2,7 +2,7 @@
 
 #include "img.h"
 
-void DecodePngBufferToRGBA8888(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
+void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
 void EncodeRGBAToPPMBuffer(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
 
 static const raio_worker_t workers[] = {
@@ -13,17 +13,17 @@ static const raio_worker_t workers[] = {
     },
     {
         .src = RAIO_TYPE_IMG_PNG,
-        .dst = RAIO_TYPE_IMG_ARGB_8888,
-        .func = DecodePngBufferToRGBA8888
+        .dst = RAIO_TYPE_IMG_RGBA8,
+        .func = DecodePngBufferToRGBA8
     },
     {
-        .src = RAIO_TYPE_IMG_ARGB_8888,
+        .src = RAIO_TYPE_IMG_RGBA8,
         .dst = RAIO_TYPE_IMG_PPM,
         .func = EncodeRGBAToPPMBuffer
     },
     {
-        .src = RAIO_TYPE_IMG_ARGB_8888,
-        .dst = RAIO_TYPE_IMG_Y4M_420,
+        .src = RAIO_TYPE_IMG_RGBA8,
+        .dst = RAIO_TYPE_IMG_Y4M420,
         .func = NULL
     }
 };

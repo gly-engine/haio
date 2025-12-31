@@ -25,7 +25,7 @@ typedef struct {
 static const raio_ext_t extensions[] = {
     { "png", SIZE(3), RAIO_TYPE_IMG_PNG },
     { "ppm", SIZE(3), RAIO_TYPE_IMG_PPM },
-    { "y4m", SIZE(3), RAIO_TYPE_IMG_Y4M_420 }
+    { "y4m", SIZE(3), RAIO_TYPE_IMG_Y4M420 }
 };
 
 raio_type_t GetFormatFromExtension(char *const txt)

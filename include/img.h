@@ -2,11 +2,29 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+typedef enum {
+    RAIO_TYPE_NULL,
+    RAIO_TYPE_BUFFER,
+    RAIO_TYPE_URL_FILE,
+    RAIO_TYPE_IMG_PNG,
+    RAIO_TYPE_IMG_PPM,
+    RAIO_TYPE_IMG_Y4M420,
+    RAIO_TYPE_IMG_RGBA8
+} raio_type_t;
+
+typedef enum {
+    RAIO_FSM_WORKER_NEW,
+    RAIO_FSM_WORKER_RUNNING,
+    RAIO_FSM_WORKER_FINISHING,
+    RAIO_FSM_WORKER_DONE,
+    RAIO_FSM_WORKER_IDLE
+} raio_worker_fsm_t;
+
 typedef struct {
-    size_t pos;
     size_t len;
-    size_t capacity;
+    size_t size;
     union {
+        void *ptr;
         char *str;
         uint8_t *u8;
     } data;
@@ -14,22 +32,20 @@ typedef struct {
 
 typedef struct {
     void* ctx;
-    bool done;
-    uint16_t lines;
+    union {
+        struct {
+            uint16_t count;
+        } lines;
+        struct {
+            size_t total;
+            size_t count;
+        } nbytes;
+    } progress;
     uint16_t width;
     uint16_t height;
+    raio_worker_fsm_t state;
     raio_buffer_t buffer_aux; 
 } raio_worker_handle_t;
-
-typedef enum {
-    RAIO_TYPE_NULL,
-    RAIO_TYPE_BUFFER,
-    RAIO_TYPE_URL_FILE,
-    RAIO_TYPE_IMG_PNG,
-    RAIO_TYPE_IMG_PPM,
-    RAIO_TYPE_IMG_Y4M_420,
-    RAIO_TYPE_IMG_ARGB_8888
-} raio_type_t;
 
 typedef void (*raio_worker_func_t)(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
 
