@@ -96,5 +96,6 @@ int FrontendWebHttpServer(uv_loop_t *loop, uint32_t port) {
     }
 
     printf("Server listening on http://0.0.0.0:%d\n", port);
-    return 0;*/
+    */
+    return 0;
 }

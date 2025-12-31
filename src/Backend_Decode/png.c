@@ -29,10 +29,6 @@ void DecodePngBufferToRGBA8888(raio_worker_handle_t *handle, raio_buffer_t *src,
 
         if (!dst->data.u8) {
             struct spng_ihdr ihdr;
-            if(!spng_decode_header(ctx)) {
-                assert(false);
-            }
-
             spng_get_ihdr(ctx, &ihdr);
             size_t row_size = ihdr.width * 4;
             handle->width = ihdr.width;
@@ -45,11 +41,13 @@ void DecodePngBufferToRGBA8888(raio_worker_handle_t *handle, raio_buffer_t *src,
             dst->data.u8 = malloc(row_size);
         }
 
+        printf("linhas lidas %d/%d\n", handle->lines, handle->height);
         if (handle->lines < handle->height) {
+            dst->pos = 0;
             int ret;
-            size_t bytes_read;
-            handle->buffer_aux.len = 0;
-            while ((ret = spng_decode_image_row(ctx, handle->buffer_aux.data.u8, &bytes_read, SPNG_FMT_RGBA8, 0)) == 0) {
+            size_t bytes_read = handle->width * 4;
+            while ((ret = spng_decode_scanline(ctx, handle->buffer_aux.data.u8, handle->width)) == 0) {
+                printf("nova linha\n");
                 if (dst->pos + bytes_read > dst->capacity) {
                     size_t new_capacity = (dst->capacity == 0) ? bytes_read * 2 : dst->capacity * 2;
                     uint8_t *new_buf = realloc(dst->data.u8, new_capacity);
@@ -64,6 +62,8 @@ void DecodePngBufferToRGBA8888(raio_worker_handle_t *handle, raio_buffer_t *src,
                 dst->pos += bytes_read;
                 handle->lines++;
             }
+            printf("ret: %d %s\n", ret, spng_strerror(ret));
+            dst->len = dst->pos;
 
             if (ret == SPNG_EINVAL || ret == SPNG_EMEM || ret == SPNG_EIO) {
                 assert(false);

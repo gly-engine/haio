@@ -46,6 +46,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(spng)
 target_link_libraries(${PROJECT_NAME} PRIVATE spng_static)
+target_include_directories(${PROJECT_NAME} PRIVATE ${SPNG_ROOT}/spng)
 
 set(KLIB_DIR "${CMAKE_SOURCE_DIR}/vendor/klib")
 set(KLIB_DOWNLOAD "https://github.com/attractivechaos/klib/archive/5c1451caa1ee476624d00eed71810532c89b82d1.tar.gz")

@@ -31,10 +31,12 @@ typedef enum {
     RAIO_TYPE_IMG_ARGB_8888
 } raio_type_t;
 
+typedef void (*raio_worker_func_t)(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
+
 typedef struct {
     raio_type_t src;
     raio_type_t dst;
-    void* func;
+    raio_worker_func_t func;
 } raio_worker_t;
 
 typedef struct raio_step_s {
