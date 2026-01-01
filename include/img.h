@@ -77,3 +77,5 @@ void BackendPipelineToUrl(raio_pipeline_t *pipe, char *const url);
 // Drivers:
 int BufferPush(raio_buffer_t *buf, const void *data, size_t len);
 int BufferEnsureCapacity(raio_buffer_t *buf, size_t len);
+int BufferReset(raio_buffer_t *buf);
+int BufferMove(raio_buffer_t *src, raio_buffer_t *dst);

@@ -11,7 +11,7 @@
  * @param [in] src
  * @param [out] dst
  */
-void EncodeRGBAToPPMBuffer(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst)
+void EncodeRGBA8ToPPM(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst)
 {
     // @todo move??
     dst->len = 0;

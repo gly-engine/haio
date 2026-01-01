@@ -2,14 +2,17 @@
 
 #include "img.h"
 
+void BufferAggregatorUntilZero(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
 void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
-void EncodeRGBAToPPMBuffer(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
+void EncodeRGBA8ToPPM(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
+//void EncodeRGBA8ToYUV(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
+//void EncodeYUVToY4M(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
 
 static const raio_worker_t workers[] = {
     {
-        .src = RAIO_TYPE_URL_FILE,
-        .dst = RAIO_TYPE_BUFFER,
-        .func = NULL
+        .src = RAIO_TYPE_BUFFER,
+        .dst = RAIO_TYPE_IMG_PNG,
+        .func = BufferAggregatorUntilZero
     },
     {
         .src = RAIO_TYPE_IMG_PNG,
@@ -19,13 +22,18 @@ static const raio_worker_t workers[] = {
     {
         .src = RAIO_TYPE_IMG_RGBA8,
         .dst = RAIO_TYPE_IMG_PPM,
-        .func = EncodeRGBAToPPMBuffer
+        .func = EncodeRGBA8ToPPM
     },
-    {
+    /*{
         .src = RAIO_TYPE_IMG_RGBA8,
-        .dst = RAIO_TYPE_IMG_Y4M420,
-        .func = NULL
+        .dst = RAIO_TYPE_IMG_YUV,
+        .func = EncodeRGBA8ToYUV
     }
+    {
+        .src = RAIO_TYPE_IMG_YUV,
+        .dst = RAIO_TYPE_IMG_Y4M,
+        .func = EncodeY4mToY4M
+    }*/
 };
 
 static const size_t workers_len = sizeof(workers)/sizeof(raio_worker_t);
