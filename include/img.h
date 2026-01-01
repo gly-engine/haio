@@ -44,7 +44,6 @@ typedef struct {
     uint16_t width;
     uint16_t height;
     raio_worker_fsm_t state;
-    raio_buffer_t buffer_aux; 
 } raio_worker_handle_t;
 
 typedef void (*raio_worker_func_t)(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
@@ -75,3 +74,6 @@ int FrontendServerCli(int argc, char* argv[]);
 const raio_worker_t *GetPipelineWorker(raio_type_t from, raio_type_t to);
 raio_pipeline_t *BackendPipelineFromUrl(char *const url);
 void BackendPipelineToUrl(raio_pipeline_t *pipe, char *const url);
+// Drivers:
+int BufferPush(raio_buffer_t *buf, const void *data, size_t len);
+int BufferEnsureCapacity(raio_buffer_t *buf, size_t len);

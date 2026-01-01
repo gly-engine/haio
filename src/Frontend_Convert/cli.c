@@ -28,20 +28,14 @@ int FrontendConvertCli(int argc, char* argv[]) {
 
     worker_buf[0].data.ptr = malloc(BUFFER_SIZE);
     worker_buf[0].size = BUFFER_SIZE;
-    worker_buf[1].data.ptr = malloc(512);
-    worker_buf[1].size = 512;
-    worker_buf[2].data.ptr = malloc(BUFFER_SIZE);
-    worker_buf[2].size = BUFFER_SIZE;
 
     FILE* f_in = fopen(input_path, "rb");
-    FILE* f_out = fopen(output_path, "rb");
-
-    worker_ctx[1].state = RAIO_FSM_WORKER_DONE;
+    FILE* f_out = fopen(output_path, "wb");
 
     while(worker_ctx[0].state != RAIO_FSM_WORKER_DONE || worker_ctx[1].state != RAIO_FSM_WORKER_DONE) {
         worker_buf[0].len = fread(worker_buf[0].data.str, 1, worker_buf[0].size, f_in);
 
-        printf("buffer 0 %ld/%ld\n", worker_buf[0].len, worker_buf[0].size);
+        printf("\nbuffer 0 %ld/%ld\n", worker_buf[0].len, worker_buf[0].size);
         worker_png_to_rgba->func(&worker_ctx[0], &worker_buf[0], &worker_buf[1]);
         printf("buffer 1 %ld/%ld\n", worker_buf[1].len, worker_buf[1].size);
         worker_ctx[1].width = worker_ctx[0].width;
