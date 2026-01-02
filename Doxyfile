@@ -1,0 +1,40 @@
+# Custom Configs
+DOXYFILE_ENCODING      = UTF-8
+PROJECT_NAME           = "Raio CDN"
+PROJECT_NUMBER         = 0.0.1
+PROJECT_BRIEF          = "..."
+PROJECT_LOGO           = 
+OUTPUT_DIRECTORY       = .
+RECURSIVE              = YES
+CREATE_SUBDIRS         = NO
+STRIP_CODE_COMMENTS    = NO
+CALL_GRAPH             = YES
+HAVE_DOT               = YES
+USE_MATHJAX            = YES
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+SHORT_NAMES            = YES
+INLINE_GROUPED_CLASSES = YES
+INLINE_SIMPLE_STRUCTS  = YES
+TYPEDEF_HIDES_STRUCT   = YES
+SOURCE_BROWSER         = YES
+VERBATIM_HEADERS       = YES
+SHOW_FILES             = YES
+PREDEFINED             = DOXYGEN=
+PLANTUML_JAR_PATH      = $(PLANTUML_JAR_PATH)
+PLANTUML_CFG_FILE      =
+PLANTUML_INCLUDE_PATH  =
+OUTPUT_LANGUAGE        = English
+INPUT                  = src build/include include
+MARKDOWN_ID_STYLE      = GITHUB
+ALIASES               += startjson=@startuml{json}
+ALIASES               += endjson=@enduml
+ALIASES               += startebnf=@startuml{ebnf}
+ALIASES               += endebnf=@enduml
+# Theme: https://jothepro.github.io/doxygen-awesome-css/
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+HTML_EXTRA_STYLESHEET  = $(DOXYGEN_AWESOME_PATH)/doxygen-awesome.css \
+                         $(DOXYGEN_AWESOME_PATH)/doxygen-awesome-sidebar-only.css
+HTML_COLORSTYLE        = LIGHT

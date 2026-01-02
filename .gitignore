@@ -6,6 +6,8 @@
 *.gz
 *.tar
 *.tar.gz
+html/
+latex/
 vendor/
 build/
 .DS_Store
