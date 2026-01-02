@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#include "img.h"
+#include "raio.h"
 
 void BufferAggregatorUntilZero(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
     raio_buffer_t *aux = (raio_buffer_t*) handle->ctx;

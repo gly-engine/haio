@@ -6,7 +6,7 @@
 #include <libavutil/imgutils.h>
 #include <libavutil/pixfmt.h>
 
-#include "img.h"
+#include "raio.h"
 
 void EncodeYUV420ToY4M(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
     /*if (!bmp || !out_size || bmp->buffer_len == 0) return NULL;

@@ -3,7 +3,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "img.h"
+#include "raio.h"
 
 /**
  * @pre needs @c handle.width and @c handle.height

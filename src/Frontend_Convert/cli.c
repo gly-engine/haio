@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "img.h"
+#include "raio.h"
 
 #define BUFFER_SIZE 1024
 

@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include <assert.h>
 
-#include "img.h"
+#include "raio.h"
 
 int main()
 {
