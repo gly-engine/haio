@@ -4,6 +4,7 @@
 #include <string.h>
 #include <ctype.h>
 
+#include "raio-gen/enum_names.h"
 #include "raio/workers.h"
 
 #define MAX_TYPES 256
@@ -31,8 +32,6 @@ typedef struct {
 } raio_pipeline_entry_t;
 
 static node_t graph[MAX_TYPES];
-static char type_names[MAX_TYPES][MAX_NAME];
-static int type_count = 0;
 
 void BufferAggregatorUntilZero(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst){}
 void ConvertRGBA8ToYUV420(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst){}
@@ -48,32 +47,6 @@ int step_count(const raio_worker_t *w) {
     while (c < 3 && w->steps[c] != 0)
         c++;
     return c;
-}
-
-void read_types(const char *path) {
-    FILE *f = fopen(path, "r");
-    if (!f)
-        FAIL("failed to open type definition file");
-
-    char buf[1024];
-    while (fgets(buf, sizeof(buf), f)) {
-        char *p = buf;
-        while ((p = strstr(p, "RAIO_TYPE_"))) {
-            int len = 0;
-            while (isalnum(p[len]) || p[len] == '_')
-                len++;
-            if (type_count >= MAX_TYPES)
-                FAIL("too many types");
-            strncpy(type_names[type_count], p, len);
-            type_names[type_count][len] = 0;
-            type_count++;
-            p += len;
-        }
-    }
-    fclose(f);
-
-    if (type_count == 0)
-        FAIL("no RAIO_TYPE definitions found");
 }
 
 void build_graph(void) {
@@ -163,8 +136,8 @@ int find_path(uint8_t src, uint8_t dst, uint8_t *out, uint8_t *out_count) {
 }
 
 void print_lut(void) {
-    for (int s = 0; s < type_count; s++) {
-        for (int d = 0; d < type_count; d++) {
+    for (int s = 0; s < RAIO_TYPE_COUNT; s++) {
+        for (int d = 0; d < RAIO_TYPE_COUNT; d++) {
             raio_pipeline_entry_t e;
             memset(&e, 0, sizeof(e));
             e.src_to_dst = (s << 8) | d;
@@ -200,7 +173,7 @@ void print_plantuml(void) {
 
     if (wildcard_count > 0) {
         printf("rectangle Codecs {\n");
-        for (int i = 0; i < type_count; i++) {
+        for (int i = 0; i < RAIO_TYPE_COUNT; i++) {
             int needs_input = 1;
             for (int j = 0; j < wildcard_count; j++) {
                 if (wildcard_types[j] == i) {
@@ -209,12 +182,12 @@ void print_plantuml(void) {
                 }
             }
             if (needs_input)
-                printf("  %s\n", type_names[i]);
+                printf("  %s\n", raio_types_names[i]);
         }
         printf("}\n");
 
         for (int i = 0; i < wildcard_count; i++) {
-            printf("Codecs --> %s\n", type_names[wildcard_types[i]]);
+            printf("Codecs --> %s\n", raio_types_names[wildcard_types[i]]);
         }
     }
 
@@ -225,8 +198,8 @@ void print_plantuml(void) {
 
         for (int i = 0; i < sc - 1; i++) {
             printf("  %s --> %s : %s\n",
-                   type_names[workers[w].steps[i]],
-                   type_names[workers[w].steps[i + 1]],
+                   raio_types_names[workers[w].steps[i]],
+                   raio_types_names[workers[w].steps[i + 1]],
                    worker_label(w));
         }
     }
@@ -235,10 +208,6 @@ void print_plantuml(void) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 2)
-        FAIL("type definition file not provided");
-
-    read_types(argv[1]);
     build_graph();
     print_plantuml();
     print_lut();

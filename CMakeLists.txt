@@ -90,16 +90,40 @@ add_library(php_static STATIC ${php_SOURCE_DIR}/picohttpparser.c)
 target_link_libraries(${PROJECT_NAME} PRIVATE php_static)
 
 # Scripts for Generation
+set(RAIO_HEADER "${CMAKE_SOURCE_DIR}/include/raio.h")
+set(RAIO_CODECS_NAMES "${CMAKE_BINARY_DIR}/include/raio-gen/codec_names.h")
+set(RAIO_ENUM_NAMES "${CMAKE_BINARY_DIR}/include/raio-gen/enum_names.h")
 set(RAIO_WORKER_LIST "${CMAKE_BINARY_DIR}/include/raio-gen/worker_list.h")
+file(GLOB RAIO_CODECS "${CMAKE_SOURCE_DIR}/src/Backend_Codecs/*.c")
+string(REGEX REPLACE "${CMAKE_SOURCE_DIR}/src/Backend_Codecs/" "" RAIO_CODECS_STR "${RAIO_CODECS}")
+string(JOIN "," RAIO_CODECS_STR ${RAIO_CODECS})
 add_executable(gen_workers_list ${CMAKE_SOURCE_DIR}/scripts/gen_workers_list.c)
+add_executable(gen_codec_names ${CMAKE_SOURCE_DIR}/scripts/gen_codec_names.c)
+add_executable(gen_enum_names ${CMAKE_SOURCE_DIR}/scripts/gen_enum_names.c)
+target_compile_definitions(gen_codec_names PRIVATE RAIO_CODECS=\"${RAIO_CODECS_STR}\")
+target_compile_definitions(gen_enum_names PRIVATE RAIO_HEADER=\"${RAIO_HEADER}\")
 target_include_directories(gen_workers_list PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(gen_workers_list PRIVATE ${CMAKE_BINARY_DIR}/include)
 add_custom_command(
     OUTPUT ${RAIO_WORKER_LIST}
     COMMAND $<TARGET_FILE:gen_workers_list> > ${RAIO_WORKER_LIST}
-    DEPENDS gen_workers_list;${CMAKE_SOURCE_DIR}/include/raio.h;${CMAKE_SOURCE_DIR}/include/raio/workers.h
+    DEPENDS gen_workers_list;${RAIO_HEADER};${CMAKE_SOURCE_DIR}/include/raio/workers.h
 )
-add_custom_target(raio_generators DEPENDS ${RAIO_WORKER_LIST})
-add_dependencies(${PROJECT_NAME} raio_generators)
+add_custom_command(
+    OUTPUT ${RAIO_CODECS_NAMES}
+    COMMAND $<TARGET_FILE:gen_codec_names> > ${RAIO_CODECS_NAMES}
+    DEPENDS gen_codec_names;${RAIO_CODECS};
+)
+add_custom_command(
+    OUTPUT ${RAIO_ENUM_NAMES}
+    COMMAND $<TARGET_FILE:gen_enum_names> > ${RAIO_ENUM_NAMES}
+    DEPENDS gen_enum_names;${RAIO_HEADER};
+)
+add_custom_target(raio_worker_list DEPENDS ${RAIO_WORKER_LIST})
+add_custom_target(raio_codecs_names DEPENDS ${RAIO_CODECS_NAMES})
+add_custom_target(raio_enum_names DEPENDS ${RAIO_ENUM_NAMES})
+add_dependencies(raio_worker_list raio_enum_names)
+add_dependencies(${PROJECT_NAME} raio_worker_list raio_codecs_names)
 
 # Scripts For Testing
 option(RAIO_TEST "Unit Tests" OFF)
