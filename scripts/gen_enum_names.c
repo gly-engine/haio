@@ -8,9 +8,9 @@ int main() {
     assert(f);
 
     char buf[1024];
-    int first = 1;
+    int count = 0;
 
-    printf("static const char *const raio_types_names[] = {");
+    printf("const char *const raio_types_names[] = {");
 
     while (fgets(buf, sizeof(buf), f)) {
         char *p = buf;
@@ -19,14 +19,12 @@ int main() {
             while (isalnum(p[len]) || p[len] == '_')
                 len++;
 
-            printf("%s\"%.*s\"", first? "\n  ": ",\n  ", len, p);
-            first = 0;
-
+            printf("%s\"%.*s\"", count++? ",\n  ": "\n  ", len, p);
             p += len;
         }
     }
 
-    printf("\n};\n");
+    printf("\n};\n\nconst unsigned int raio_types_names_len = %d;\n", count);
     fclose(f);
 
     return 0;
