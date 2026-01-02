@@ -6,13 +6,16 @@ typedef enum {
     RAIO_TYPE_NULL,
     RAIO_TYPE_BUFFER,
     RAIO_TYPE_BUFFER_FULL,
+    RAIO_TYPE_BUFFER_GZIP,
     RAIO_TYPE_URL_FILE,
     RAIO_TYPE_IMG_PNG,
     RAIO_TYPE_IMG_PPM,
+    RAIO_TYPE_IMG_BMP,
     RAIO_TYPE_IMG_YUV420,
     RAIO_TYPE_IMG_Y4M420,
     RAIO_TYPE_IMG_RGBA8,
-    RAIO_TYPE_FILTER_CROP
+    RAIO_TYPE_FILTER_CROP,
+    RAIO_TYPE_COUNT
 } raio_type_t;
 
 typedef enum {
@@ -52,7 +55,7 @@ typedef struct {
 typedef void (*raio_worker_func_t)(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
 
 typedef struct {
-    raio_type_t verts[3];
+    raio_type_t steps[3];
     raio_worker_func_t func;
 } raio_worker_t;
 
