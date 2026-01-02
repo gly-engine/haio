@@ -7,9 +7,9 @@
 #include <libavutil/pixfmt.h>
 
 #include "img.h"
-/*
-uint8_t *EncodeInternalToY4M(bitmap_t *bmp, size_t *out_size) {
-    if (!bmp || !out_size || bmp->buffer_len == 0) return NULL;
+
+void EncodeYUV420ToY4M(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
+    /*if (!bmp || !out_size || bmp->buffer_len == 0) return NULL;
 
     int w = bmp->width;
     int h = bmp->height;
@@ -84,5 +84,5 @@ uint8_t *EncodeInternalToY4M(bitmap_t *bmp, size_t *out_size) {
     sws_freeContext(sws);
 
     return out;
+    */
 }
-*/
