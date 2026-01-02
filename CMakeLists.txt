@@ -5,6 +5,7 @@ project("img" LANGUAGES C)
 set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
+set(RAIO_HEADER "${CMAKE_SOURCE_DIR}/include/raio.h")
 file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/*/*.c")
 add_executable(${PROJECT_NAME} "src/main.c;${SOURCES}")
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include/raio)
@@ -89,18 +90,33 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${php_SOURCE_DIR})
 add_library(php_static STATIC ${php_SOURCE_DIR}/picohttpparser.c)
 target_link_libraries(${PROJECT_NAME} PRIVATE php_static)
 
-# Scripts for Generation
-set(RAIO_HEADER "${CMAKE_SOURCE_DIR}/include/raio.h")
-set(RAIO_CODECS_NAMES "${CMAKE_BINARY_DIR}/include/raio/codec_names.h")
-set(RAIO_CODEC_PATHS "${CMAKE_BINARY_DIR}/include/raio/codec_paths.h")
+# Generation: enum_names.h
 set(RAIO_ENUM_NAMES "${CMAKE_BINARY_DIR}/include/raio/enum_names.h")
+add_executable(gen_enum_names ${CMAKE_SOURCE_DIR}/scripts/gen_enum_names.c)
+target_compile_definitions(gen_enum_names PRIVATE RAIO_HEADER=\"${RAIO_HEADER}\")
+add_custom_command(
+    OUTPUT ${RAIO_ENUM_NAMES}
+    COMMAND $<TARGET_FILE:gen_enum_names> > ${RAIO_ENUM_NAMES}
+    DEPENDS gen_enum_names;${RAIO_HEADER};
+)
+add_custom_target(raio_enum_names DEPENDS ${RAIO_ENUM_NAMES})
+
+# Generation: codec_names.h
+set(RAIO_CODECS_NAMES "${CMAKE_BINARY_DIR}/include/raio/codec_names.h")
 file(GLOB RAIO_CODECS "${CMAKE_SOURCE_DIR}/src/Backend_Codecs/*.c")
 string(JOIN "," RAIO_CODECS_STR ${RAIO_CODECS})
-add_executable(gen_codec_paths ${CMAKE_SOURCE_DIR}/scripts/gen_codec_paths.c)
 add_executable(gen_codec_names ${CMAKE_SOURCE_DIR}/scripts/gen_codec_names.c)
-add_executable(gen_enum_names ${CMAKE_SOURCE_DIR}/scripts/gen_enum_names.c)
 target_compile_definitions(gen_codec_names PRIVATE RAIO_CODECS=\"${RAIO_CODECS_STR}\")
-target_compile_definitions(gen_enum_names PRIVATE RAIO_HEADER=\"${RAIO_HEADER}\")
+add_custom_command(
+    OUTPUT ${RAIO_CODECS_NAMES}
+    COMMAND $<TARGET_FILE:gen_codec_names> > ${RAIO_CODECS_NAMES}
+    DEPENDS gen_codec_names;${RAIO_CODECS};
+)
+add_custom_target(raio_codec_names DEPENDS ${RAIO_CODECS_NAMES})
+
+# Generation: codec_paths.h
+set(RAIO_CODEC_PATHS "${CMAKE_BINARY_DIR}/include/raio/codec_paths.h")
+add_executable(gen_codec_paths ${CMAKE_SOURCE_DIR}/scripts/gen_codec_paths.c)
 target_include_directories(gen_codec_paths PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(gen_codec_paths PRIVATE ${CMAKE_BINARY_DIR}/include)
 add_custom_command(
@@ -108,20 +124,8 @@ add_custom_command(
     COMMAND $<TARGET_FILE:gen_codec_paths> > ${RAIO_CODEC_PATHS}
     DEPENDS gen_codec_paths;${RAIO_HEADER};${CMAKE_SOURCE_DIR}/include/raio/workers.h
 )
-add_custom_command(
-    OUTPUT ${RAIO_CODECS_NAMES}
-    COMMAND $<TARGET_FILE:gen_codec_names> > ${RAIO_CODECS_NAMES}
-    DEPENDS gen_codec_names;${RAIO_CODECS};
-)
-add_custom_command(
-    OUTPUT ${RAIO_ENUM_NAMES}
-    COMMAND $<TARGET_FILE:gen_enum_names> > ${RAIO_ENUM_NAMES}
-    DEPENDS gen_enum_names;${RAIO_HEADER};
-)
 add_custom_target(raio_codec_paths DEPENDS ${RAIO_CODEC_PATHS})
-add_custom_target(raio_codec_names DEPENDS ${RAIO_CODECS_NAMES})
-add_custom_target(raio_enum_names DEPENDS ${RAIO_ENUM_NAMES})
-add_dependencies(raio_codec_paths raio_enum_names raio_codec_names)
+add_dependencies(gen_codec_paths raio_enum_names raio_codec_names)
 add_dependencies(${PROJECT_NAME} raio_codec_paths)
 
 # Scripts For Testing
