@@ -33,3 +33,8 @@ void PipelineStepAdd(raio_pipeline_t* pipe, raio_type_t next_step) {
 int PipelineEnd(raio_pipeline_t* pipe, raio_type_t next_step) {
     return 0;
 }
+
+// @todo refact
+const raio_worker_t *GetPipelineWorker(raio_type_t from, raio_type_t to) {
+    return NULL;
+}

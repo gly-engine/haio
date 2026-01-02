@@ -7,7 +7,10 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
 file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/*/*.c")
 add_executable(${PROJECT_NAME} "src/main.c;${SOURCES}")
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include/raio-gen)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/include)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
+set_target_properties(${PROJECT_NAME}  PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 set(LIBUV_VERSION "v1.51.0")
 set(LIBUV_REPO "https://github.com/libuv/libuv.git")
@@ -86,6 +89,19 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${php_SOURCE_DIR})
 add_library(php_static STATIC ${php_SOURCE_DIR}/picohttpparser.c)
 target_link_libraries(${PROJECT_NAME} PRIVATE php_static)
 
+# Scripts for Generation
+set(RAIO_WORKER_LIST "${CMAKE_BINARY_DIR}/include/raio-gen/worker_list.h")
+add_executable(gen_workers_list ${CMAKE_SOURCE_DIR}/scripts/gen_workers_list.c)
+target_include_directories(gen_workers_list PRIVATE ${CMAKE_SOURCE_DIR}/include)
+add_custom_command(
+    OUTPUT ${RAIO_WORKER_LIST}
+    COMMAND $<TARGET_FILE:gen_workers_list> > ${RAIO_WORKER_LIST}
+    DEPENDS gen_workers_list;${CMAKE_SOURCE_DIR}/include/raio.h;${CMAKE_SOURCE_DIR}/include/raio/workers.h
+)
+add_custom_target(raio_generators DEPENDS ${RAIO_WORKER_LIST})
+add_dependencies(${PROJECT_NAME} raio_generators)
+
+# Scripts For Testing
 option(RAIO_TEST "Unit Tests" OFF)
 if(RAIO_TEST)
     include(CTest)
