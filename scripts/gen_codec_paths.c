@@ -4,7 +4,12 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "raio-gen/enum_names.h"
+#define RAIO_STUB
+
+#include "raio.h"
+
+#include "raio/codec_names.h"
+#include "raio/enum_names.h"
 #include "raio/workers.h"
 
 #define MAX_TYPES 256
@@ -32,13 +37,6 @@ typedef struct {
 } raio_pipeline_entry_t;
 
 static node_t graph[MAX_TYPES];
-
-void BufferAggregatorUntilZero(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst){}
-void ConvertRGBA8ToYUV420(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst){}
-void ConvertNotImplemented(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst){}
-void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst){}
-void EncodeRGBA8ToPPM(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst){}
-void EncodeYUV420ToY4M(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst){}
 
 static int worker_count = sizeof(workers) / sizeof(workers[0]);
 
@@ -136,6 +134,7 @@ int find_path(uint8_t src, uint8_t dst, uint8_t *out, uint8_t *out_count) {
 }
 
 void print_lut(void) {
+    printf("const struct {\n  uint16_t src_to_dst;\n  uint8_t worker_count;\n  uint8_t workers[%d];\n} raio_codecs_paths[] = {", MAX_PATH);
     for (int s = 0; s < RAIO_TYPE_COUNT; s++) {
         for (int d = 0; d < RAIO_TYPE_COUNT; d++) {
             raio_pipeline_entry_t e;
@@ -143,12 +142,13 @@ void print_lut(void) {
             e.src_to_dst = (s << 8) | d;
             find_path(s, d, e.workers, &e.worker_count);
 
-            printf("{ .src_to_dst = 0x%04X, .workers = { ", e.src_to_dst);
+            printf("%s{ 0x%04X, %u, {", (d || s)? ",\n  ": "\n  ", e.src_to_dst, e.worker_count);
             for (int i = 0; i < e.worker_count; i++)
-                printf("%u, ", e.workers[i]);
-            printf("}, .worker_count = %u },\n", e.worker_count);
+                printf("%s%u", i? ", ": " ", e.workers[i]);
+            printf(" } }");
         }
     }
+    printf("\n};\n");
 }
 
 static const char *worker_label(int w) {
@@ -163,7 +163,7 @@ void print_plantuml(void) {
     int wildcard_types[MAX_TYPES];
     int wildcard_count = 0;
 
-    printf("@startuml\n");
+    printf("/**\n@startuml\n");
 
     for (int w = 0; w < worker_count; w++) {
         if (step_count(&workers[w]) == 1) {
@@ -204,7 +204,7 @@ void print_plantuml(void) {
         }
     }
 
-    printf("@enduml\n");
+    printf("@enduml\n*/\n\n");
 }
 
 int main(int argc, char **argv) {

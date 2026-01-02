@@ -58,7 +58,7 @@ void print_functions() {
     for (int i = 0; i < func_count; i++) {
         printf("%s %s(%s);\n", functions[i].type, functions[i].name, functions[i].params);
     }
-    printf("#endif\n\nconst struct {\n  void (*func)(void);\n  const char* nome;\n} raio_codec_names[] = {");
+    printf("#endif\n\nconst struct {\n  raio_worker_func_t func;\n  const char* name;\n} raio_codec_names[] = {");
     for (int i = 0; i < func_count; i++) {
         printf("%s{%s, \"%s\"}", first? "\n  ": ",\n  ", functions[i].name, functions[i].name);
         first = 0;

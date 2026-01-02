@@ -1,15 +1,5 @@
+#pragma once
 #include "raio.h"
-
-// buffers:
-void BufferAggregatorUntilZero(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
-// conversors:
-void ConvertRGBA8ToYUV420(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
-void ConvertNotImplemented(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
-// decoders:
-void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
-// encoders:
-void EncodeRGBA8ToPPM(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
-void EncodeYUV420ToY4M(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst);
 
 /**
  * @brief Workers Lookup Table describing an implicit format pipeline graph.

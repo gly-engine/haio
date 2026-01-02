@@ -1,5 +1,7 @@
 #include <stddef.h>
 
+#include "raio.h"
+#include "raio/codec_names.h"
 #include "raio/workers.h"
 
 /*

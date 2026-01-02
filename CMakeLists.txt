@@ -7,7 +7,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
 file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/*/*.c")
 add_executable(${PROJECT_NAME} "src/main.c;${SOURCES}")
-file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include/raio-gen)
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include/raio)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/include)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
 set_target_properties(${PROJECT_NAME}  PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -91,23 +91,22 @@ target_link_libraries(${PROJECT_NAME} PRIVATE php_static)
 
 # Scripts for Generation
 set(RAIO_HEADER "${CMAKE_SOURCE_DIR}/include/raio.h")
-set(RAIO_CODECS_NAMES "${CMAKE_BINARY_DIR}/include/raio-gen/codec_names.h")
-set(RAIO_ENUM_NAMES "${CMAKE_BINARY_DIR}/include/raio-gen/enum_names.h")
-set(RAIO_WORKER_LIST "${CMAKE_BINARY_DIR}/include/raio-gen/worker_list.h")
+set(RAIO_CODECS_NAMES "${CMAKE_BINARY_DIR}/include/raio/codec_names.h")
+set(RAIO_CODEC_PATHS "${CMAKE_BINARY_DIR}/include/raio/codec_paths.h")
+set(RAIO_ENUM_NAMES "${CMAKE_BINARY_DIR}/include/raio/enum_names.h")
 file(GLOB RAIO_CODECS "${CMAKE_SOURCE_DIR}/src/Backend_Codecs/*.c")
-string(REGEX REPLACE "${CMAKE_SOURCE_DIR}/src/Backend_Codecs/" "" RAIO_CODECS_STR "${RAIO_CODECS}")
 string(JOIN "," RAIO_CODECS_STR ${RAIO_CODECS})
-add_executable(gen_workers_list ${CMAKE_SOURCE_DIR}/scripts/gen_workers_list.c)
+add_executable(gen_codec_paths ${CMAKE_SOURCE_DIR}/scripts/gen_codec_paths.c)
 add_executable(gen_codec_names ${CMAKE_SOURCE_DIR}/scripts/gen_codec_names.c)
 add_executable(gen_enum_names ${CMAKE_SOURCE_DIR}/scripts/gen_enum_names.c)
 target_compile_definitions(gen_codec_names PRIVATE RAIO_CODECS=\"${RAIO_CODECS_STR}\")
 target_compile_definitions(gen_enum_names PRIVATE RAIO_HEADER=\"${RAIO_HEADER}\")
-target_include_directories(gen_workers_list PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_include_directories(gen_workers_list PRIVATE ${CMAKE_BINARY_DIR}/include)
+target_include_directories(gen_codec_paths PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(gen_codec_paths PRIVATE ${CMAKE_BINARY_DIR}/include)
 add_custom_command(
-    OUTPUT ${RAIO_WORKER_LIST}
-    COMMAND $<TARGET_FILE:gen_workers_list> > ${RAIO_WORKER_LIST}
-    DEPENDS gen_workers_list;${RAIO_HEADER};${CMAKE_SOURCE_DIR}/include/raio/workers.h
+    OUTPUT ${RAIO_CODEC_PATHS}
+    COMMAND $<TARGET_FILE:gen_codec_paths> > ${RAIO_CODEC_PATHS}
+    DEPENDS gen_codec_paths;${RAIO_HEADER};${CMAKE_SOURCE_DIR}/include/raio/workers.h
 )
 add_custom_command(
     OUTPUT ${RAIO_CODECS_NAMES}
@@ -119,11 +118,11 @@ add_custom_command(
     COMMAND $<TARGET_FILE:gen_enum_names> > ${RAIO_ENUM_NAMES}
     DEPENDS gen_enum_names;${RAIO_HEADER};
 )
-add_custom_target(raio_worker_list DEPENDS ${RAIO_WORKER_LIST})
-add_custom_target(raio_codecs_names DEPENDS ${RAIO_CODECS_NAMES})
+add_custom_target(raio_codec_paths DEPENDS ${RAIO_CODEC_PATHS})
+add_custom_target(raio_codec_names DEPENDS ${RAIO_CODECS_NAMES})
 add_custom_target(raio_enum_names DEPENDS ${RAIO_ENUM_NAMES})
-add_dependencies(raio_worker_list raio_enum_names)
-add_dependencies(${PROJECT_NAME} raio_worker_list raio_codecs_names)
+add_dependencies(raio_codec_paths raio_enum_names raio_codec_names)
+add_dependencies(${PROJECT_NAME} raio_codec_paths)
 
 # Scripts For Testing
 option(RAIO_TEST "Unit Tests" OFF)
