@@ -133,6 +133,17 @@ int find_path(uint8_t src, uint8_t dst, uint8_t *out, uint8_t *out_count) {
     return 1;
 }
 
+const char* worker_name(uint8_t id) {
+    const raio_worker_t *worker = &workers[id];
+    raio_worker_func_t func = worker->func;
+    for (int i = 0; i < raio_codec_names_len; i++) {
+        if (raio_codec_names[i].func == func) {
+            return raio_codec_names[i].name;
+        }
+    }
+    return "NULL";
+}
+
 void print_lut(void) {
     printf("const struct {\n  uint16_t src_to_dst;\n  uint8_t worker_count;\n  uint8_t workers[%d];\n} raio_codecs_paths[] = {", MAX_PATH);
     for (int s = 0; s < RAIO_TYPE_COUNT; s++) {
@@ -141,8 +152,17 @@ void print_lut(void) {
             memset(&e, 0, sizeof(e));
             e.src_to_dst = (s << 8) | d;
             find_path(s, d, e.workers, &e.worker_count);
-
-            printf("%s{ 0x%04X, %u, {", (d || s)? ",\n  ": "\n  ", e.src_to_dst, e.worker_count);
+            printf("%s/* %s -> %s ",
+                (d || s)? ",\n  ": "\n  ", 
+                raio_types_names[e.src_to_dst >> 8],
+                raio_types_names[e.src_to_dst & 0xFF]
+            );
+            if (e.worker_count) {
+                printf("*/\n  /* ");
+                for (int i = 0; i < e.worker_count; i++)
+                    printf("%s ", worker_name(e.workers[i]));
+            }
+            printf("*/\n  { 0x%04X, %u, {", e.src_to_dst, e.worker_count);
             for (int i = 0; i < e.worker_count; i++)
                 printf("%s%u", i? ", ": " ", e.workers[i]);
             printf(" } }");
