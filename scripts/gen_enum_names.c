@@ -19,6 +19,11 @@ int main() {
             while (isalnum(p[len]) || p[len] == '_')
                 len++;
 
+            if (!strncmp(p, "RAIO_TYPE_NULL", len) || !strncmp(p, "RAIO_TYPE_COUNT", len)) {
+                p += len;
+                continue;
+            }
+
             printf("%s\"%.*s\"", count++? ",\n  ": "\n  ", len, p);
             p += len;
         }

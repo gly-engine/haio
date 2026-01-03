@@ -12,44 +12,27 @@ int FrontendConvertCli(int argc, char* argv[]) {
         return 1;
     }
 
-    char* input_path = argv[1];
-    char* output_path = argv[2];
+    size_t nbytes;
+    char buffer[4096];
+    FILE* f_in = fopen(argv[1], "rb");
+    FILE* f_out = fopen(argv[2], "wb");
 
-    const raio_worker_func_t * workers = NewCodecWorkersFromFormats(RAIO_TYPE_IMG_PNG, RAIO_TYPE_IMG_PPM);
-    const raio_worker_t* worker_png_to_rgba = GetPipelineWorker(RAIO_TYPE_IMG_PNG, RAIO_TYPE_IMG_RGBA8);
-    const raio_worker_t* worker_argb_to_ppm = GetPipelineWorker(RAIO_TYPE_IMG_RGBA8, RAIO_TYPE_IMG_PPM);
+    raio_pipeline_t pipe;
+    PipelineBegin(&pipe, RAIO_TYPE_BUFFER);
+    PipelineStepAdd(&pipe, RAIO_TYPE_IMG_PNG);
+    PipelineEnd(&pipe, RAIO_TYPE_IMG_PPM);
 
-    while(*workers) {
-        printf("step: %s\n", GetCodecWorkerName(*workers++));
-    }
-
-    if (worker_png_to_rgba == NULL || worker_argb_to_ppm == NULL) {
-        fprintf(stderr, "Failed to create conversion pipeline.\nAre the required workers compiled in?\n");
+    if (GetPipelineError(&pipe)) {
+        printf("[error] %s", GetPipelineError(&pipe));
         return 1;
     }
 
-    static raio_worker_handle_t worker_ctx[2];
-    static raio_buffer_t worker_buf[3];
-
-    worker_buf[0].data.ptr = malloc(BUFFER_SIZE);
-    worker_buf[0].size = BUFFER_SIZE;
-
-    FILE* f_in = fopen(input_path, "rb");
-    FILE* f_out = fopen(output_path, "wb");
-
-    while(worker_ctx[0].state != RAIO_FSM_WORKER_DONE || worker_ctx[1].state != RAIO_FSM_WORKER_DONE) {
-        worker_buf[0].len = fread(worker_buf[0].data.str, 1, worker_buf[0].size, f_in);
-
-        printf("\nbuffer 0 %ld/%ld\n", worker_buf[0].len, worker_buf[0].size);
-        worker_png_to_rgba->func(&worker_ctx[0], &worker_buf[0], &worker_buf[1]);
-        printf("buffer 1 %ld/%ld\n", worker_buf[1].len, worker_buf[1].size);
-        worker_ctx[1].width = worker_ctx[0].width;
-        worker_ctx[1].height = worker_ctx[0].height;
-        worker_argb_to_ppm->func(&worker_ctx[1], &worker_buf[1], &worker_buf[2]);
-        printf("buffer 2 %ld/%ld\n", worker_buf[2].len, worker_buf[2].size);
-
-        printf("bytes escritos: %ld\n", fwrite(worker_buf[2].data.ptr, 1, worker_buf[2].len, f_out));
+    do {
+        nbytes = fread(buffer, sizeof(char), sizeof(buffer), f_in);
+        nbytes = PipelineProcess(&pipe, buffer, sizeof(buffer), buffer, sizeof(buffer));
+        fwrite(buffer, sizeof(char), nbytes, f_out);
     }
+    while(PipelineIsRunning(&pipe));
 
     fclose(f_in);
     fclose(f_out);
