@@ -8,9 +8,9 @@
 
 #include "raio.h"
 
-#include "raio/codec_names.h"
 #include "raio/enum_names.h"
-#include "raio/workers.h"
+#include "raio/codec_names.h"
+#include "raio/codec_workers.h"
 
 #define MAX_TYPES 256
 #define MAX_WORKERS 64
@@ -38,8 +38,6 @@ typedef struct {
 
 static node_t graph[MAX_TYPES];
 
-static int worker_count = sizeof(workers) / sizeof(workers[0]);
-
 int step_count(const raio_worker_t *w) {
     int c = 0;
     while (c < 3 && w->steps[c] != 0)
@@ -50,13 +48,13 @@ int step_count(const raio_worker_t *w) {
 void build_graph(void) {
     memset(graph, 0, sizeof(graph));
 
-    for (int w = 0; w < worker_count; w++) {
-        int sc = step_count(&workers[w]);
+    for (int w = 0; w < raio_codec_workers_len; w++) {
+        int sc = step_count(&raio_codec_workers[w]);
         if (sc < 2)
             continue;
         for (int i = 0; i < sc - 1; i++) {
-            uint8_t from = workers[w].steps[i];
-            uint8_t to = workers[w].steps[i + 1];
+            uint8_t from = raio_codec_workers[w].steps[i];
+            uint8_t to = raio_codec_workers[w].steps[i + 1];
             if (graph[from].count >= MAX_EDGES)
                 FAIL("too many edges");
             graph[from].edges[graph[from].count++] = (edge_t){ to, w };
@@ -95,9 +93,9 @@ int find_path(uint8_t src, uint8_t dst, uint8_t *out, uint8_t *out_count) {
             }
         }
 
-        for (int w = 0; w < worker_count; w++) {
-            if (step_count(&workers[w]) == 1) {
-                uint8_t to = workers[w].steps[0];
+        for (int w = 0; w < raio_codec_workers_len; w++) {
+            if (step_count(&raio_codec_workers[w]) == 1) {
+                uint8_t to = raio_codec_workers[w].steps[0];
                 if (!visited[to]) {
                     if (qt >= MAX_TYPES)
                         FAIL("BFS queue overflow");
@@ -134,7 +132,7 @@ int find_path(uint8_t src, uint8_t dst, uint8_t *out, uint8_t *out_count) {
 }
 
 const char* worker_name(uint8_t id) {
-    const raio_worker_t *worker = &workers[id];
+    const raio_worker_t *worker = &raio_codec_workers[id];
     raio_worker_func_t func = worker->func;
     for (int i = 0; i < raio_codec_names_len; i++) {
         if (raio_codec_names[i].func == func) {
@@ -145,7 +143,7 @@ const char* worker_name(uint8_t id) {
 }
 
 void print_lut(void) {
-    printf("const struct {\n  uint16_t src_to_dst;\n  uint8_t worker_count;\n  uint8_t workers[%d];\n} raio_codecs_paths[] = {", MAX_PATH);
+    printf("typedef struct {\n  uint16_t src_to_dst;\n  uint8_t worker_count;\n  uint8_t workers[%d];\n} raio_worker_path_t;\n\nraio_worker_path_t raio_codec_paths[] = {", MAX_PATH);
     for (int s = 0; s < RAIO_TYPE_COUNT; s++) {
         for (int d = 0; d < RAIO_TYPE_COUNT; d++) {
             raio_pipeline_entry_t e;
@@ -168,11 +166,11 @@ void print_lut(void) {
             printf(" } }");
         }
     }
-    printf("\n};\n");
+    printf("\n};\n\nconst unsigned int raio_codec_paths_len = %d;\n", RAIO_TYPE_COUNT * RAIO_TYPE_COUNT);
 }
 
 static const char *worker_label(int w) {
-    if (workers[w].func == ConvertNotImplemented)
+    if (raio_codec_workers[w].func == ConvertNotImplemented)
         return "not implemented";
     static char buf[16];
     snprintf(buf, sizeof(buf), "w%d", w);
@@ -185,9 +183,9 @@ void print_plantuml(void) {
 
     printf("/**\n@startuml\n");
 
-    for (int w = 0; w < worker_count; w++) {
-        if (step_count(&workers[w]) == 1) {
-            wildcard_types[wildcard_count++] = workers[w].steps[0];
+    for (int w = 0; w < raio_codec_workers_len; w++) {
+        if (step_count(&raio_codec_workers[w]) == 1) {
+            wildcard_types[wildcard_count++] = raio_codec_workers[w].steps[0];
         }
     }
 
@@ -211,15 +209,15 @@ void print_plantuml(void) {
         }
     }
 
-    for (int w = 0; w < worker_count; w++) {
-        int sc = step_count(&workers[w]);
+    for (int w = 0; w < raio_codec_workers_len; w++) {
+        int sc = step_count(&raio_codec_workers[w]);
         if (sc < 2)
             continue;
 
         for (int i = 0; i < sc - 1; i++) {
             printf("  %s --> %s : %s\n",
-                   raio_types_names[workers[w].steps[i]],
-                   raio_types_names[workers[w].steps[i + 1]],
+                   raio_types_names[raio_codec_workers[w].steps[i]],
+                   raio_types_names[raio_codec_workers[w].steps[i + 1]],
                    worker_label(w));
         }
     }

@@ -6,6 +6,8 @@
 *.gz
 *.tar
 *.tar.gz
+*.out
+*.zip
 html/
 latex/
 vendor/

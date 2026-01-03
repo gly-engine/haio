@@ -72,6 +72,8 @@ raio_type_t GetFormatFromExtension(char *const txt);
 int FrontendConvertCli(int argc, char* argv[]);
 int FrontendServerCli(int argc, char* argv[]);
 // Backends:
+const raio_worker_func_t *NewCodecWorkersFromFormats(raio_type_t from, raio_type_t to);
+const char *const GetCodecWorkerName(raio_worker_func_t func);
 const raio_worker_t *GetPipelineWorker(raio_type_t from, raio_type_t to);
 raio_pipeline_t *BackendPipelineFromUrl(char *const url);
 void BackendPipelineToUrl(raio_pipeline_t *pipe, char *const url);

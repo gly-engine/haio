@@ -57,7 +57,7 @@
  * This structure is intended for build-time evaluation only and is not
  * optimized for runtime traversal.
  */
-static const raio_worker_t workers[] = {
+const raio_worker_t raio_codec_workers[] = {
     {
         .steps = { RAIO_TYPE_BUFFER, RAIO_TYPE_BUFFER_FULL },
         .func = BufferAggregatorUntilZero
@@ -88,4 +88,4 @@ static const raio_worker_t workers[] = {
     }
 };
 
-static const size_t workers_len = sizeof(workers)/sizeof(raio_worker_t);
+const size_t raio_codec_workers_len = sizeof(raio_codec_workers)/sizeof(raio_worker_t);

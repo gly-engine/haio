@@ -122,7 +122,7 @@ target_include_directories(gen_codec_paths PRIVATE ${CMAKE_BINARY_DIR}/include)
 add_custom_command(
     OUTPUT ${RAIO_CODEC_PATHS}
     COMMAND $<TARGET_FILE:gen_codec_paths> > ${RAIO_CODEC_PATHS}
-    DEPENDS gen_codec_paths;${RAIO_HEADER};${CMAKE_SOURCE_DIR}/include/raio/workers.h
+    DEPENDS gen_codec_paths;${RAIO_HEADER};${CMAKE_SOURCE_DIR}/include/raio/codec_workers.h
 )
 add_custom_target(raio_codec_paths DEPENDS ${RAIO_CODEC_PATHS})
 add_dependencies(gen_codec_paths raio_enum_names raio_codec_names)
