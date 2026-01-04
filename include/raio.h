@@ -62,6 +62,7 @@ typedef struct {
 
 typedef struct {
     char *error;
+    raio_type_t mime_format;
     raio_type_t current_format;
     raio_worker_func_t* funcs;
 } raio_pipeline_t;
@@ -80,6 +81,7 @@ void PipelineStepAdd(raio_pipeline_t* pipe, raio_type_t next_step);
 void PipelineEnd(raio_pipeline_t* pipe, raio_type_t last_step);
 size_t PipelineProcess(raio_pipeline_t *pipe, char* src_ptr, size_t src_len, char* dst_ptr, size_t dst_len);
 bool PipelineIsRunning(raio_pipeline_t *pipe);
+bool PipelineHasError(raio_pipeline_t *pipe);
 void PipelineClean(raio_pipeline_t *pipe);
 char* GetPipelineError(raio_pipeline_t *pipe);
 // Drivers:

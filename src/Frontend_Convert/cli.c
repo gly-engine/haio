@@ -22,17 +22,16 @@ int FrontendConvertCli(int argc, char* argv[]) {
     PipelineStepAdd(&pipe, RAIO_TYPE_IMG_PNG);
     PipelineEnd(&pipe, RAIO_TYPE_IMG_PPM);
 
-    if (GetPipelineError(&pipe)) {
-        printf("[error] %s", GetPipelineError(&pipe));
-        return 1;
-    }
-
-    do {
+    while(PipelineIsRunning(&pipe)) {
         nbytes = fread(buffer, sizeof(char), sizeof(buffer), f_in);
         nbytes = PipelineProcess(&pipe, buffer, sizeof(buffer), buffer, sizeof(buffer));
         fwrite(buffer, sizeof(char), nbytes, f_out);
     }
-    while(PipelineIsRunning(&pipe));
+
+    if (PipelineHasError(&pipe)) {
+        printf("[error] %s", GetPipelineError(&pipe));
+        return 1;
+    }
 
     fclose(f_in);
     fclose(f_out);

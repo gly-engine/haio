@@ -58,6 +58,10 @@ void PipelineClean(raio_pipeline_t *pipe) {
 
 }
 
+bool PipelineHasError(raio_pipeline_t *pipe) {
+    return false;
+}
+
 /**
  * @details check if pipeline has errors
  * @return string null terminted with error message
