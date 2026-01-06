@@ -133,14 +133,15 @@ option(RAIO_TEST "Unit Tests" OFF)
 if(RAIO_TEST)
     include(CTest)
     set(tests
-        "test_get_format_from_extension,src/Common_String/extensions.c"
+        "test_get_format_from_extension,src/Common_String/get_format_from_ext.c"
+        "test_get_codec_workers_from_formats,src/Backend_Workers/codecs.c"
     )
     foreach(deps IN LISTS tests)
         string(REPLACE "," ";${CMAKE_SOURCE_DIR}/" deps "${deps}")
         list(GET deps 0 tests_name)
         list(REMOVE_AT deps 0)
         add_executable("${tests_name}" "${CMAKE_SOURCE_DIR}/tests/${tests_name}.c;${deps}")
-        target_include_directories(${tests_name} PRIVATE ${CMAKE_SOURCE_DIR}/include)
+        target_include_directories(${tests_name} PRIVATE "${CMAKE_SOURCE_DIR}/include;${CMAKE_BINARY_DIR}/include")
         add_test(NAME "${tests_name}" COMMAND "${tests_name}")
     endforeach()
 endif()

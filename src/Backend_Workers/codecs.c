@@ -52,7 +52,7 @@ uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker
     raio_worker_func_t *res = NULL;
 
     if (!path || path->worker_count <= 0) return 0;
-    if (func_list && path->worker_count < size) return 0; 
+    if (func_list && path->worker_count > size) return 0; 
 
     for (int i = 0; i < path->worker_count; i++) {
         uint8_t id = path->workers[i];
