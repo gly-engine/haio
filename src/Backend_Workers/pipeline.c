@@ -8,7 +8,8 @@
 /**
  */
 void PipelineBegin(raio_pipeline_t* pipe, raio_type_t first_step) {
-    pipe->current_format = first_step;   
+    pipe->current_format = first_step;
+    pipe->state = RAIO_FSM_PIPE_PREPARE;
 }
 
 /**
@@ -16,7 +17,15 @@ void PipelineBegin(raio_pipeline_t* pipe, raio_type_t first_step) {
  * @param [in,out] pipe
  */
 void PipelineStepAdd(raio_pipeline_t* pipe, raio_type_t next_step) {
-    
+    raio_worker_func_t workers[10];
+    raio_type_t from = pipe->current_format;
+    raio_type_t to = next_step;
+    raio_type_t result = RAIO_TYPE_NULL;
+
+    int nworkers = GetCodecWorkersFromFormats(from, to, NULL, 0, &result);
+    pipe->state = RAIO_FSM_PIPE_PREPARE;
+    printf("%d -> %d = %d (%d)\n", from, to, result, nworkers);
+    printf("%s -> %s = %s", GetCodecFormatName(from), GetCodecFormatName(to), GetCodecFormatName(result));
 }
 
 /**

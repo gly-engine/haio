@@ -28,6 +28,7 @@ static int cmpWorkers(const void *ptr_key, const void *ptr_cmp) {
  * @param [in] to format output/intermediary
  * @param [out] func_list array of workers output
  * @param [in] size of @c func_list
+ * @param [out] output format resulting
  *
  * @note The final worker does not necessarily end in the @c to format,
  * but may instead be the result of an intermediate step that passes through it.
@@ -40,7 +41,7 @@ static int cmpWorkers(const void *ptr_key, const void *ptr_cmp) {
  * @retval 0 when not found workers
  * @retval 0 when size of @c func_list is less then worker count
  */
-uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker_func_t * func_list, uint8_t size) {
+uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker_func_t * func_list, uint8_t size, raio_type_t *output) {
     static const size_t tsize = sizeof(raio_worker_path_t);
     static const size_t tlen = (size_t) raio_codec_paths_len;
 
@@ -51,12 +52,14 @@ uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker
     raio_worker_func_t *res = NULL;
 
     if (!path || path->worker_count <= 0) return 0;
-    if (path->worker_count < size) return 0;
+    if (func_list && path->worker_count < size) return 0; 
 
     for (int i = 0; i < path->worker_count; i++) {
         uint8_t id = path->workers[i];
+        const raio_type_t *steps = raio_codec_workers[id].steps;
         if (raio_codec_workers[id].func && id != last) {
             if (func_list) func_list[count] = raio_codec_workers[id].func;
+            while (output && *++steps) *output = *steps;
             last = id;
             count++;
         }
@@ -81,7 +84,7 @@ const char *const GetCodecWorkerName(raio_worker_func_t func) {
  * @retval "NULL" when invalid format
  */
 const char *const GetCodecFormatName(raio_type_t format) {
-    if (RAIO_TYPE_NULL > format && format < RAIO_TYPE_COUNT) {
+    if (RAIO_TYPE_NULL < format && format < RAIO_TYPE_COUNT) {
         return raio_types_names[format - 1];
     }
     return "NULL";

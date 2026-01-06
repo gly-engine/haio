@@ -27,6 +27,11 @@ typedef enum {
     RAIO_FSM_WORKER_IDLE
 } raio_worker_fsm_t;
 
+typedef enum {
+    RAIO_FSM_PIPE_NEW,
+    RAIO_FSM_PIPE_PREPARE
+} raio_pipe_fsm_t;
+
 typedef struct {
     size_t len;
     size_t size;
@@ -62,6 +67,7 @@ typedef struct {
 
 typedef struct {
     char *error;
+    raio_pipe_fsm_t state;
     raio_type_t mime_format;
     raio_type_t current_format;
     raio_worker_func_t* funcs;
@@ -74,8 +80,9 @@ raio_type_t GetFormatFromExtension(char *const txt);
 int FrontendConvertCli(int argc, char* argv[]);
 int FrontendServerCli(int argc, char* argv[]);
 // Backends:
-uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker_func_t * func_list, uint8_t size);
+uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker_func_t * func_list, uint8_t size,  raio_type_t *output);
 const char *const GetCodecWorkerName(raio_worker_func_t func);
+const char *const GetCodecFormatName(raio_type_t format);
 void PipelineBegin(raio_pipeline_t* pipe, raio_type_t first_step);
 void PipelineStepAdd(raio_pipeline_t* pipe, raio_type_t next_step);
 void PipelineEnd(raio_pipeline_t* pipe, raio_type_t last_step);
