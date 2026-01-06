@@ -33,10 +33,6 @@ static int cmpWorkers(const void *ptr_key, const void *ptr_cmp) {
  * @note The final worker does not necessarily end in the @c to format,
  * but may instead be the result of an intermediate step that passes through it.
  *
- * @todo For some reason, the 3-step worker in the BFS pathfinding is being duplicated.
- * A palliative workaround was implemented (the @c last variable in the function body),
- * but this issue must be investigated more thoroughly. (eg. 1 2 2 3 4)
- *
  * @return amount of workers needed
  * @retval 0 when not found workers
  * @retval 0 when size of @c func_list is less then worker count
@@ -45,7 +41,6 @@ uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker
     static const size_t tsize = sizeof(raio_worker_path_t);
     static const size_t tlen = (size_t) raio_codec_paths_len;
 
-    uint8_t last = 0;
     uint8_t count = 0;
     uint16_t key = (from << 8) | to;
     raio_worker_path_t *path = bsearch(&key, raio_codec_paths, tlen, tsize, cmpWorkers);
@@ -57,10 +52,9 @@ uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker
     for (int i = 0; i < path->worker_count; i++) {
         uint8_t id = path->workers[i];
         const raio_type_t *steps = raio_codec_workers[id].steps;
-        if (raio_codec_workers[id].func && id != last) {
+        if (raio_codec_workers[id].func) {
             if (func_list) func_list[count] = raio_codec_workers[id].func;
             while (output && *++steps) *output = *steps;
-            last = id;
             count++;
         }
     }

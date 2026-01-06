@@ -18,6 +18,8 @@
 #define MAX_EDGES 16
 #define MAX_NAME 64
 
+#define WORKER_VIRTUAL 0xFF
+
 #define FAIL(msg) do { fprintf(stderr, "%s\n", msg); exit(1); } while (0)
 
 typedef struct {
@@ -52,12 +54,28 @@ void build_graph(void) {
         int sc = step_count(&raio_codec_workers[w]);
         if (sc < 2)
             continue;
-        for (int i = 0; i < sc - 1; i++) {
-            uint8_t from = raio_codec_workers[w].steps[i];
-            uint8_t to = raio_codec_workers[w].steps[i + 1];
-            if (graph[from].count >= MAX_EDGES)
+
+        uint8_t from = raio_codec_workers[w].steps[0];
+        uint8_t logical_to = raio_codec_workers[w].steps[1];
+        uint8_t real_to = (sc >= 3) ? raio_codec_workers[w].steps[2]
+                                    : logical_to;
+
+        if (graph[from].count >= MAX_EDGES)
+            FAIL("too many edges");
+
+        graph[from].edges[graph[from].count++] = (edge_t){
+            .to = real_to,
+            .worker = w
+        };
+
+        if (real_to != logical_to) {
+            if (graph[real_to].count >= MAX_EDGES)
                 FAIL("too many edges");
-            graph[from].edges[graph[from].count++] = (edge_t){ to, w };
+
+            graph[real_to].edges[graph[real_to].count++] = (edge_t){
+                .to = logical_to,
+                .worker = WORKER_VIRTUAL
+            };
         }
     }
 }
@@ -66,45 +84,37 @@ int find_path(uint8_t src, uint8_t dst, uint8_t *out, uint8_t *out_count) {
     int visited[MAX_TYPES];
     int prev[MAX_TYPES];
     int via[MAX_TYPES];
+
     memset(visited, 0, sizeof(visited));
 
     uint8_t queue[MAX_TYPES];
     int qh = 0, qt = 0;
 
-    queue[qt++] = src;
     visited[src] = 1;
     prev[src] = -1;
+    queue[qt++] = src;
 
     while (qh < qt) {
         uint8_t cur = queue[qh++];
+
         if (cur == dst)
             break;
 
         node_t *n = &graph[cur];
         for (int i = 0; i < n->count; i++) {
             edge_t *e = &n->edges[i];
-            if (!visited[e->to]) {
-                if (qt >= MAX_TYPES)
-                    FAIL("BFS queue overflow");
-                visited[e->to] = 1;
-                prev[e->to] = cur;
-                via[e->to] = e->worker;
-                queue[qt++] = e->to;
-            }
-        }
 
-        for (int w = 0; w < raio_codec_workers_len; w++) {
-            if (step_count(&raio_codec_workers[w]) == 1) {
-                uint8_t to = raio_codec_workers[w].steps[0];
-                if (!visited[to]) {
-                    if (qt >= MAX_TYPES)
-                        FAIL("BFS queue overflow");
-                    visited[to] = 1;
-                    prev[to] = cur;
-                    via[to] = w;
-                    queue[qt++] = to;
-                }
-            }
+            if (visited[e->to])
+                continue;
+
+            visited[e->to] = 1;
+            prev[e->to] = cur;
+            via[e->to] = e->worker;
+
+            if (qt >= MAX_TYPES)
+                FAIL("BFS queue overflow");
+
+            queue[qt++] = e->to;
         }
     }
 
@@ -120,7 +130,9 @@ int find_path(uint8_t src, uint8_t dst, uint8_t *out, uint8_t *out_count) {
     while (prev[cur] != -1) {
         if (c >= MAX_PATH)
             FAIL("path overflow");
-        tmp[c++] = via[cur];
+
+        if (via[cur] != WORKER_VIRTUAL)
+            tmp[c++] = via[cur];
         cur = prev[cur];
     }
 
@@ -142,18 +154,25 @@ const char* worker_name(uint8_t id) {
     return "NULL";
 }
 
+const char *format_name(uint8_t id) {
+    return id > 0? raio_types_names[id - 1]: "NULL";
+}
+
 void print_lut(void) {
+    int count = 0;
     printf("typedef struct {\n  uint16_t src_to_dst;\n  uint8_t worker_count;\n  uint8_t workers[%d];\n} raio_worker_path_t;\n\nraio_worker_path_t raio_codec_paths[] = {", MAX_PATH);
-    for (int s = 0; s < RAIO_TYPE_COUNT; s++) {
-        for (int d = 0; d < RAIO_TYPE_COUNT; d++) {
+    for (int s = 1; (s + 1) < RAIO_TYPE_COUNT; s++) {
+        for (int d = 1; (d + 1) < RAIO_TYPE_COUNT; d++) {
+            if (s == d) continue;
             raio_pipeline_entry_t e;
             memset(&e, 0, sizeof(e));
             e.src_to_dst = (s << 8) | d;
             find_path(s, d, e.workers, &e.worker_count);
+            if(e.worker_count <= 0) continue;
             printf("%s/* %s -> %s ",
-                (d || s)? ",\n  ": "\n  ", 
-                raio_types_names[e.src_to_dst >> 8],
-                raio_types_names[e.src_to_dst & 0xFF]
+                count++? ",\n  ": "\n  ", 
+                format_name(e.src_to_dst >> 8),
+                format_name(e.src_to_dst & 0xFF)
             );
             if (e.worker_count) {
                 printf("*/\n  /* ");
@@ -166,7 +185,7 @@ void print_lut(void) {
             printf(" } }");
         }
     }
-    printf("\n};\n\nconst unsigned int raio_codec_paths_len = %d;\n", RAIO_TYPE_COUNT * RAIO_TYPE_COUNT);
+    printf("\n};\n\nconst unsigned int raio_codec_paths_len = %d;\n", count);
 }
 
 static const char *worker_label(int w) {
@@ -200,12 +219,12 @@ void print_plantuml(void) {
                 }
             }
             if (needs_input)
-                printf("  %s\n", raio_types_names[i]);
+                printf("  %s\n", format_name(i));
         }
         printf("}\n");
 
         for (int i = 0; i < wildcard_count; i++) {
-            printf("Codecs --> %s\n", raio_types_names[wildcard_types[i]]);
+            printf("Codecs --> %s\n", format_name(wildcard_types[i]));
         }
     }
 
@@ -216,8 +235,8 @@ void print_plantuml(void) {
 
         for (int i = 0; i < sc - 1; i++) {
             printf("  %s --> %s : %s\n",
-                   raio_types_names[raio_codec_workers[w].steps[i]],
-                   raio_types_names[raio_codec_workers[w].steps[i + 1]],
+                   format_name(raio_codec_workers[w].steps[i]),
+                   format_name(raio_codec_workers[w].steps[i + 1]),
                    worker_label(w));
         }
     }
@@ -225,9 +244,10 @@ void print_plantuml(void) {
     printf("@enduml\n*/\n\n");
 }
 
-int main(int argc, char **argv) {
+int main() {
     build_graph();
     print_plantuml();
     print_lut();
     return 0;
 }
+ 

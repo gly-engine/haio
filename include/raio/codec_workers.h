@@ -1,62 +1,6 @@
 #pragma once
 #include "raio.h"
 
-/**
- * @brief Workers Lookup Table describing an implicit format pipeline graph.
- *
- * Each @ref raio_worker_t entry declares a small transformation pipeline
- * using the @c steps[] array (maximum of 3 steps). The table itself represents
- * an implicit directed graph of format transitions, evaluated only at
- * build-time for code generation.
- *
- * @section steps_semantics Steps semantics
- *
- * The meaning of @c steps[] depends on @c step_count:
- *
- * - @b step_count == 1  
- *   @code
- *   { X }
- *   @endcode
- *   Accepts any input format (wildcard) and produces @c X.  
- *   Represents: @c * -> X
- *
- * - @b step_count == 2  
- *   @code
- *   { A, B }
- *   @endcode
- *   Transforms input format @c A into output format @c B.  
- *   Represents: @c A -> B
- *
- * - @b step_count == 3  
- *   @code
- *   { A, B, C }
- *   @endcode
- *   Transforms @c A into @c C through intermediate format @c B.  
- *   Represents: @c A -> B -> C
- *
- * @section graph_model Graph model
- *
- * - Graph nodes are all @c RAIO_TYPE_* values appearing in @c steps[].
- * - Graph edges are implicit transitions between consecutive steps.
- * - Workers with a single step act as wildcard producers and may be applied
- *   from any current format node.
- *
- * @section pathfinding Pathfinding
- *
- * - Pathfinding (e.g. BFS) operates on formats, not on workers.
- * - The resulting format path is reduced to an ordered list of workers.
- * - Workers may be executed partially or fully, depending on which step
- *   transition is selected.
- *
- * @note
- * Internal pipeline states are intentionally exposed so requests like
- * BUFFER -> PNG -> PPM can be resolved, even if PNG is an intermediate
- * state of a worker.
- *
- * @note
- * This structure is intended for build-time evaluation only and is not
- * optimized for runtime traversal.
- */
 const raio_worker_t raio_codec_workers[] = {
     {
         .steps = { RAIO_TYPE_BUFFER, RAIO_TYPE_BUFFER_FULL },
