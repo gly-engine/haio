@@ -7,15 +7,17 @@ void BufferAggregatorUntilZero(raio_worker_handle_t *handle, raio_buffer_t *src,
     raio_buffer_t *aux = (raio_buffer_t*) handle->ctx;
 
     do {
-        if (!aux) {
-            aux = calloc(1, sizeof(raio_buffer_t));
+        if (handle->state == RAIO_FSM_WORKER_NEW) {
+            aux = malloc(sizeof(raio_buffer_t));
+            memset(aux, 0, sizeof(raio_buffer_t));
             handle->ctx = aux;
-            assert(aux);
         }
 
         if (handle->state == RAIO_FSM_WORKER_DONE) {
             break;
         }
+
+        assert(aux);
 
         if (handle-> state == RAIO_FSM_WORKER_FINISHING) {
             handle->state = RAIO_FSM_WORKER_DONE;

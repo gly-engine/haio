@@ -35,7 +35,7 @@ int BufferEnsureCapacity(raio_buffer_t *buf, size_t len) {
 
 int BufferPush(raio_buffer_t *buf, const void *data, size_t len) {
     if (!buf) return 1;
-    if (!BufferEnsureCapacity(buf, len)) return 1;
+    if (BufferEnsureCapacity(buf, len)) return 2;
 
     memcpy(buf->data.ptr + buf->len, data, len);
     buf->len += len;

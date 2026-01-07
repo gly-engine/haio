@@ -9,9 +9,10 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
     spng_ctx *ctx = (spng_ctx*) handle->ctx;
     int ret;
 
+    printf("png state: %d %ld\n", handle->state, src->len);
+
     do {        
         if (handle->state == RAIO_FSM_WORKER_DONE) {
-            printf("png done!\n");
             break;
         }
 
@@ -20,23 +21,23 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
             break;
         }
 
-        if (!ctx) {
-            handle->ctx = spng_ctx_new(0);
-            ctx = (spng_ctx*) handle->ctx;
-        }
-
-        if (!ctx) {
-            assert(false);
-        }
-
         if (handle->state == RAIO_FSM_WORKER_NEW) {
+            if (src->len == 0) {
+                printf("waiting png..\n");
+                break;
+            }
+            ctx = spng_ctx_new(0);
+            fprintf(stderr, "aa:: %p\n", ctx);
+
+            assert(ctx);
             if ((ret = spng_set_png_buffer(ctx, src->data.u8, src->len)) != 0) {
-                printf("error: %s\n", spng_strerror(ret));
-                assert(false);
+                fprintf(stderr, "error: %s\n", spng_strerror(ret));
+                return;
             }
             struct spng_ihdr ihdr;
             spng_get_ihdr(ctx, &ihdr);
             size_t row_size = ihdr.width * 4;
+            handle->ctx = ctx;
             handle->width = ihdr.width;
             handle->height = ihdr.height;
             handle->state = RAIO_FSM_WORKER_RUNNING;
@@ -44,6 +45,8 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
                 printf("spng_encode_image() error: %s\n", spng_strerror(ret));
             }
         }
+
+        assert(ctx);
 
         size_t bytes_read = handle->width * 4;
 
@@ -54,7 +57,7 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
 
         if (ret == SPNG_EINVAL || ret == SPNG_EMEM || ret == SPNG_EIO) {
             printf("error: %s\n", spng_strerror(ret));
-            assert(false);
+            return;
         }
 
         

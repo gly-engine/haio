@@ -68,12 +68,13 @@ size_t PipelineProcess(raio_pipeline_t *pipe, char* src_ptr, size_t src_len, cha
     };
 
     pipe->workers[0](&pipe->handlers[0], &buffer_input, &pipe->buffers[1]);
-    printf("read: %ld %ld\n", buffer_input.len, pipe->buffers[1].len);
+    printf("%-32s[%d/%d] (src: %-6ld dst: %-6ld)\n", GetCodecWorkerName(pipe->workers[0]), 1, pipe->worker_count, buffer_input.len, pipe->buffers[1].len);
     for(uint8_t id = 1; id < pipe->worker_count; id++) {
         uint8_t bf1 = id & 1;
         uint8_t bf2 = bf1 ^ 1;
-        printf("%s %d/%d %d %d\n", GetCodecWorkerName(pipe->workers[id]), id,  pipe->worker_count, bf1, bf2);
-        printf("read: %ld %ld\n", pipe->buffers[bf1].len, pipe->buffers[bf2].len);
+        pipe->workers[id](&pipe->handlers[id], &pipe->buffers[bf1], &pipe->buffers[bf2]);
+        printf("%-32s[%d/%d] (src: %-6ld dst: %-6ld) %d %d\n", GetCodecWorkerName(pipe->workers[id]), id+1,  pipe->worker_count, pipe->buffers[bf1].len, pipe->buffers[bf2].len, bf1, bf2);
+    
     }
 
     return nbytes;

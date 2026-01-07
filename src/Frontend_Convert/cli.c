@@ -25,7 +25,7 @@ int FrontendConvertCli(int argc, char* argv[]) {
 
     while(PipelineIsRunning(&pipe)) {
         nbytes = fread(buffer, sizeof(char), sizeof(buffer), f_in);
-        nbytes = PipelineProcess(&pipe, buffer, sizeof(buffer), buffer, sizeof(buffer));
+        nbytes = PipelineProcess(&pipe, buffer, nbytes, buffer, sizeof(buffer));
         fwrite(buffer, sizeof(char), nbytes, f_out);
     }
 
