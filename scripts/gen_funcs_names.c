@@ -21,49 +21,85 @@ int cmp_func(const void *a, const void *b) {
     return strcmp(fa->name, fb->name);
 }
 
+static int is_ident_char(char c) {
+    return isalnum((unsigned char)c) || c == '_';
+}
+
 void add_function(const char *line) {
-    const char *p = line;
-    while (*p && isspace(*p)) p++;
-    if (strncmp(p, "void ", 5) != 0) return;
+    if (!line || !*line)
+        return;
 
-    p += 5;
-    const char *name_end = strchr(p, '(');
-    if (!name_end) return;
-    const char *params_end = strchr(name_end, ')');
-    if (!params_end) return;
+    if (isspace((unsigned char)line[0]))
+        return;
 
-    int name_len = name_end - p;
-    int params_len = params_end - name_end - 1;
+    if (line[0] == '#')
+        return;
 
-    functions[func_count].type = strdup("void");
-    functions[func_count].name = malloc(name_len + 1);
-    strncpy(functions[func_count].name, p, name_len);
-    functions[func_count].name[name_len] = '\0';
+    const char *lparen = strchr(line, '(');
+    if (!lparen)
+        return;
 
-    functions[func_count].params = malloc(params_len + 1);
-    strncpy(functions[func_count].params, name_end + 1, params_len);
-    functions[func_count].params[params_len] = '\0';
+    const char *p = lparen;
+    while (p > line && isspace((unsigned char)p[-1]))
+        p--;
+
+    const char *name_end = p;
+    while (p > line && is_ident_char(p[-1]))
+        p--;
+
+    const char *name_start = p;
+
+    if (name_start == name_end)
+        return;
+
+    if (!isupper((unsigned char)name_start[0]))
+        return;
+
+    for (const char *t = line; t < name_start; t++) {
+        if (!strncmp(t, "static", 6) &&
+            (t == line || !is_ident_char(t[-1])) &&
+            !is_ident_char(t[6])) {
+            return;
+        }
+    }
+
+    const char *rparen = strchr(lparen, ')');
+    if (!rparen)
+        return;
+
+    functions[func_count].type   = strndup(line, name_start - line);
+    functions[func_count].name   = strndup(name_start, name_end - name_start);
+    functions[func_count].params = strndup(lparen + 1, rparen - lparen - 1);
 
     func_count++;
 }
 
+
 void print_functions() {
     int first = 1;
 
+#ifdef RAIO_STUB
     printf("#ifdef RAIO_STUB\n");
     for (int i = 0; i < func_count; i++) {
         printf("%s %s(%s) {}\n", functions[i].type, functions[i].name, functions[i].params);
     }
     printf("#else\n");
+#endif
     for (int i = 0; i < func_count; i++) {
         printf("%s %s(%s);\n", functions[i].type, functions[i].name, functions[i].params);
     }
-    printf("#endif\n\n#ifndef RAIO_ONLY_PROTO\nconst struct {\n  raio_worker_func_t func;\n  const char* name;\n} raio_codec_names[] = {");
+#ifdef RAIO_STUB
+    printf("#endif\n\n");
+#endif
+
+#ifdef RAIO_NAMES
+    printf("#ifndef RAIO_ONLY_PROTO\nconst struct {\n  raio_worker_func_t func;\n  const char* name;\n} raio_codec_names[] = {");
     for (int i = 0; i < func_count; i++) {
         printf("%s{%s, \"%s\"}", first? "\n  ": ",\n  ", functions[i].name, functions[i].name);
         first = 0;
     }
     printf("\n};\n\nconst unsigned int raio_codec_names_len = %d;\n#endif\n", func_count);
+#endif
 }
 
 void free_functions() {
@@ -75,7 +111,7 @@ void free_functions() {
 }
 
 void load_functions() {
-    static const char str[] = RAIO_CODECS;
+    static const char str[] = RAIO_INPUT;
     char *p = (char *)str;
     char *end;
 

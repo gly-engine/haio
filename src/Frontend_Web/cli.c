@@ -4,7 +4,7 @@
 
 #include <uv.h>
 
-int FrontendWebHttpServer(uv_loop_t *loop, uint32_t port);
+int frontendWebHttpServer(uv_loop_t *loop, uint32_t port);
 
 int FrontendServerCli(int argc, char* argv[]) {
     static uv_loop_t loop;
@@ -12,7 +12,7 @@ int FrontendServerCli(int argc, char* argv[]) {
 
     uv_loop_init(&loop);
 
-    int err = FrontendWebHttpServer(&loop, port);
+    int err = frontendWebHttpServer(&loop, port);
     if (!err) {
         uv_run(&loop, UV_RUN_DEFAULT);
     }

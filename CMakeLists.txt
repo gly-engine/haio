@@ -6,8 +6,8 @@ set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
 set(RAIO_HEADER "${CMAKE_SOURCE_DIR}/include/raio.h")
-file(GLOB_RECURSE SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/*/*.c")
-add_executable(${PROJECT_NAME} "src/main.c;${SOURCES}")
+file(GLOB_RECURSE RAIO_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/*/*.c")
+add_executable(${PROJECT_NAME} "src/main.c;${RAIO_SOURCES}")
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include/raio)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/include)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
@@ -105,14 +105,28 @@ add_custom_target(raio_enum_names DEPENDS ${RAIO_ENUM_NAMES})
 set(RAIO_CODECS_NAMES "${CMAKE_BINARY_DIR}/include/raio/codec_names.h")
 file(GLOB RAIO_CODECS "${CMAKE_SOURCE_DIR}/src/Backend_Codecs/*.c")
 string(JOIN "," RAIO_CODECS_STR ${RAIO_CODECS})
-add_executable(gen_codec_names ${CMAKE_SOURCE_DIR}/scripts/gen_codec_names.c)
-target_compile_definitions(gen_codec_names PRIVATE RAIO_CODECS=\"${RAIO_CODECS_STR}\")
+add_executable(gen_codec_names ${CMAKE_SOURCE_DIR}/scripts/gen_funcs_names.c)
+target_compile_definitions(gen_codec_names PRIVATE RAIO_INPUT=\"${RAIO_CODECS_STR}\" RAIO_NAMES RAIO_STUB)
 add_custom_command(
     OUTPUT ${RAIO_CODECS_NAMES}
     COMMAND $<TARGET_FILE:gen_codec_names> > ${RAIO_CODECS_NAMES}
     DEPENDS gen_codec_names;${RAIO_CODECS};
 )
 add_custom_target(raio_codec_names DEPENDS ${RAIO_CODECS_NAMES})
+
+# Generation: functions.h
+set(RAIO_FUNCTIONS "${CMAKE_BINARY_DIR}/include/raio/functions.h")
+string(JOIN "," RAIO_SOURCES_STR ${RAIO_SOURCES})
+add_executable(gen_functions ${CMAKE_SOURCE_DIR}/scripts/gen_funcs_names.c)
+target_include_directories(gen_functions PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_definitions(gen_functions PRIVATE RAIO_INPUT=\"${RAIO_SOURCES_STR}\")
+add_custom_command(
+    OUTPUT ${RAIO_FUNCTIONS}
+    COMMAND $<TARGET_FILE:gen_functions> > ${RAIO_FUNCTIONS}
+    DEPENDS gen_functions;${RAIO_HEADER};${RAIO_SOURCES}
+)
+add_custom_target(raio_functions DEPENDS ${RAIO_FUNCTIONS})
+add_dependencies(${PROJECT_NAME} raio_functions)
 
 # Generation: codec_paths.h
 set(RAIO_CODEC_PATHS "${CMAKE_BINARY_DIR}/include/raio/codec_paths.h")

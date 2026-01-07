@@ -1,12 +1,13 @@
 #include <stddef.h>
 #include <assert.h>
 
+#include "raio.h"
+#include "raio/functions.h"
+
 #define RAIO_STUB
 #define RAIO_ONLY_PROTO
 
-#include "raio.h"
 #include "raio/codec_names.h"
-
 
 int main()
 {

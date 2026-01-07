@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "raio.h"
+#include "raio/functions.h"
 
 int main(int argc, char* argv[]) {
     if (argc <= 1) {

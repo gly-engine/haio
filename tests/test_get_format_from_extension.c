@@ -2,6 +2,7 @@
 #include <assert.h>
 
 #include "raio.h"
+#include "raio/functions.h"
 
 int main()
 {

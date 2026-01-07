@@ -72,27 +72,3 @@ typedef struct {
     raio_type_t current_format;
     raio_worker_func_t* funcs;
 } raio_pipeline_t;
-
-// Utils:
-char* GetExtensionFromString(char *const txt);
-raio_type_t GetFormatFromExtension(char *const txt);
-// Frontends:
-int FrontendConvertCli(int argc, char* argv[]);
-int FrontendServerCli(int argc, char* argv[]);
-// Backends:
-uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker_func_t * func_list, uint8_t size,  raio_type_t *output);
-const char *const GetCodecWorkerName(raio_worker_func_t func);
-const char *const GetCodecFormatName(raio_type_t format);
-void PipelineBegin(raio_pipeline_t* pipe, raio_type_t first_step);
-void PipelineStepAdd(raio_pipeline_t* pipe, raio_type_t next_step);
-void PipelineEnd(raio_pipeline_t* pipe, raio_type_t last_step);
-size_t PipelineProcess(raio_pipeline_t *pipe, char* src_ptr, size_t src_len, char* dst_ptr, size_t dst_len);
-bool PipelineIsRunning(raio_pipeline_t *pipe);
-bool PipelineHasError(raio_pipeline_t *pipe);
-void PipelineClean(raio_pipeline_t *pipe);
-char* GetPipelineError(raio_pipeline_t *pipe);
-// Drivers:
-int BufferPush(raio_buffer_t *buf, const void *data, size_t len);
-int BufferEnsureCapacity(raio_buffer_t *buf, size_t len);
-int BufferReset(raio_buffer_t *buf);
-int BufferMove(raio_buffer_t *src, raio_buffer_t *dst);

@@ -81,7 +81,7 @@ void on_new_connection(uv_stream_t *server, int status) {
     }
 }
 */
-int FrontendWebHttpServer(uv_loop_t *loop, uint32_t port) {
+int frontendWebHttpServer(uv_loop_t *loop, uint32_t port) {
     /*static uv_tcp_t server;
     uv_tcp_init(loop, &server);
 
