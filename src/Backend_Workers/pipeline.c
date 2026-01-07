@@ -3,11 +3,15 @@
  * @author RodrigoDornelles
  * @date 2026-01-03
  */
-#include "raio.h"
 
+#include "raio.h"
+#include "raio/functions.h"
+
+#include <stdio.h>
 /**
  */
 void PipelineBegin(raio_pipeline_t* pipe, raio_type_t first_step) {
+    memset(pipe, 0, sizeof(raio_pipeline_t));
     pipe->current_format = first_step;
     pipe->state = RAIO_FSM_PIPE_PREPARE;
 }
@@ -17,17 +21,17 @@ void PipelineBegin(raio_pipeline_t* pipe, raio_type_t first_step) {
  * @param [in,out] pipe
  */
 void PipelineStepAdd(raio_pipeline_t* pipe, raio_type_t next_step) {
-    raio_worker_func_t workers[10];
+    raio_worker_func_t workers[HAIO_MAX_STEPS_BY_WORKER];
     raio_type_t from = pipe->current_format;
     raio_type_t to = next_step;
     raio_type_t result = RAIO_TYPE_NULL;
 
-    int nworkers = GetCodecWorkersFromFormats(from, to, NULL, 0, &result);
+    uint8_t nworkers = GetCodecWorkersFromFormats(from, to, workers, HAIO_MAX_STEPS_BY_WORKER, &result);
     pipe->current_format = result;
     pipe->state = RAIO_FSM_PIPE_PREPARE;
 
-    printf("%d -> %d = %d (%d)\n", from, to, result, nworkers);
-    printf("%s -> %s = %s", GetCodecFormatName(from), GetCodecFormatName(to), GetCodecFormatName(result));
+    memcpy(&pipe->workers[pipe->worker_count], workers, nworkers * sizeof(raio_worker_func_t));
+    pipe->worker_count += nworkers;
 }
 
 /**
@@ -36,6 +40,7 @@ void PipelineStepAdd(raio_pipeline_t* pipe, raio_type_t next_step) {
  */
 void PipelineEnd(raio_pipeline_t* pipe, raio_type_t last_step) {
     PipelineStepAdd(pipe, last_step);
+    pipe->state = RAIO_FSM_PIPE_RUNNING;
 }
 
 /**
@@ -53,11 +58,30 @@ void PipelineEnd(raio_pipeline_t* pipe, raio_type_t last_step) {
  * @retval 0 when has error
  */
 size_t PipelineProcess(raio_pipeline_t *pipe, char* src_ptr, size_t src_len, char* dst_ptr, size_t dst_len) {
+    raio_worker_fsm_t last_state;
+    size_t nbytes = 0;
 
+    raio_buffer_t buffer_input = {
+        .data.str = src_ptr,
+        .size = src_len,
+        .len = src_len
+    };
+
+    pipe->workers[0](&pipe->handlers[0], &buffer_input, &pipe->buffers[1]);
+    printf("read: %ld %ld\n", buffer_input.len, pipe->buffers[1].len);
+    for(uint8_t id = 1; id < pipe->worker_count; id++) {
+        uint8_t bf1 = id & 1;
+        uint8_t bf2 = bf1 ^ 1;
+        printf("%s %d/%d %d %d\n", GetCodecWorkerName(pipe->workers[id]), id,  pipe->worker_count, bf1, bf2);
+        printf("read: %ld %ld\n", pipe->buffers[bf1].len, pipe->buffers[bf2].len);
+    }
+
+    return nbytes;
 }
 
 bool PipelineIsRunning(raio_pipeline_t *pipe) {
-    return false;
+    if (PipelineHasError(pipe)) return false;
+    return pipe->state == RAIO_FSM_PIPE_RUNNING;
 }
 
 /**
@@ -71,7 +95,7 @@ void PipelineClean(raio_pipeline_t *pipe) {
 }
 
 bool PipelineHasError(raio_pipeline_t *pipe) {
-    return false;
+    return pipe->error != NULL;
 }
 
 /**
@@ -80,10 +104,5 @@ bool PipelineHasError(raio_pipeline_t *pipe) {
  * @retval NULL when no has error
  */
 char* GetPipelineError(raio_pipeline_t *pipe) {
-
-}
-
-// @todo refact
-const raio_worker_t *GetPipelineWorker(raio_type_t from, raio_type_t to) {
-    return NULL;
+    return pipe->error;
 }

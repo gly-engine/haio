@@ -3,6 +3,14 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#ifndef HAIO_MAX_STEPS_BY_WORKER
+#define HAIO_MAX_STEPS_BY_WORKER (5u)
+#endif
+
+#ifndef HAIO_MAX_WORKERS_BY_PIPE
+#define HAIO_MAX_WORKERS_BY_PIPE (HAIO_MAX_STEPS_BY_WORKER * 5)
+#endif
+
 typedef enum {
     RAIO_TYPE_NULL,
     RAIO_TYPE_BUFFER,
@@ -23,13 +31,14 @@ typedef enum {
     RAIO_FSM_WORKER_NEW,
     RAIO_FSM_WORKER_RUNNING,
     RAIO_FSM_WORKER_FINISHING,
-    RAIO_FSM_WORKER_DONE,
-    RAIO_FSM_WORKER_IDLE
+    RAIO_FSM_WORKER_DONE
 } raio_worker_fsm_t;
 
 typedef enum {
     RAIO_FSM_PIPE_NEW,
-    RAIO_FSM_PIPE_PREPARE
+    RAIO_FSM_PIPE_PREPARE,
+    RAIO_FSM_PIPE_RUNNING,
+    RAIO_FSM_PIPE_DONE
 } raio_pipe_fsm_t;
 
 typedef struct {
@@ -67,8 +76,11 @@ typedef struct {
 
 typedef struct {
     char *error;
+    uint8_t worker_count;
     raio_pipe_fsm_t state;
     raio_type_t mime_format;
     raio_type_t current_format;
-    raio_worker_func_t* funcs;
+    raio_buffer_t buffers[2];
+    raio_worker_func_t workers[HAIO_MAX_WORKERS_BY_PIPE];
+    raio_worker_handle_t handlers[HAIO_MAX_WORKERS_BY_PIPE];
 } raio_pipeline_t;

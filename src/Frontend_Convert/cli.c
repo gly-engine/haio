@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "raio.h"
+#include "raio/functions.h"
 
 #define BUFFER_SIZE 1024
 
@@ -32,6 +33,8 @@ int FrontendConvertCli(int argc, char* argv[]) {
         printf("[error] %s", GetPipelineError(&pipe));
         return 1;
     }
+
+    printf("feito!");
 
     fclose(f_in);
     fclose(f_out);
