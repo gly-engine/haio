@@ -4,6 +4,7 @@
 #include <spng.h>
 
 #include "raio.h"
+#include "raio/functions.h"
 
 void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
     spng_ctx *ctx = (spng_ctx*) handle->ctx;
@@ -23,11 +24,9 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
 
         if (handle->state == RAIO_FSM_WORKER_NEW) {
             if (src->len == 0) {
-                printf("waiting png..\n");
                 break;
             }
             ctx = spng_ctx_new(0);
-            fprintf(stderr, "aa:: %p\n", ctx);
 
             assert(ctx);
             if ((ret = spng_set_png_buffer(ctx, src->data.u8, src->len)) != 0) {
@@ -36,7 +35,6 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
             }
             struct spng_ihdr ihdr;
             spng_get_ihdr(ctx, &ihdr);
-            size_t row_size = ihdr.width * 4;
             handle->ctx = ctx;
             handle->width = ihdr.width;
             handle->height = ihdr.height;

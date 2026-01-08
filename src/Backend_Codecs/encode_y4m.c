@@ -9,6 +9,11 @@
 #include "raio.h"
 
 void EncodeYUV420ToY4M(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
+    /** @todo refact this */
+    (void) handle;
+    (void) src;
+    (void) dst;
+    
     /*if (!bmp || !out_size || bmp->buffer_len == 0) return NULL;
 
     int w = bmp->width;

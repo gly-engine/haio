@@ -1,13 +1,16 @@
 #include <stdlib.h>
 #include <assert.h>
+#include <string.h>
 
 #include "raio.h"
+#include "raio/functions.h"
 
 void BufferAggregatorUntilZero(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
     raio_buffer_t *aux = (raio_buffer_t*) handle->ctx;
 
     do {
         if (handle->state == RAIO_FSM_WORKER_NEW) {
+            /** @todo unecessary malloc? */
             aux = malloc(sizeof(raio_buffer_t));
             memset(aux, 0, sizeof(raio_buffer_t));
             handle->ctx = aux;

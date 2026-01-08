@@ -4,6 +4,7 @@
 #include <assert.h>
 
 #include "raio.h"
+#include "raio/functions.h"
 
 /**
  * @pre needs @c handle.width and @c handle.height

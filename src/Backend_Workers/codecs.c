@@ -44,7 +44,6 @@ uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker
     uint8_t count = 0;
     uint16_t key = (from << 8) | to;
     raio_worker_path_t *path = bsearch(&key, raio_codec_paths, tlen, tsize, cmpWorkers);
-    raio_worker_func_t *res = NULL;
 
     if (!path || path->worker_count <= 0) return 0;
     if (func_list && path->worker_count > size) return 0; 
@@ -65,8 +64,8 @@ uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker
 /**
  * @retval "NULL" when invalid func
  */
-const char *const GetCodecWorkerName(raio_worker_func_t func) {
-    for (int i = 0; i < raio_codec_names_len; i++) {
+const char *GetCodecWorkerName(raio_worker_func_t func) {
+    for (unsigned int i = 0; i < raio_codec_names_len; i++) {
         if (raio_codec_names[i].func == func) {
             return raio_codec_names[i].name;
         }
@@ -77,7 +76,7 @@ const char *const GetCodecWorkerName(raio_worker_func_t func) {
 /**
  * @retval "NULL" when invalid format
  */
-const char *const GetCodecFormatName(raio_type_t format) {
+const char *GetCodecFormatName(raio_type_t format) {
     if (RAIO_TYPE_NULL < format && format < RAIO_TYPE_COUNT) {
         return raio_types_names[format - 1];
     }

@@ -7,6 +7,9 @@
 int frontendWebHttpServer(uv_loop_t *loop, uint32_t port);
 
 int FrontendServerCli(int argc, char* argv[]) {
+    (void) argc;
+    (void) argv;
+
     static uv_loop_t loop;
     int32_t port = 8080;
 

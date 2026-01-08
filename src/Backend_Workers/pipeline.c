@@ -7,6 +7,7 @@
 #include "raio.h"
 #include "raio/functions.h"
 
+#include <string.h>
 #include <stdio.h>
 /**
  */
@@ -58,8 +59,10 @@ void PipelineEnd(raio_pipeline_t* pipe, raio_type_t last_step) {
  * @retval 0 when has error
  */
 size_t PipelineProcess(raio_pipeline_t *pipe, char* src_ptr, size_t src_len, char* dst_ptr, size_t dst_len) {
-    raio_worker_fsm_t last_state;
+    //raio_worker_fsm_t last_state;
     size_t nbytes = 0;
+    (void) dst_ptr;
+    (void) dst_len;
 
     raio_buffer_t buffer_input = {
         .data.str = src_ptr,
@@ -92,7 +95,7 @@ bool PipelineIsRunning(raio_pipeline_t *pipe) {
  * @warning should be called @c free(pipe) after the clean
  */
 void PipelineClean(raio_pipeline_t *pipe) {
-
+    (void) pipe;
 }
 
 bool PipelineHasError(raio_pipeline_t *pipe) {
