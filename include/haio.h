@@ -42,6 +42,7 @@ typedef enum {
 } haio_pipe_fsm_t;
 
 typedef struct {
+    size_t pos;
     size_t len;
     size_t size;
     union {
@@ -86,7 +87,8 @@ typedef struct {
     haio_pipe_fsm_t state;
     haio_type_t mime_format;
     haio_type_t current_format;
-    haio_buffer_t buffers[3];
+    haio_buffer_t buffers[2];
+    haio_buffer_t aux_buf_out[2];
     haio_worker_func_t workers[HAIO_MAX_WORKERS_BY_PIPE];
     haio_worker_handle_t handlers[HAIO_MAX_WORKERS_BY_PIPE];
 } haio_pipeline_t;

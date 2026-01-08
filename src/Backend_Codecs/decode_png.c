@@ -35,7 +35,9 @@ void DecodePngBufferToRGBA8(haio_worker_handle_t *handle, haio_buffer_t *src, ha
                 return;
             }
             struct spng_ihdr ihdr;
-            spng_get_ihdr(ctx, &ihdr);
+            if((ret = spng_get_ihdr(ctx, &ihdr)) != 0) {
+                printf("spng_encode_image() error: %s\n", spng_strerror(ret));
+            }
             handle->ctx = ctx;
             handle->state = HAIO_FSM_WORKER_RUNNING;
             handle->canvas.width = (uint16_t) ihdr.width;

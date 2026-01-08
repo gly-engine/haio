@@ -34,7 +34,7 @@ int FrontendConvertCli(int argc, char* argv[]) {
         return 1;
     }
 
-    printf("feito!");
+    //printf("feito!");
 
     fclose(f_in);
     fclose(f_out);

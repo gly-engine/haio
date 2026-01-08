@@ -91,7 +91,8 @@ size_t PipelineProcess(haio_pipeline_t *pipe, char* src_ptr, size_t src_len, cha
         if ((id + 1) == pipe->worker_count) {
             size_t len = pipe->buffers[bf2].len;
             if (len > dst_len) {
-                assert(false);
+                BufferPush(pipe->aux_buf_out, pipe->buffers[bf2].data.str, pipe->buffers[bf2].len);
+                nbytes = BufferPop(pipe->aux_buf_out, dst_ptr, dst_len);
             } else {
                 memcpy(dst_ptr, pipe->buffers[bf2].data.str, len);
                 nbytes = len;
@@ -101,7 +102,11 @@ size_t PipelineProcess(haio_pipeline_t *pipe, char* src_ptr, size_t src_len, cha
 
     if (is_done) {
         pipe->state = HAIO_FSM_PIPE_DONE;
-        printf("ACABOU!\n");
+    }
+    
+    if (nbytes == 0 && BufferHasQeue(pipe->aux_buf_out)) {
+        nbytes = BufferPop(pipe->aux_buf_out, dst_ptr, dst_len);
+        pipe->state = HAIO_FSM_PIPE_RUNNING;
     }
 
     return nbytes;

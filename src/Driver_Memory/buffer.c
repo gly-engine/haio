@@ -42,6 +42,25 @@ int BufferPush(haio_buffer_t *buf, const void *data, size_t len) {
     return 0;
 }
 
+size_t BufferPop(haio_buffer_t *buf, void *out, size_t len) {
+    if (!buf || !out) return 0;
+
+    size_t available = buf->len - buf->pos;
+    if (available == 0) return 0;
+
+    size_t to_copy = (len < available) ? len : available;
+
+
+    memcpy(out, buf->data.u8 + buf->pos, to_copy);
+    buf->pos += to_copy;
+
+    return to_copy;
+}
+
+bool BufferHasQeue(haio_buffer_t *buf) {
+    return buf->len > 0 && buf->pos > 0 && buf->pos < buf->len;
+}
+
 /**
  * @details move the buffer from @c src to @c dst ,
  * preserving the largest allocation, and clears src.
@@ -64,6 +83,7 @@ int BufferMove(haio_buffer_t *src, haio_buffer_t *dst) {
     src->data.ptr = NULL;
     src->size = 0;
     src->len = 0;
+    src->pos = 0;
     return 0;
 }
 
@@ -74,4 +94,5 @@ void BufferClose(haio_buffer_t *buf) {
     buf->data.ptr = NULL;
     buf->size = 0;
     buf->len = 0;
+    buf->pos = 0;
 }
