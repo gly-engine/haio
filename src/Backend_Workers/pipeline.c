@@ -42,6 +42,9 @@ void PipelineStepAdd(raio_pipeline_t* pipe, raio_type_t next_step) {
 void PipelineEnd(raio_pipeline_t* pipe, raio_type_t last_step) {
     PipelineStepAdd(pipe, last_step);
     pipe->state = RAIO_FSM_PIPE_RUNNING;
+    for (uint8_t i = 1; i < pipe->worker_count; i++) {
+        pipe->handlers[i].canvas.parent = &pipe->handlers[i - 1].canvas;
+    }
 }
 
 /**

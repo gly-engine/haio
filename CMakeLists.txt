@@ -26,11 +26,9 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     -Wredundant-decls -Wnested-externs 
     -Wcast-align -Wcast-qual 
     -Wpointer-arith -Wwrite-strings 
-    -Wundef -Wswitch-enum 
     -Winit-self -Wuninitialized 
     -Wfloat-equal -Wvla 
     -Wstack-protector 
-    -fstack-protector-strong
 )
 
 set(LIBUV_VERSION "v1.51.0")

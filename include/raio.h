@@ -51,8 +51,17 @@ typedef struct {
     } data;
 } raio_buffer_t;
 
+typedef struct raio_canvas_s {
+    uint16_t width;
+    uint16_t height;
+    const struct raio_canvas_s *parent;
+} raio_canvas_t;
+
 typedef struct {
-    void* ctx;
+    union {
+        void* ctx;
+        raio_buffer_t buf;
+    } usr;
     union {
         struct {
             uint16_t count;
@@ -62,8 +71,7 @@ typedef struct {
             size_t count;
         } nbytes;
     } progress;
-    uint16_t width;
-    uint16_t height;
+    raio_canvas_t canvas;
     raio_worker_fsm_t state;
 } raio_worker_handle_t;
 

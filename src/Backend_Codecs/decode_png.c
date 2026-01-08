@@ -7,7 +7,7 @@
 #include "raio/functions.h"
 
 void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
-    spng_ctx *ctx = (spng_ctx*) handle->ctx;
+    spng_ctx *ctx = (spng_ctx*) handle->usr.ctx;
     int ret;
 
     printf("png state: %d %ld\n", handle->state, src->len);
@@ -35,10 +35,10 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
             }
             struct spng_ihdr ihdr;
             spng_get_ihdr(ctx, &ihdr);
-            handle->ctx = ctx;
-            handle->width = (uint16_t) ihdr.width;
-            handle->height = (uint16_t) ihdr.height;
+            handle->usr.ctx = ctx;
             handle->state = RAIO_FSM_WORKER_RUNNING;
+            handle->canvas.width = (uint16_t) ihdr.width;
+            handle->canvas.height = (uint16_t) ihdr.height;
             if((ret = spng_decode_image(ctx, NULL, 0, SPNG_FMT_RGBA8, SPNG_DECODE_PROGRESSIVE)) != 0) {
                 printf("spng_encode_image() error: %s\n", spng_strerror(ret));
             }
@@ -46,7 +46,7 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
 
         assert(ctx);
 
-        size_t bytes_read = handle->width * 4;
+        size_t bytes_read = handle->canvas.width * 4;
 
         BufferEnsureCapacity(dst, bytes_read);
         ret = spng_decode_row(ctx, dst->data.ptr, bytes_read);
@@ -59,7 +59,7 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
         }
 
         
-        if (handle->progress.lines.count >= handle->height) {
+        if (handle->progress.lines.count >= handle->canvas.height) {
             handle->state = RAIO_FSM_WORKER_FINISHING;
         }
     }

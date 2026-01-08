@@ -6,14 +6,14 @@
 #include "raio/functions.h"
 
 void BufferAggregatorUntilZero(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
-    raio_buffer_t *aux = (raio_buffer_t*) handle->ctx;
+    raio_buffer_t *aux = (raio_buffer_t*) handle->usr.ctx;
 
     do {
         if (handle->state == RAIO_FSM_WORKER_NEW) {
             /** @todo unecessary malloc? */
             aux = malloc(sizeof(raio_buffer_t));
             memset(aux, 0, sizeof(raio_buffer_t));
-            handle->ctx = aux;
+            handle->usr.ctx = aux;
         }
 
         if (handle->state == RAIO_FSM_WORKER_DONE) {
@@ -26,7 +26,7 @@ void BufferAggregatorUntilZero(raio_worker_handle_t *handle, raio_buffer_t *src,
             handle->state = RAIO_FSM_WORKER_DONE;
             BufferMove(aux, dst);
             free(aux);
-            handle->ctx = NULL;
+            handle->usr.ctx = NULL;
             break;
         }
 
