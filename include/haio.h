@@ -55,6 +55,8 @@ typedef struct {
 typedef struct haio_canvas_s {
     uint16_t width;
     uint16_t height;
+    uint16_t offset_x;
+    uint16_t offset_y;
     const struct haio_canvas_s *parent;
 } haio_canvas_t;
 

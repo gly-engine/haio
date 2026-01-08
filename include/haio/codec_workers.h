@@ -27,6 +27,10 @@ const haio_worker_t haio_codec_workers[] = {
         .func = EncodeYUV420ToY4M
     },
     {
+        .steps = { HAIO_TYPE_IMG_RGBA8, HAIO_TYPE_FILTER_CROP, HAIO_TYPE_IMG_RGBA8 },
+        .func = FilterRGBA8Crop
+    },
+    {
         .steps = { HAIO_TYPE_BUFFER_GZIP },
         .func = ConvertNotImplemented
     }
