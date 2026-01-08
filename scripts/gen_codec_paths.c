@@ -1,3 +1,6 @@
+/**
+ * @file gen_codec_paths.c
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -78,6 +81,20 @@ void build_graph(void) {
             };
         }
     }
+}
+
+int find_reflexive_path(uint8_t src, uint8_t dst, uint8_t *out, uint8_t *out_count) {
+    
+    for(int i = 0; i < haio_codec_workers_len; i++) {
+        const haio_worker_t* worker = &haio_codec_workers[i];
+        if (worker->steps[0] != src) continue;
+        if (worker->steps[1] != dst) continue;
+        if (worker->steps[2] != src) continue;
+        out[0] = (uint8_t)i;
+        *out_count = 1;
+        return 0;
+    }
+    return 0;
 }
 
 int find_path(uint8_t src, uint8_t dst, uint8_t *out, uint8_t *out_count) {
@@ -161,13 +178,14 @@ const char *format_name(uint8_t id) {
 void print_lut(void) {
     int count = 0;
     printf("typedef struct {\n  uint16_t src_to_dst;\n  uint8_t worker_count;\n  uint8_t workers[%d];\n} haio_worker_path_t;\n\nhaio_worker_path_t haio_codec_paths[] = {", MAX_PATH);
-    for (int s = 1; (s + 1) < HAIO_TYPE_COUNT; s++) {
-        for (int d = 1; (d + 1) < HAIO_TYPE_COUNT; d++) {
+    for (int s = 1; s < HAIO_TYPE_COUNT; s++) {
+        for (int d = 1; d < HAIO_TYPE_COUNT; d++) {
             if (s == d) continue;
             haio_pipeline_entry_t e;
             memset(&e, 0, sizeof(e));
             e.src_to_dst = (s << 8) | d;
             find_path(s, d, e.workers, &e.worker_count);
+            if(e.worker_count <= 0) find_reflexive_path(s, d, e.workers, &e.worker_count);
             if(e.worker_count <= 0) continue;
             printf("%s/* %s -> %s ",
                 count++? ",\n  ": "\n  ", 
