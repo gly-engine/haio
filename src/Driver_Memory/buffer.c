@@ -66,3 +66,12 @@ int BufferMove(haio_buffer_t *src, haio_buffer_t *dst) {
     src->len = 0;
     return 0;
 }
+
+void BufferClose(haio_buffer_t *buf) {
+    if (!buf) return;
+    if (!buf->data.ptr || !buf->len) return;
+    free(buf->data.ptr);
+    buf->data.ptr = NULL;
+    buf->size = 0;
+    buf->len = 0;
+}

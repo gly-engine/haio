@@ -58,10 +58,7 @@ typedef struct haio_canvas_s {
 } haio_canvas_t;
 
 typedef struct {
-    union {
-        void* ctx;
-        haio_buffer_t buf;
-    } usr;
+    void* ctx;
     union {
         struct {
             uint16_t count;
@@ -71,6 +68,7 @@ typedef struct {
             size_t count;
         } nbytes;
     } progress;
+    haio_buffer_t aux;
     haio_canvas_t canvas;
     haio_worker_fsm_t state;
 } haio_worker_handle_t;
@@ -88,7 +86,7 @@ typedef struct {
     haio_pipe_fsm_t state;
     haio_type_t mime_format;
     haio_type_t current_format;
-    haio_buffer_t buffers[2];
+    haio_buffer_t buffers[3];
     haio_worker_func_t workers[HAIO_MAX_WORKERS_BY_PIPE];
     haio_worker_handle_t handlers[HAIO_MAX_WORKERS_BY_PIPE];
 } haio_pipeline_t;

@@ -52,18 +52,16 @@ void EncodeRGBA8ToPPM(haio_worker_handle_t *handle, haio_buffer_t *src, haio_buf
         uint8_t *dst_ptr = &dst->data.u8[dst->len];
         uint8_t *dst_end = dst_ptr + nbytes_rgb;
         uint8_t *src_ptr = src->data.u8;
-        uint8_t channel = 0;
 
         handle->progress.nbytes.count += nbytes_rgb;
         dst->len += nbytes_rgb;
 
         // @todo otimze with SSSE3
         while (dst_ptr < dst_end) {
-            if ((channel++ & 3) != 3) {
-                *dst_ptr++ = *src_ptr++;
-            } else {
-                src_ptr++;
-            }
+            *dst_ptr++ = *src_ptr++;
+            *dst_ptr++ = *src_ptr++;
+            *dst_ptr++ = *src_ptr++;
+            src_ptr++;
         }
 
         if (handle->progress.nbytes.count >= handle->progress.nbytes.total) {

@@ -9,6 +9,8 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
+
 /**
  */
 void PipelineBegin(haio_pipeline_t* pipe, haio_type_t first_step) {
@@ -73,14 +75,33 @@ size_t PipelineProcess(haio_pipeline_t *pipe, char* src_ptr, size_t src_len, cha
         .len = src_len
     };
 
+    pipe->buffers[1].len = 0;
     pipe->workers[0](&pipe->handlers[0], &buffer_input, &pipe->buffers[1]);
-    printf("%-32s[%d/%d] (src: %-6ld dst: %-6ld)\n", GetCodecWorkerName(pipe->workers[0]), 1, pipe->worker_count, buffer_input.len, pipe->buffers[1].len);
+    bool is_done = pipe->handlers[0].state == HAIO_FSM_WORKER_DONE;
+
+    //printf("\n%-32s[%d/%d] (src: %-6ld dst: %-6ld)\n", GetCodecWorkerName(pipe->workers[0]), 1, pipe->worker_count, buffer_input.len, pipe->buffers[1].len);
     for(uint8_t id = 1; id < pipe->worker_count; id++) {
         uint8_t bf1 = id & 1;
         uint8_t bf2 = bf1 ^ 1;
         pipe->workers[id](&pipe->handlers[id], &pipe->buffers[bf1], &pipe->buffers[bf2]);
-        printf("%-32s[%d/%d] (src: %-6ld dst: %-6ld) %d %d\n", GetCodecWorkerName(pipe->workers[id]), id+1,  pipe->worker_count, pipe->buffers[bf1].len, pipe->buffers[bf2].len, bf1, bf2);
-    
+        //printf("%-32s[%d/%d] (src: %-6ld dst: %-6ld) %d %d\n", GetCodecWorkerName(pipe->workers[id]), id+1,  pipe->worker_count, pipe->buffers[bf1].len, pipe->buffers[bf2].len, bf1, bf2);
+        pipe->buffers[bf1].len = 0;
+        is_done &= pipe->handlers[id].state == HAIO_FSM_WORKER_DONE;
+        
+        if ((id + 1) == pipe->worker_count) {
+            size_t len = pipe->buffers[bf2].len;
+            if (len > dst_len) {
+                assert(false);
+            } else {
+                memcpy(dst_ptr, pipe->buffers[bf2].data.str, len);
+                nbytes = len;
+            }
+        }
+    }
+
+    if (is_done) {
+        pipe->state = HAIO_FSM_PIPE_DONE;
+        printf("ACABOU!\n");
     }
 
     return nbytes;
