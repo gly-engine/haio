@@ -4,34 +4,34 @@
  * @date 2026-01-03
  */
 
-#include "raio.h"
-#include "raio/functions.h"
+#include "haio.h"
+#include "haio/functions.h"
 
 #include <string.h>
 #include <stdio.h>
 /**
  */
-void PipelineBegin(raio_pipeline_t* pipe, raio_type_t first_step) {
-    memset(pipe, 0, sizeof(raio_pipeline_t));
+void PipelineBegin(haio_pipeline_t* pipe, haio_type_t first_step) {
+    memset(pipe, 0, sizeof(haio_pipeline_t));
     pipe->current_format = first_step;
-    pipe->state = RAIO_FSM_PIPE_PREPARE;
+    pipe->state = HAIO_FSM_PIPE_PREPARE;
 }
 
 /**
  * @details add tasks to streaming pipeline
  * @param [in,out] pipe
  */
-void PipelineStepAdd(raio_pipeline_t* pipe, raio_type_t next_step) {
-    raio_worker_func_t workers[HAIO_MAX_STEPS_BY_WORKER];
-    raio_type_t from = pipe->current_format;
-    raio_type_t to = next_step;
-    raio_type_t result = RAIO_TYPE_NULL;
+void PipelineStepAdd(haio_pipeline_t* pipe, haio_type_t next_step) {
+    haio_worker_func_t workers[HAIO_MAX_STEPS_BY_WORKER];
+    haio_type_t from = pipe->current_format;
+    haio_type_t to = next_step;
+    haio_type_t result = HAIO_TYPE_NULL;
 
     uint8_t nworkers = GetCodecWorkersFromFormats(from, to, workers, HAIO_MAX_STEPS_BY_WORKER, &result);
     pipe->current_format = result;
-    pipe->state = RAIO_FSM_PIPE_PREPARE;
+    pipe->state = HAIO_FSM_PIPE_PREPARE;
 
-    memcpy(&pipe->workers[pipe->worker_count], workers, nworkers * sizeof(raio_worker_func_t));
+    memcpy(&pipe->workers[pipe->worker_count], workers, nworkers * sizeof(haio_worker_func_t));
     pipe->worker_count += nworkers;
 }
 
@@ -39,9 +39,9 @@ void PipelineStepAdd(raio_pipeline_t* pipe, raio_type_t next_step) {
  * @details finish pipeline tasks
  * @param [in,out] pipe
  */
-void PipelineEnd(raio_pipeline_t* pipe, raio_type_t last_step) {
+void PipelineEnd(haio_pipeline_t* pipe, haio_type_t last_step) {
     PipelineStepAdd(pipe, last_step);
-    pipe->state = RAIO_FSM_PIPE_RUNNING;
+    pipe->state = HAIO_FSM_PIPE_RUNNING;
     for (uint8_t i = 1; i < pipe->worker_count; i++) {
         pipe->handlers[i].canvas.parent = &pipe->handlers[i - 1].canvas;
     }
@@ -61,13 +61,13 @@ void PipelineEnd(raio_pipeline_t* pipe, raio_type_t last_step) {
  * @retval 0 when process is finish
  * @retval 0 when has error
  */
-size_t PipelineProcess(raio_pipeline_t *pipe, char* src_ptr, size_t src_len, char* dst_ptr, size_t dst_len) {
-    //raio_worker_fsm_t last_state;
+size_t PipelineProcess(haio_pipeline_t *pipe, char* src_ptr, size_t src_len, char* dst_ptr, size_t dst_len) {
+    //haio_worker_fsm_t last_state;
     size_t nbytes = 0;
     (void) dst_ptr;
     (void) dst_len;
 
-    raio_buffer_t buffer_input = {
+    haio_buffer_t buffer_input = {
         .data.str = src_ptr,
         .size = src_len,
         .len = src_len
@@ -86,9 +86,9 @@ size_t PipelineProcess(raio_pipeline_t *pipe, char* src_ptr, size_t src_len, cha
     return nbytes;
 }
 
-bool PipelineIsRunning(raio_pipeline_t *pipe) {
+bool PipelineIsRunning(haio_pipeline_t *pipe) {
     if (PipelineHasError(pipe)) return false;
-    return pipe->state == RAIO_FSM_PIPE_RUNNING;
+    return pipe->state == HAIO_FSM_PIPE_RUNNING;
 }
 
 /**
@@ -97,11 +97,11 @@ bool PipelineIsRunning(raio_pipeline_t *pipe) {
  *
  * @warning should be called @c free(pipe) after the clean
  */
-void PipelineClean(raio_pipeline_t *pipe) {
+void PipelineClean(haio_pipeline_t *pipe) {
     (void) pipe;
 }
 
-bool PipelineHasError(raio_pipeline_t *pipe) {
+bool PipelineHasError(haio_pipeline_t *pipe) {
     return pipe->error != NULL;
 }
 
@@ -110,6 +110,6 @@ bool PipelineHasError(raio_pipeline_t *pipe) {
  * @return string null terminted with error message
  * @retval NULL when no has error
  */
-char* GetPipelineError(raio_pipeline_t *pipe) {
+char* GetPipelineError(haio_pipeline_t *pipe) {
     return pipe->error;
 }

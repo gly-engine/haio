@@ -1,6 +1,6 @@
 # Custom Configs
 DOXYFILE_ENCODING      = UTF-8
-PROJECT_NAME           = "Raio CDN"
+PROJECT_NAME           = "Haio"
 PROJECT_NUMBER         = 0.0.1
 PROJECT_BRIEF          = "..."
 PROJECT_LOGO           = 

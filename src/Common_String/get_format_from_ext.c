@@ -1,4 +1,4 @@
-#include "raio.h"
+#include "haio.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -16,22 +16,22 @@ typedef struct {
         uint32_t u32;
     } ext;
     uint32_t     mask;
-    raio_type_t format;
-} raio_ext_t;
+    haio_type_t format;
+} haio_ext_t;
 
 /**
  * @pre must be ordered by @c.ext.str_
  */
-static const raio_ext_t extensions[] = {
-    { { "png" }, SIZE(3), RAIO_TYPE_IMG_PNG },
-    { { "ppm" }, SIZE(3), RAIO_TYPE_IMG_PPM },
-    { { "y4m" }, SIZE(3), RAIO_TYPE_IMG_Y4M420 }
+static const haio_ext_t extensions[] = {
+    { { "png" }, SIZE(3), HAIO_TYPE_IMG_PNG },
+    { { "ppm" }, SIZE(3), HAIO_TYPE_IMG_PPM },
+    { { "y4m" }, SIZE(3), HAIO_TYPE_IMG_Y4M420 }
 };
 
-raio_type_t GetFormatFromExtension(char *const txt)
+haio_type_t GetFormatFromExtension(char *const txt)
 {
     if (!txt || !txt[0]) {
-        return RAIO_TYPE_NULL;
+        return HAIO_TYPE_NULL;
     }
 
     uint32_t key;
@@ -64,5 +64,5 @@ raio_type_t GetFormatFromExtension(char *const txt)
             return extensions[mid].format;
         }
     }
-    return RAIO_TYPE_NULL;
+    return HAIO_TYPE_NULL;
 }

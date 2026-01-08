@@ -3,26 +3,26 @@
 
 #include <spng.h>
 
-#include "raio.h"
-#include "raio/functions.h"
+#include "haio.h"
+#include "haio/functions.h"
 
-void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
+void DecodePngBufferToRGBA8(haio_worker_handle_t *handle, haio_buffer_t *src, haio_buffer_t *dst) {
     spng_ctx *ctx = (spng_ctx*) handle->usr.ctx;
     int ret;
 
     printf("png state: %d %ld\n", handle->state, src->len);
 
     do {        
-        if (handle->state == RAIO_FSM_WORKER_DONE) {
+        if (handle->state == HAIO_FSM_WORKER_DONE) {
             break;
         }
 
-        if (handle-> state == RAIO_FSM_WORKER_FINISHING) {
-            handle->state = RAIO_FSM_WORKER_DONE;
+        if (handle-> state == HAIO_FSM_WORKER_FINISHING) {
+            handle->state = HAIO_FSM_WORKER_DONE;
             break;
         }
 
-        if (handle->state == RAIO_FSM_WORKER_NEW) {
+        if (handle->state == HAIO_FSM_WORKER_NEW) {
             if (src->len == 0) {
                 break;
             }
@@ -36,7 +36,7 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
             struct spng_ihdr ihdr;
             spng_get_ihdr(ctx, &ihdr);
             handle->usr.ctx = ctx;
-            handle->state = RAIO_FSM_WORKER_RUNNING;
+            handle->state = HAIO_FSM_WORKER_RUNNING;
             handle->canvas.width = (uint16_t) ihdr.width;
             handle->canvas.height = (uint16_t) ihdr.height;
             if((ret = spng_decode_image(ctx, NULL, 0, SPNG_FMT_RGBA8, SPNG_DECODE_PROGRESSIVE)) != 0) {
@@ -60,7 +60,7 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
 
         
         if (handle->progress.lines.count >= handle->canvas.height) {
-            handle->state = RAIO_FSM_WORKER_FINISHING;
+            handle->state = HAIO_FSM_WORKER_FINISHING;
         }
     }
     while(0);

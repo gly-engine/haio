@@ -3,8 +3,8 @@
 #include <string.h>
 #include <assert.h>
 
-#include "raio.h"
-#include "raio/functions.h"
+#include "haio.h"
+#include "haio/functions.h"
 
 /**
  * @pre needs @c handle.width and @c handle.height
@@ -12,22 +12,22 @@
  * @param [in] src
  * @param [out] dst
  */
-void EncodeRGBA8ToPPM(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst)
+void EncodeRGBA8ToPPM(haio_worker_handle_t *handle, haio_buffer_t *src, haio_buffer_t *dst)
 {
     // @todo move??
     dst->len = 0;
 
     do {
-        if (handle->state == RAIO_FSM_WORKER_DONE) {
+        if (handle->state == HAIO_FSM_WORKER_DONE) {
             break;
         }
 
-        if (handle->state == RAIO_FSM_WORKER_FINISHING) {
-            handle->state = RAIO_FSM_WORKER_DONE;
+        if (handle->state == HAIO_FSM_WORKER_FINISHING) {
+            handle->state = HAIO_FSM_WORKER_DONE;
             break;
         }
 
-        if (handle->state == RAIO_FSM_WORKER_NEW) {
+        if (handle->state == HAIO_FSM_WORKER_NEW) {
             if (src->len == 0) break;
             if (handle->canvas.parent->width == 0 || handle->canvas.parent->height == 0) {
                 assert(false);
@@ -40,7 +40,7 @@ void EncodeRGBA8ToPPM(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buf
             handle->progress.nbytes.count = 0;
             handle->progress.nbytes.total = (handle->canvas.width * handle->canvas.height) * 3lu;
             dst->len += (size_t) snprintf(dst->data.str, dst->size, "P6\n%d %d\n255\n", handle->canvas.width, handle->canvas.height);
-            handle->state = RAIO_FSM_WORKER_RUNNING;
+            handle->state = HAIO_FSM_WORKER_RUNNING;
         }
 
         if (src->len % 4 != 0) {
@@ -67,7 +67,7 @@ void EncodeRGBA8ToPPM(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buf
         }
 
         if (handle->progress.nbytes.count >= handle->progress.nbytes.total) {
-            handle->state = RAIO_FSM_WORKER_FINISHING;
+            handle->state = HAIO_FSM_WORKER_FINISHING;
         }
     } while (0);
 }

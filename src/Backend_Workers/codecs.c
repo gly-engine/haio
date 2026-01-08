@@ -6,14 +6,14 @@
 
 #include <stdlib.h>
 
-#include "raio.h"
-#include "raio/enum_names.h"
-#include "raio/codec_names.h"
-#include "raio/codec_paths.h"
-#include "raio/codec_workers.h"
+#include "haio.h"
+#include "haio/enum_names.h"
+#include "haio/codec_names.h"
+#include "haio/codec_paths.h"
+#include "haio/codec_workers.h"
 
 static int cmpWorkers(const void *ptr_key, const void *ptr_cmp) {
-    const raio_worker_path_t *worker = (const raio_worker_path_t *) ptr_cmp;
+    const haio_worker_path_t *worker = (const haio_worker_path_t *) ptr_cmp;
     uint16_t key = * (const uint16_t *) ptr_key;
     return (key > worker->src_to_dst) - (key < worker->src_to_dst);
 }
@@ -37,22 +37,22 @@ static int cmpWorkers(const void *ptr_key, const void *ptr_cmp) {
  * @retval 0 when not found workers
  * @retval 0 when size of @c func_list is less then worker count
  */
-uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker_func_t * func_list, uint8_t size, raio_type_t *output) {
-    static const size_t tsize = sizeof(raio_worker_path_t);
-    static const size_t tlen = (size_t) raio_codec_paths_len;
+uint8_t GetCodecWorkersFromFormats(haio_type_t from, haio_type_t to, haio_worker_func_t * func_list, uint8_t size, haio_type_t *output) {
+    static const size_t tsize = sizeof(haio_worker_path_t);
+    static const size_t tlen = (size_t) haio_codec_paths_len;
 
     uint8_t count = 0;
     uint16_t key = ((uint16_t) from << 8) | (uint16_t) to;
-    raio_worker_path_t *path = bsearch(&key, raio_codec_paths, tlen, tsize, cmpWorkers);
+    haio_worker_path_t *path = bsearch(&key, haio_codec_paths, tlen, tsize, cmpWorkers);
 
     if (!path || path->worker_count <= 0) return 0;
     if (func_list && path->worker_count > size) return 0; 
 
     for (int i = 0; i < path->worker_count; i++) {
         uint8_t id = path->workers[i];
-        const raio_type_t *steps = raio_codec_workers[id].steps;
-        if (raio_codec_workers[id].func) {
-            if (func_list) func_list[count] = raio_codec_workers[id].func;
+        const haio_type_t *steps = haio_codec_workers[id].steps;
+        if (haio_codec_workers[id].func) {
+            if (func_list) func_list[count] = haio_codec_workers[id].func;
             while (output && *++steps) *output = *steps;
             count++;
         }
@@ -64,10 +64,10 @@ uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker
 /**
  * @retval "NULL" when invalid func
  */
-const char *GetCodecWorkerName(raio_worker_func_t func) {
-    for (unsigned int i = 0; i < raio_codec_names_len; i++) {
-        if (raio_codec_names[i].func == func) {
-            return raio_codec_names[i].name;
+const char *GetCodecWorkerName(haio_worker_func_t func) {
+    for (unsigned int i = 0; i < haio_codec_names_len; i++) {
+        if (haio_codec_names[i].func == func) {
+            return haio_codec_names[i].name;
         }
     }
     return "NULL";
@@ -76,9 +76,9 @@ const char *GetCodecWorkerName(raio_worker_func_t func) {
 /**
  * @retval "NULL" when invalid format
  */
-const char *GetCodecFormatName(raio_type_t format) {
-    if (RAIO_TYPE_NULL < format && format < RAIO_TYPE_COUNT) {
-        return raio_types_names[format - 1];
+const char *GetCodecFormatName(haio_type_t format) {
+    if (HAIO_TYPE_NULL < format && format < HAIO_TYPE_COUNT) {
+        return haio_types_names[format - 1];
     }
     return "NULL";
 }

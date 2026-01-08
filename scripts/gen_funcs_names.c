@@ -78,8 +78,8 @@ void add_function(const char *line) {
 void print_functions() {
     int first = 1;
 
-#ifdef RAIO_STUB
-    printf("#ifdef RAIO_STUB\n");
+#ifdef HAIO_STUB
+    printf("#ifdef HAIO_STUB\n");
     for (int i = 0; i < func_count; i++) {
         printf("%s %s(%s) {}\n", functions[i].type, functions[i].name, functions[i].params);
     }
@@ -88,17 +88,17 @@ void print_functions() {
     for (int i = 0; i < func_count; i++) {
         printf("%s %s(%s);\n", functions[i].type, functions[i].name, functions[i].params);
     }
-#ifdef RAIO_STUB
+#ifdef HAIO_STUB
     printf("#endif\n\n");
 #endif
 
-#ifdef RAIO_NAMES
-    printf("#ifndef RAIO_ONLY_PROTO\nconst struct {\n  raio_worker_func_t func;\n  const char* name;\n} raio_codec_names[] = {");
+#ifdef HAIO_NAMES
+    printf("#ifndef HAIO_ONLY_PROTO\nconst struct {\n  haio_worker_func_t func;\n  const char* name;\n} haio_codec_names[] = {");
     for (int i = 0; i < func_count; i++) {
         printf("%s{%s, \"%s\"}", first? "\n  ": ",\n  ", functions[i].name, functions[i].name);
         first = 0;
     }
-    printf("\n};\n\nconst unsigned int raio_codec_names_len = %d;\n#endif\n", func_count);
+    printf("\n};\n\nconst unsigned int haio_codec_names_len = %d;\n#endif\n", func_count);
 #endif
 }
 
@@ -111,7 +111,7 @@ void free_functions() {
 }
 
 void load_functions() {
-    static const char str[] = RAIO_INPUT;
+    static const char str[] = HAIO_INPUT;
     char *p = (char *)str;
     char *end;
 

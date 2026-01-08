@@ -2,16 +2,16 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "raio.h"
+#include "haio.h"
 
 #define INITIAL_SIZE 512
 
-int BufferReset(raio_buffer_t *buf) {
+int BufferReset(haio_buffer_t *buf) {
     buf->len = 0;
     return 0;   
 }
 
-int BufferEnsureCapacity(raio_buffer_t *buf, size_t len) {
+int BufferEnsureCapacity(haio_buffer_t *buf, size_t len) {
     if (buf->len + len > buf->size) {
         size_t new_size = buf->size ? buf->size * 2 : INITIAL_SIZE;
 
@@ -33,7 +33,7 @@ int BufferEnsureCapacity(raio_buffer_t *buf, size_t len) {
     return 0;
 }
 
-int BufferPush(raio_buffer_t *buf, const void *data, size_t len) {
+int BufferPush(haio_buffer_t *buf, const void *data, size_t len) {
     if (!buf) return 1;
     if (BufferEnsureCapacity(buf, len)) return 2;
 
@@ -49,7 +49,7 @@ int BufferPush(raio_buffer_t *buf, const void *data, size_t len) {
  * @param [in,out] src
  * @param [in,out] dst
  */
-int BufferMove(raio_buffer_t *src, raio_buffer_t *dst) {
+int BufferMove(haio_buffer_t *src, haio_buffer_t *dst) {
     if (src->size > dst->size) {
         free(dst->data.ptr);
         dst->data.ptr = src->data.ptr;

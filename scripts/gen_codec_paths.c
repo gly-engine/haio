@@ -4,13 +4,13 @@
 #include <string.h>
 #include <ctype.h>
 
-#define RAIO_STUB
+#define HAIO_STUB
 
-#include "raio.h"
+#include "haio.h"
 
-#include "raio/enum_names.h"
-#include "raio/codec_names.h"
-#include "raio/codec_workers.h"
+#include "haio/enum_names.h"
+#include "haio/codec_names.h"
+#include "haio/codec_workers.h"
 
 #define MAX_TYPES 256
 #define MAX_WORKERS 64
@@ -36,11 +36,11 @@ typedef struct {
     uint16_t src_to_dst;
     uint8_t workers[MAX_PATH];
     uint8_t worker_count;
-} raio_pipeline_entry_t;
+} haio_pipeline_entry_t;
 
 static node_t graph[MAX_TYPES];
 
-int step_count(const raio_worker_t *w) {
+int step_count(const haio_worker_t *w) {
     int c = 0;
     while (c < 3 && w->steps[c] != 0)
         c++;
@@ -50,14 +50,14 @@ int step_count(const raio_worker_t *w) {
 void build_graph(void) {
     memset(graph, 0, sizeof(graph));
 
-    for (int w = 0; w < raio_codec_workers_len; w++) {
-        int sc = step_count(&raio_codec_workers[w]);
+    for (int w = 0; w < haio_codec_workers_len; w++) {
+        int sc = step_count(&haio_codec_workers[w]);
         if (sc < 2)
             continue;
 
-        uint8_t from = raio_codec_workers[w].steps[0];
-        uint8_t logical_to = raio_codec_workers[w].steps[1];
-        uint8_t real_to = (sc >= 3) ? raio_codec_workers[w].steps[2]
+        uint8_t from = haio_codec_workers[w].steps[0];
+        uint8_t logical_to = haio_codec_workers[w].steps[1];
+        uint8_t real_to = (sc >= 3) ? haio_codec_workers[w].steps[2]
                                     : logical_to;
 
         if (graph[from].count >= MAX_EDGES)
@@ -144,27 +144,27 @@ int find_path(uint8_t src, uint8_t dst, uint8_t *out, uint8_t *out_count) {
 }
 
 const char* worker_name(uint8_t id) {
-    const raio_worker_t *worker = &raio_codec_workers[id];
-    raio_worker_func_t func = worker->func;
-    for (int i = 0; i < raio_codec_names_len; i++) {
-        if (raio_codec_names[i].func == func) {
-            return raio_codec_names[i].name;
+    const haio_worker_t *worker = &haio_codec_workers[id];
+    haio_worker_func_t func = worker->func;
+    for (int i = 0; i < haio_codec_names_len; i++) {
+        if (haio_codec_names[i].func == func) {
+            return haio_codec_names[i].name;
         }
     }
     return "NULL";
 }
 
 const char *format_name(uint8_t id) {
-    return id > 0? raio_types_names[id - 1]: "NULL";
+    return id > 0? haio_types_names[id - 1]: "NULL";
 }
 
 void print_lut(void) {
     int count = 0;
-    printf("typedef struct {\n  uint16_t src_to_dst;\n  uint8_t worker_count;\n  uint8_t workers[%d];\n} raio_worker_path_t;\n\nraio_worker_path_t raio_codec_paths[] = {", MAX_PATH);
-    for (int s = 1; (s + 1) < RAIO_TYPE_COUNT; s++) {
-        for (int d = 1; (d + 1) < RAIO_TYPE_COUNT; d++) {
+    printf("typedef struct {\n  uint16_t src_to_dst;\n  uint8_t worker_count;\n  uint8_t workers[%d];\n} haio_worker_path_t;\n\nhaio_worker_path_t haio_codec_paths[] = {", MAX_PATH);
+    for (int s = 1; (s + 1) < HAIO_TYPE_COUNT; s++) {
+        for (int d = 1; (d + 1) < HAIO_TYPE_COUNT; d++) {
             if (s == d) continue;
-            raio_pipeline_entry_t e;
+            haio_pipeline_entry_t e;
             memset(&e, 0, sizeof(e));
             e.src_to_dst = (s << 8) | d;
             find_path(s, d, e.workers, &e.worker_count);
@@ -185,11 +185,11 @@ void print_lut(void) {
             printf(" } }");
         }
     }
-    printf("\n};\n\nconst unsigned int raio_codec_paths_len = %d;\n", count);
+    printf("\n};\n\nconst unsigned int haio_codec_paths_len = %d;\n", count);
 }
 
 static const char *worker_label(int w) {
-    if (raio_codec_workers[w].func == ConvertNotImplemented)
+    if (haio_codec_workers[w].func == ConvertNotImplemented)
         return "not implemented";
     static char buf[16];
     snprintf(buf, sizeof(buf), "w%d", w);
@@ -202,15 +202,15 @@ void print_plantuml(void) {
 
     printf("/**\n@startuml\n");
 
-    for (int w = 0; w < raio_codec_workers_len; w++) {
-        if (step_count(&raio_codec_workers[w]) == 1) {
-            wildcard_types[wildcard_count++] = raio_codec_workers[w].steps[0];
+    for (int w = 0; w < haio_codec_workers_len; w++) {
+        if (step_count(&haio_codec_workers[w]) == 1) {
+            wildcard_types[wildcard_count++] = haio_codec_workers[w].steps[0];
         }
     }
 
     if (wildcard_count > 0) {
         printf("rectangle Codecs {\n");
-        for (int i = 0; i < RAIO_TYPE_COUNT; i++) {
+        for (int i = 0; i < HAIO_TYPE_COUNT; i++) {
             int needs_input = 1;
             for (int j = 0; j < wildcard_count; j++) {
                 if (wildcard_types[j] == i) {
@@ -228,15 +228,15 @@ void print_plantuml(void) {
         }
     }
 
-    for (int w = 0; w < raio_codec_workers_len; w++) {
-        int sc = step_count(&raio_codec_workers[w]);
+    for (int w = 0; w < haio_codec_workers_len; w++) {
+        int sc = step_count(&haio_codec_workers[w]);
         if (sc < 2)
             continue;
 
         for (int i = 0; i < sc - 1; i++) {
             printf("  %s --> %s : %s\n",
-                   format_name(raio_codec_workers[w].steps[i]),
-                   format_name(raio_codec_workers[w].steps[i + 1]),
+                   format_name(haio_codec_workers[w].steps[i]),
+                   format_name(haio_codec_workers[w].steps[i + 1]),
                    worker_label(w));
         }
     }

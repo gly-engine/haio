@@ -6,9 +6,9 @@
 #include <libavutil/imgutils.h>
 #include <libavutil/pixfmt.h>
 
-#include "raio.h"
+#include "haio.h"
 
-void EncodeYUV420ToY4M(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buffer_t *dst) {
+void EncodeYUV420ToY4M(haio_worker_handle_t *handle, haio_buffer_t *src, haio_buffer_t *dst) {
     /** @todo refact this */
     (void) handle;
     (void) src;

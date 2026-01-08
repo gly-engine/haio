@@ -1,17 +1,17 @@
 cmake_minimum_required(VERSION 3.19)
 include(FetchContent)
 
-project("img" LANGUAGES C)
+project("haio" LANGUAGES C)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 set(CMAKE_SKIP_INSTALL_RULES ON CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
-set(RAIO_HEADER "${CMAKE_SOURCE_DIR}/include/raio.h")
-file(GLOB_RECURSE RAIO_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/*/*.c")
-add_executable(${PROJECT_NAME} "src/main.c;${RAIO_SOURCES}")
-file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include/raio)
+set(HAIO_HEADER "${CMAKE_SOURCE_DIR}/include/haio.h")
+file(GLOB_RECURSE HAIO_SOURCES "${CMAKE_CURRENT_LIST_DIR}/src/*/*.c")
+add_executable(${PROJECT_NAME} "src/main.c;${HAIO_SOURCES}")
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include/haio)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/include)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
 set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -109,60 +109,60 @@ add_library(php_static STATIC ${php_SOURCE_DIR}/picohttpparser.c)
 target_link_libraries(${PROJECT_NAME} PRIVATE php_static)
 
 # Generation: enum_names.h
-set(RAIO_ENUM_NAMES "${CMAKE_BINARY_DIR}/include/raio/enum_names.h")
+set(HAIO_ENUM_NAMES "${CMAKE_BINARY_DIR}/include/haio/enum_names.h")
 add_executable(gen_enum_names ${CMAKE_SOURCE_DIR}/scripts/gen_enum_names.c)
-target_compile_definitions(gen_enum_names PRIVATE RAIO_HEADER=\"${RAIO_HEADER}\")
+target_compile_definitions(gen_enum_names PRIVATE HAIO_HEADER=\"${HAIO_HEADER}\")
 add_custom_command(
-    OUTPUT ${RAIO_ENUM_NAMES}
-    COMMAND $<TARGET_FILE:gen_enum_names> > ${RAIO_ENUM_NAMES}
-    DEPENDS gen_enum_names;${RAIO_HEADER};
+    OUTPUT ${HAIO_ENUM_NAMES}
+    COMMAND $<TARGET_FILE:gen_enum_names> > ${HAIO_ENUM_NAMES}
+    DEPENDS gen_enum_names;${HAIO_HEADER};
 )
-add_custom_target(raio_enum_names DEPENDS ${RAIO_ENUM_NAMES})
+add_custom_target(haio_enum_names DEPENDS ${HAIO_ENUM_NAMES})
 
 # Generation: codec_names.h
-set(RAIO_CODECS_NAMES "${CMAKE_BINARY_DIR}/include/raio/codec_names.h")
-file(GLOB RAIO_CODECS "${CMAKE_SOURCE_DIR}/src/Backend_Codecs/*.c")
-string(JOIN "," RAIO_CODECS_STR ${RAIO_CODECS})
+set(HAIO_CODECS_NAMES "${CMAKE_BINARY_DIR}/include/haio/codec_names.h")
+file(GLOB HAIO_CODECS "${CMAKE_SOURCE_DIR}/src/Backend_Codecs/*.c")
+string(JOIN "," HAIO_CODECS_STR ${HAIO_CODECS})
 add_executable(gen_codec_names ${CMAKE_SOURCE_DIR}/scripts/gen_funcs_names.c)
-target_compile_definitions(gen_codec_names PRIVATE RAIO_INPUT=\"${RAIO_CODECS_STR}\" RAIO_NAMES RAIO_STUB)
+target_compile_definitions(gen_codec_names PRIVATE HAIO_INPUT=\"${HAIO_CODECS_STR}\" HAIO_NAMES HAIO_STUB)
 add_custom_command(
-    OUTPUT ${RAIO_CODECS_NAMES}
-    COMMAND $<TARGET_FILE:gen_codec_names> > ${RAIO_CODECS_NAMES}
-    DEPENDS gen_codec_names;${RAIO_CODECS};
+    OUTPUT ${HAIO_CODECS_NAMES}
+    COMMAND $<TARGET_FILE:gen_codec_names> > ${HAIO_CODECS_NAMES}
+    DEPENDS gen_codec_names;${HAIO_CODECS};
 )
-add_custom_target(raio_codec_names DEPENDS ${RAIO_CODECS_NAMES})
+add_custom_target(haio_codec_names DEPENDS ${HAIO_CODECS_NAMES})
 
 # Generation: functions.h
-set(RAIO_FUNCTIONS "${CMAKE_BINARY_DIR}/include/raio/functions.h")
-string(JOIN "," RAIO_SOURCES_STR ${RAIO_SOURCES})
+set(HAIO_FUNCTIONS "${CMAKE_BINARY_DIR}/include/haio/functions.h")
+string(JOIN "," HAIO_SOURCES_STR ${HAIO_SOURCES})
 add_executable(gen_functions ${CMAKE_SOURCE_DIR}/scripts/gen_funcs_names.c)
 target_include_directories(gen_functions PRIVATE ${CMAKE_SOURCE_DIR}/include)
-target_compile_definitions(gen_functions PRIVATE RAIO_INPUT=\"${RAIO_SOURCES_STR}\")
+target_compile_definitions(gen_functions PRIVATE HAIO_INPUT=\"${HAIO_SOURCES_STR}\")
 add_custom_command(
-    OUTPUT ${RAIO_FUNCTIONS}
-    COMMAND $<TARGET_FILE:gen_functions> > ${RAIO_FUNCTIONS}
-    DEPENDS gen_functions;${RAIO_HEADER};${RAIO_SOURCES}
+    OUTPUT ${HAIO_FUNCTIONS}
+    COMMAND $<TARGET_FILE:gen_functions> > ${HAIO_FUNCTIONS}
+    DEPENDS gen_functions;${HAIO_HEADER};${HAIO_SOURCES}
 )
-add_custom_target(raio_functions DEPENDS ${RAIO_FUNCTIONS})
-add_dependencies(${PROJECT_NAME} raio_functions)
+add_custom_target(haio_functions DEPENDS ${HAIO_FUNCTIONS})
+add_dependencies(${PROJECT_NAME} haio_functions)
 
 # Generation: codec_paths.h
-set(RAIO_CODEC_PATHS "${CMAKE_BINARY_DIR}/include/raio/codec_paths.h")
+set(HAIO_CODEC_PATHS "${CMAKE_BINARY_DIR}/include/haio/codec_paths.h")
 add_executable(gen_codec_paths ${CMAKE_SOURCE_DIR}/scripts/gen_codec_paths.c)
 target_include_directories(gen_codec_paths PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_include_directories(gen_codec_paths PRIVATE ${CMAKE_BINARY_DIR}/include)
 add_custom_command(
-    OUTPUT ${RAIO_CODEC_PATHS}
-    COMMAND $<TARGET_FILE:gen_codec_paths> > ${RAIO_CODEC_PATHS}
-    DEPENDS gen_codec_paths;${RAIO_HEADER};${CMAKE_SOURCE_DIR}/include/raio/codec_workers.h
+    OUTPUT ${HAIO_CODEC_PATHS}
+    COMMAND $<TARGET_FILE:gen_codec_paths> > ${HAIO_CODEC_PATHS}
+    DEPENDS gen_codec_paths;${HAIO_HEADER};${CMAKE_SOURCE_DIR}/include/haio/codec_workers.h
 )
-add_custom_target(raio_codec_paths DEPENDS ${RAIO_CODEC_PATHS})
-add_dependencies(gen_codec_paths raio_enum_names raio_codec_names)
-add_dependencies(${PROJECT_NAME} raio_codec_paths)
+add_custom_target(haio_codec_paths DEPENDS ${HAIO_CODEC_PATHS})
+add_dependencies(gen_codec_paths haio_enum_names haio_codec_names)
+add_dependencies(${PROJECT_NAME} haio_codec_paths)
 
 # Scripts For Testing
-option(RAIO_TEST "Unit Tests" OFF)
-if(RAIO_TEST)
+option(HAIO_TEST "Unit Tests" OFF)
+if(HAIO_TEST)
     include(CTest)
     set(tests
         "test_get_format_from_extension,src/Common_String/get_format_from_ext.c"

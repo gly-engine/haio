@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "raio.h"
-#include "raio/functions.h"
+#include "haio.h"
+#include "haio/functions.h"
 
 #define BUFFER_SIZE 1024
 
@@ -18,10 +18,10 @@ int FrontendConvertCli(int argc, char* argv[]) {
     FILE* f_in = fopen(argv[1], "rb");
     FILE* f_out = fopen(argv[2], "wb");
 
-    raio_pipeline_t pipe;
-    PipelineBegin(&pipe, RAIO_TYPE_BUFFER);
-    PipelineStepAdd(&pipe, RAIO_TYPE_IMG_PNG);
-    PipelineEnd(&pipe, RAIO_TYPE_IMG_PPM);
+    haio_pipeline_t pipe;
+    PipelineBegin(&pipe, HAIO_TYPE_BUFFER);
+    PipelineStepAdd(&pipe, HAIO_TYPE_IMG_PNG);
+    PipelineEnd(&pipe, HAIO_TYPE_IMG_PPM);
 
     while(PipelineIsRunning(&pipe)) {
         nbytes = fread(buffer, sizeof(char), sizeof(buffer), f_in);
