@@ -35,8 +35,8 @@ void EncodeRGBA8ToPPM(raio_worker_handle_t *handle, raio_buffer_t *src, raio_buf
             BufferEnsureCapacity(dst, 32);
 
             handle->progress.nbytes.count = 0;
-            handle->progress.nbytes.total = (handle->width * handle->height) * 3;
-            dst->len += snprintf(dst->data.str, dst->size, "P6\n%d %d\n255\n", handle->width, handle->height);
+            handle->progress.nbytes.total = (handle->width * handle->height) * 3lu;
+            dst->len += (size_t) snprintf(dst->data.str, dst->size, "P6\n%d %d\n255\n", handle->width, handle->height);
             handle->state = RAIO_FSM_WORKER_RUNNING;
         }
 

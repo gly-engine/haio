@@ -36,8 +36,8 @@ void DecodePngBufferToRGBA8(raio_worker_handle_t *handle, raio_buffer_t *src, ra
             struct spng_ihdr ihdr;
             spng_get_ihdr(ctx, &ihdr);
             handle->ctx = ctx;
-            handle->width = ihdr.width;
-            handle->height = ihdr.height;
+            handle->width = (uint16_t) ihdr.width;
+            handle->height = (uint16_t) ihdr.height;
             handle->state = RAIO_FSM_WORKER_RUNNING;
             if((ret = spng_decode_image(ctx, NULL, 0, SPNG_FMT_RGBA8, SPNG_DECODE_PROGRESSIVE)) != 0) {
                 printf("spng_encode_image() error: %s\n", spng_strerror(ret));

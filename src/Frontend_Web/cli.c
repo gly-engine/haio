@@ -4,7 +4,7 @@
 
 #include <uv.h>
 
-int frontendWebHttpServer(uv_loop_t *loop, uint32_t port);
+int frontendWebHttpServer(uv_loop_t *loop, int port);
 
 int FrontendServerCli(int argc, char* argv[]) {
     (void) argc;

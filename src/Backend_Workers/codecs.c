@@ -42,7 +42,7 @@ uint8_t GetCodecWorkersFromFormats(raio_type_t from, raio_type_t to, raio_worker
     static const size_t tlen = (size_t) raio_codec_paths_len;
 
     uint8_t count = 0;
-    uint16_t key = (from << 8) | to;
+    uint16_t key = ((uint16_t) from << 8) | (uint16_t) to;
     raio_worker_path_t *path = bsearch(&key, raio_codec_paths, tlen, tsize, cmpWorkers);
 
     if (!path || path->worker_count <= 0) return 0;

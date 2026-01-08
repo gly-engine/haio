@@ -15,8 +15,23 @@ file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/include/raio)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_BINARY_DIR}/include)
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
 set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-add_compile_options(-Wbuiltin-declaration-mismatch -Werror=implicit-function-declaration -Wpedantic)
-target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Werror)
+target_compile_options(${PROJECT_NAME} PRIVATE
+    -Wall -Wextra -Werror
+    -Werror=implicit-function-declaration
+    -Wbuiltin-declaration-mismatch -Wpedantic
+    -Wshadow -Wconversion -Wsign-conversion 
+    -Wnull-dereference -Wdouble-promotion 
+    -Wformat=2 -Wimplicit-fallthrough 
+    -Wstrict-prototypes -Wold-style-definition  
+    -Wredundant-decls -Wnested-externs 
+    -Wcast-align -Wcast-qual 
+    -Wpointer-arith -Wwrite-strings 
+    -Wundef -Wswitch-enum 
+    -Winit-self -Wuninitialized 
+    -Wfloat-equal -Wvla 
+    -Wstack-protector 
+    -fstack-protector-strong
+)
 
 set(LIBUV_VERSION "v1.51.0")
 set(LIBUV_REPO "https://github.com/libuv/libuv.git")
@@ -83,7 +98,7 @@ if (NOT EXISTS "${FFMPEG_DIR}/libswscale/libswscale.a")
 endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE "${FFMPEG_DIR}/libswscale/libswscale.a")
 target_link_libraries(${PROJECT_NAME} PRIVATE "${FFMPEG_DIR}/libavutil/libavutil.a")
-target_include_directories(${PROJECT_NAME} PRIVATE ${FFMPEG_DIR})
+target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${FFMPEG_DIR})
 
 FetchContent_Populate(
     php
