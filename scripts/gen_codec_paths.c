@@ -215,47 +215,31 @@ static const char *worker_label(int w) {
 }
 
 void print_plantuml(void) {
-    int wildcard_types[MAX_TYPES];
-    int wildcard_count = 0;
-
     printf("/**\n@startuml\n");
-
-    for (int w = 0; w < haio_codec_workers_len; w++) {
-        if (step_count(&haio_codec_workers[w]) == 1) {
-            wildcard_types[wildcard_count++] = haio_codec_workers[w].steps[0];
-        }
+    for (int i = 1; i < HAIO_TYPE_COUNT; i++) {
+        printf("rectangle %s\n", format_name(i));
     }
 
-    if (wildcard_count > 0) {
-        printf("rectangle Codecs {\n");
-        for (int i = 0; i < HAIO_TYPE_COUNT; i++) {
-            int needs_input = 1;
-            for (int j = 0; j < wildcard_count; j++) {
-                if (wildcard_types[j] == i) {
-                    needs_input = 0;
-                    break;
-                }
-            }
-            if (needs_input)
-                printf("  %s\n", format_name(i));
-        }
-        printf("}\n");
-
-        for (int i = 0; i < wildcard_count; i++) {
-            printf("Codecs --> %s\n", format_name(wildcard_types[i]));
-        }
-    }
-
+    printf("\n");
     for (int w = 0; w < haio_codec_workers_len; w++) {
-        int sc = step_count(&haio_codec_workers[w]);
+        const haio_worker_t *worker = &haio_codec_workers[w];
+        int sc = step_count(worker);
+
         if (sc < 2)
             continue;
 
+        const char *label = worker_name(w);
+
         for (int i = 0; i < sc - 1; i++) {
-            printf("  %s --> %s : %s\n",
-                   format_name(haio_codec_workers[w].steps[i]),
-                   format_name(haio_codec_workers[w].steps[i + 1]),
-                   worker_label(w));
+            uint8_t from = worker->steps[i];
+            uint8_t to   = worker->steps[i + 1];
+
+            printf(
+                "%s --> %s : %s\n",
+                format_name(from),
+                format_name(to),
+                label
+            );
         }
     }
 
