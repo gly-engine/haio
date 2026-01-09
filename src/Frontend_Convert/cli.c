@@ -21,7 +21,7 @@ int FrontendConvertCli(int argc, char* argv[]) {
     haio_pipeline_t pipe;
     PipelineBegin(&pipe, HAIO_TYPE_BUFFER);
     PipelineStepAdd(&pipe, HAIO_TYPE_IMG_PNG);
-    PipelineStepAdd(&pipe, HAIO_TYPE_FILTER_CROP);
+    //PipelineStepAdd(&pipe, HAIO_TYPE_FILTER_CROP);
     PipelineEnd(&pipe, HAIO_TYPE_IMG_PPM);
 
     while(PipelineIsRunning(&pipe)) {
