@@ -23,30 +23,68 @@ void PipelineBegin(haio_pipeline_t* pipe, haio_type_t first_step) {
  * @details add tasks to streaming pipeline
  * @param [in,out] pipe
  */
-void PipelineStepAdd(haio_pipeline_t* pipe, haio_type_t next_step) {
+int PipelineStepAdd(haio_pipeline_t* pipe, haio_type_t next_step) {
+    static char path_not_found[] = "pipeline path not found";
+    static char worker_limit_exceeded[] = "pipeline worker limit exceeded";
     haio_worker_func_t workers[HAIO_MAX_STEPS_BY_WORKER];
     haio_type_t from = pipe->current_format;
     haio_type_t to = next_step;
     haio_type_t result = HAIO_TYPE_NULL;
 
-    uint8_t nworkers = GetCodecWorkersFromFormats(from, to, workers, HAIO_MAX_STEPS_BY_WORKER, &result);
+    uint8_t nworkers;
+
+    if (PipelineHasError(pipe)) {
+        return 1;
+    }
+
+    nworkers = GetCodecWorkersFromFormats(
+        from,
+        to,
+        workers,
+        HAIO_MAX_STEPS_BY_WORKER,
+        &result
+    );
+
+    if (!nworkers || result == HAIO_TYPE_NULL) {
+        pipe->error = path_not_found;
+        return 1;
+    }
+
+    if (nworkers > HAIO_MAX_WORKERS_BY_PIPE - pipe->worker_count) {
+        pipe->error = worker_limit_exceeded;
+        return 1;
+    }
+
     pipe->current_format = result;
     pipe->state = HAIO_FSM_PIPE_PREPARE;
 
-    memcpy(&pipe->workers[pipe->worker_count], workers, nworkers * sizeof(haio_worker_func_t));
+    memcpy(
+        &pipe->workers[pipe->worker_count],
+        workers,
+        nworkers * sizeof(haio_worker_func_t)
+    );
+
     pipe->worker_count += nworkers;
+
+    return 0;
 }
 
 /**
  * @details finish pipeline tasks
  * @param [in,out] pipe
  */
-void PipelineEnd(haio_pipeline_t* pipe, haio_type_t last_step) {
-    PipelineStepAdd(pipe, last_step);
+int PipelineEnd(haio_pipeline_t* pipe, haio_type_t last_step) {
+    if (PipelineStepAdd(pipe, last_step)) {
+        return 1;
+    }
+
     pipe->state = HAIO_FSM_PIPE_RUNNING;
+
     for (uint8_t i = 1; i < pipe->worker_count; i++) {
         pipe->handlers[i].canvas.parent = &pipe->handlers[i - 1].canvas;
     }
+
+    return 0;
 }
 
 /**
