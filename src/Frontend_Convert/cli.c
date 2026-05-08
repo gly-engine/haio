@@ -4,104 +4,97 @@
 
 #include "haio.h"
 #include "haio/functions.h"
+#include "convert.h"
 
 #define BUFFER_SIZE 4096
-#define FORMAT_PROBE_SIZE 16
 
 static void PrintConvertUsage(void)
 {
     printf("usage:\n");
-    printf("./img convert input.png [options] output.ppm\n");
+    printf("haio convert input.png [options] output.ppm\n");
+    printf("haio convert png:- output.ppm\n");
     printf("\n");
     printf("options:\n");
     printf("  -crop    crop image using the default crop filter\n");
 }
 
-static haio_type_t GetFormatFromPath(char *path)
+static void PrintConvertBuildError(convert_command_t *cmd, haio_pipeline_t *pipe)
 {
-    char *ext = GetExtensionFromString(path);
-
-    if (!ext) {
-        return HAIO_TYPE_NULL;
+    if (cmd->error.message) {
+        convert_print_error(cmd->error);
+        return;
     }
 
-    return GetFormatFromExtension(ext);
-}
-
-static haio_type_t GetInputFormatFromBytes(const unsigned char *buffer, size_t len)
-{
-    static const unsigned char png_signature[] = {
-        0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'
-    };
-
-    if (len >= sizeof(png_signature) &&
-        memcmp(buffer, png_signature, sizeof(png_signature)) == 0) {
-        return HAIO_TYPE_IMG_PNG;
-    }
-
-    return HAIO_TYPE_NULL;
-}
-
-static haio_type_t GetInputFormat(FILE *f_in, char *path)
-{
-    unsigned char buffer[FORMAT_PROBE_SIZE];
-    haio_type_t format;
-    size_t nread;
-
-    nread = fread(buffer, sizeof(unsigned char), sizeof(buffer), f_in);
-    format = GetInputFormatFromBytes(buffer, nread);
-
-    if (fseek(f_in, 0, SEEK_SET)) {
-        return HAIO_TYPE_NULL;
-    }
-
-    if (format != HAIO_TYPE_NULL) {
-        return format;
-    }
-
-    return GetFormatFromPath(path);
-}
-
-static int PipelineAddConvertToken(haio_pipeline_t *pipe, char *token)
-{
-    if (strcmp(token, "-crop") == 0) {
-        return PipelineStepAdd(pipe, HAIO_TYPE_FILTER_CROP);
-    }
-
-    printf("[error] unknown token: %s\n", token);
-    return 1;
-}
-
-static int PipelineParseConvertArgs(
-    haio_pipeline_t *pipe,
-    int argc,
-    char* argv[],
-    haio_type_t input_format,
-    haio_type_t output_format
-)
-{
-    PipelineBegin(pipe, HAIO_TYPE_BUFFER);
-
-    if (PipelineStepAdd(pipe, input_format)) {
+    if (PipelineHasError(pipe)) {
         printf("[error] %s\n", GetPipelineError(pipe));
+    }
+}
+
+static int OpenConvertInput(convert_command_t *cmd, FILE **f_in)
+{
+    if (cmd->has_generator) {
+        *f_in = NULL;
+        return 0;
+    }
+
+    if (cmd->input_format_name && cmd->input_format == HAIO_TYPE_NULL) {
+        convert_print_unsupported_format("input", cmd->input_format_name, cmd->input_path);
         return 1;
     }
 
-    for (int i = 2; i < argc - 1; i++) {
-        if (PipelineAddConvertToken(pipe, argv[i])) {
-            if (PipelineHasError(pipe)) {
-                printf("[error] %s\n", GetPipelineError(pipe));
-            }
-            return 1;
-        }
+    if (strcmp(cmd->input_path, "-") == 0) {
+        *f_in = stdin;
+        return 0;
     }
 
-    if (PipelineEnd(pipe, output_format)) {
-        printf("[error] %s\n", GetPipelineError(pipe));
+    *f_in = fopen(cmd->input_path, "rb");
+    if (!*f_in) {
+        printf("[error] could not open input: %s\n", cmd->input_path);
+        return 1;
+    }
+
+    if (!cmd->input_format_name) {
+        cmd->input_format = convert_input_format_from_file(*f_in, cmd->input_path);
+    }
+
+    if (cmd->input_format == HAIO_TYPE_NULL) {
+        convert_print_unsupported_format("input", cmd->input_format_name, cmd->input_path);
+        fclose(*f_in);
+        *f_in = NULL;
         return 1;
     }
 
     return 0;
+}
+
+static int OpenConvertOutput(convert_command_t *cmd, FILE **f_out)
+{
+    if (cmd->output_is_stdout) {
+        *f_out = stdout;
+        return 0;
+    }
+
+    *f_out = fopen(cmd->output_path, "wb");
+    if (!*f_out) {
+        printf("[error] could not open output: %s\n", cmd->output_path);
+        return 1;
+    }
+
+    return 0;
+}
+
+static void CloseConvertInput(FILE *f_in)
+{
+    if (f_in && f_in != stdin) {
+        fclose(f_in);
+    }
+}
+
+static void CloseConvertOutput(FILE *f_out)
+{
+    if (f_out && f_out != stdout) {
+        fclose(f_out);
+    }
 }
 
 int FrontendConvertCli(int argc, char* argv[])
@@ -110,11 +103,10 @@ int FrontendConvertCli(int argc, char* argv[])
     size_t nwrite;
     char buffer[BUFFER_SIZE];
 
-    FILE* f_in;
-    FILE* f_out;
+    FILE* f_in = NULL;
+    FILE* f_out = NULL;
 
-    haio_type_t input_format;
-    haio_type_t output_format;
+    convert_command_t cmd;
     haio_pipeline_t pipe;
 
     if (argc <= 2) {
@@ -122,72 +114,60 @@ int FrontendConvertCli(int argc, char* argv[])
         return 1;
     }
 
-    output_format = GetFormatFromPath(argv[argc - 1]);
-    if (output_format == HAIO_TYPE_NULL) {
-        printf("[error] unknown output format: %s\n", argv[argc - 1]);
+    if (convert_tokenize_args(&cmd, argc, argv)) {
+        convert_print_error(cmd.error);
         return 1;
     }
 
-    f_in = fopen(argv[1], "rb");
-    if (!f_in) {
-        printf("[error] could not open input: %s\n", argv[1]);
+    if (cmd.output_format == HAIO_TYPE_NULL) {
+        convert_print_unsupported_format("output", cmd.output_format_name, argv[argc - 1]);
         return 1;
     }
 
-    input_format = GetInputFormat(f_in, argv[1]);
-    if (input_format == HAIO_TYPE_NULL) {
-        printf("[error] unknown input format: %s\n", argv[1]);
-        fclose(f_in);
+    if (OpenConvertInput(&cmd, &f_in)) {
         return 1;
     }
 
-    if (PipelineParseConvertArgs(&pipe, argc, argv, input_format, output_format)) {
-        fclose(f_in);
+    if (convert_build_pipeline(&cmd, &pipe)) {
+        PrintConvertBuildError(&cmd, &pipe);
+        CloseConvertInput(f_in);
         return 1;
     }
 
-    if (PipelineHasError(&pipe)) {
-        printf("[error] %s\n", GetPipelineError(&pipe));
-        fclose(f_in);
-        return 1;
-    }
-
-    f_out = fopen(argv[argc - 1], "wb");
-    if (!f_out) {
-        fclose(f_in);
-        printf("[error] could not open output: %s\n", argv[argc - 1]);
+    if (OpenConvertOutput(&cmd, &f_out)) {
+        CloseConvertInput(f_in);
         return 1;
     }
 
     while(PipelineIsRunning(&pipe)) {
-        nread = fread(buffer, sizeof(unsigned char), sizeof(buffer), f_in);
+        nread = fread(buffer, sizeof(char), sizeof(buffer), f_in);
 
         nwrite = PipelineProcess(&pipe, buffer, nread, buffer, sizeof(buffer));
 
         if (nwrite && fwrite(buffer, sizeof(char), nwrite, f_out) != nwrite) {
-            printf("[error] could not write output: %s\n", argv[argc - 1]);
-            fclose(f_in);
-            fclose(f_out);
+            printf("[error] could not write output: %s\n", cmd.output_path);
+            CloseConvertInput(f_in);
+            CloseConvertOutput(f_out);
             return 1;
         }
     }
 
     if (ferror(f_in)) {
-        printf("[error] could not read input: %s\n", argv[1]);
-        fclose(f_in);
-        fclose(f_out);
+        printf("[error] could not read input: %s\n", cmd.input_path);
+        CloseConvertInput(f_in);
+        CloseConvertOutput(f_out);
         return 1;
     }
 
     if (PipelineHasError(&pipe)) {
         printf("[error] %s\n", GetPipelineError(&pipe));
-        fclose(f_in);
-        fclose(f_out);
+        CloseConvertInput(f_in);
+        CloseConvertOutput(f_out);
         return 1;
     }
 
-    fclose(f_in);
-    fclose(f_out);
+    CloseConvertInput(f_in);
+    CloseConvertOutput(f_out);
 
     return 0;
 }
