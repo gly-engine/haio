@@ -167,6 +167,7 @@ if(HAIO_TEST)
     set(tests
         "test_get_format_from_extension,src/Common_String/get_format_from_ext.c"
         "test_get_codec_workers_from_formats,src/Backend_Workers/codecs.c"
+        "test_convert_tokenize_args,src/Frontend_Convert/tokenize.c,src/Frontend_Convert/format.c,src/Common_String/get_ext_from_str.c,src/Common_String/get_format_from_ext.c"
     )
     foreach(deps IN LISTS tests)
         string(REPLACE "," ";${CMAKE_SOURCE_DIR}/" deps "${deps}")
@@ -174,6 +175,7 @@ if(HAIO_TEST)
         list(REMOVE_AT deps 0)
         add_executable("${tests_name}" "${CMAKE_SOURCE_DIR}/tests/${tests_name}.c;${deps}")
         target_include_directories(${tests_name} PRIVATE "${CMAKE_SOURCE_DIR}/include;${CMAKE_BINARY_DIR}/include")
+        add_dependencies(${tests_name} haio_functions haio_codec_paths)
         add_test(NAME "${tests_name}" COMMAND "${tests_name}")
     endforeach()
 endif()
