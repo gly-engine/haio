@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -46,7 +47,45 @@ static bool known_source_prefix(char *name, size_t len)
 
 static bool is_crop_geometry(char *token)
 {
-    return strchr(token, 'x') && strchr(token, '+');
+    char *p = token;
+    uint8_t offset_count = 0;
+
+    if (!isdigit((unsigned char)*p)) {
+        return false;
+    }
+
+    while (isdigit((unsigned char)*p)) {
+        p++;
+    }
+
+    if (*p != 'x') {
+        return false;
+    }
+
+    p++;
+
+    if (!isdigit((unsigned char)*p)) {
+        return false;
+    }
+
+    while (isdigit((unsigned char)*p)) {
+        p++;
+    }
+
+    while (*p == '+' || *p == '-') {
+        offset_count++;
+        p++;
+
+        if (!isdigit((unsigned char)*p)) {
+            return false;
+        }
+
+        while (isdigit((unsigned char)*p)) {
+            p++;
+        }
+    }
+
+    return *p == '\0' && offset_count != 1;
 }
 
 static int token_add(

@@ -28,6 +28,24 @@ int main(void)
     }
     {
         char *argv[] = {
+            "convert", "input.png", "-crop", "10x10", "output.ppm"
+        };
+        assert(!convert_tokenize_args(&cmd, 5, argv));
+        assert(cmd.token_count == 3);
+        assert(cmd.tokens[1].type == CONVERT_TOKEN_FILTER_CROP);
+        assert(strcmp(cmd.tokens[1].value, "10x10") == 0);
+    }
+    {
+        char *argv[] = {
+            "convert", "input.png", "-crop", "10x10-5+5", "output.ppm"
+        };
+        assert(!convert_tokenize_args(&cmd, 5, argv));
+        assert(cmd.token_count == 3);
+        assert(cmd.tokens[1].type == CONVERT_TOKEN_FILTER_CROP);
+        assert(strcmp(cmd.tokens[1].value, "10x10-5+5") == 0);
+    }
+    {
+        char *argv[] = {
             "convert", "-size", "512x512", "xc:white", "-fx", "j/h", "out.png"
         };
         assert(!convert_tokenize_args(&cmd, 7, argv));
@@ -106,6 +124,18 @@ int main(void)
         assert(convert_tokenize_args(&cmd, 5, argv));
         assert(cmd.error.message != NULL);
         assert(strcmp(cmd.error.token, "other.png") == 0);
+    }
+    {
+        char *argv[] = { "convert", "input.png", "-crop", "10x", "out.ppm" };
+        assert(convert_tokenize_args(&cmd, 5, argv));
+        assert(cmd.error.message != NULL);
+        assert(strcmp(cmd.error.token, "10x") == 0);
+    }
+    {
+        char *argv[] = { "convert", "input.png", "-crop", "10x10+5", "out.ppm" };
+        assert(convert_tokenize_args(&cmd, 5, argv));
+        assert(cmd.error.message != NULL);
+        assert(strcmp(cmd.error.token, "10x10+5") == 0);
     }
     {
         char *argv[] = { "convert", "-size", "out.ppm" };
