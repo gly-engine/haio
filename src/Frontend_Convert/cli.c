@@ -83,22 +83,9 @@ static int OpenConvertOutput(convert_command_t *cmd, FILE **f_out)
     return 0;
 }
 
-static void CloseConvertInput(FILE *f_in)
-{
-    if (f_in && f_in != stdin) {
-        fclose(f_in);
-    }
-}
-
-static void CloseConvertOutput(FILE *f_out)
-{
-    if (f_out && f_out != stdout) {
-        fclose(f_out);
-    }
-}
-
 int FrontendConvertCli(int argc, char* argv[])
 {
+    int err = 1;
     size_t nread;
     size_t nwrite;
     char buffer[BUFFER_SIZE];
@@ -111,32 +98,30 @@ int FrontendConvertCli(int argc, char* argv[])
 
     if (argc <= 2) {
         PrintConvertUsage();
-        return 1;
+        goto defer;
     }
 
     if (convert_tokenize_args(&cmd, argc, argv)) {
         convert_print_error(cmd.error);
-        return 1;
+        goto defer;
     }
 
     if (cmd.output_format == HAIO_TYPE_NULL) {
         convert_print_unsupported_format("output", cmd.output_format_name, argv[argc - 1]);
-        return 1;
+        goto defer;
     }
 
     if (OpenConvertInput(&cmd, &f_in)) {
-        return 1;
+        goto defer;
     }
 
     if (convert_build_pipeline(&cmd, &pipe)) {
         PrintConvertBuildError(&cmd, &pipe);
-        CloseConvertInput(f_in);
-        return 1;
+        goto defer;
     }
 
     if (OpenConvertOutput(&cmd, &f_out)) {
-        CloseConvertInput(f_in);
-        return 1;
+        goto defer;
     }
 
     while(PipelineIsRunning(&pipe)) {
@@ -146,28 +131,30 @@ int FrontendConvertCli(int argc, char* argv[])
 
         if (nwrite && fwrite(buffer, sizeof(char), nwrite, f_out) != nwrite) {
             printf("[error] could not write output: %s\n", cmd.output_path);
-            CloseConvertInput(f_in);
-            CloseConvertOutput(f_out);
-            return 1;
+            goto defer;
         }
     }
 
     if (ferror(f_in)) {
         printf("[error] could not read input: %s\n", cmd.input_path);
-        CloseConvertInput(f_in);
-        CloseConvertOutput(f_out);
-        return 1;
+        goto defer;
     }
 
     if (PipelineHasError(&pipe)) {
         printf("[error] %s\n", GetPipelineError(&pipe));
-        CloseConvertInput(f_in);
-        CloseConvertOutput(f_out);
-        return 1;
+        goto defer;
     }
 
-    CloseConvertInput(f_in);
-    CloseConvertOutput(f_out);
+    err = 0;
 
-    return 0;
+defer:
+    if (f_in && f_in != stdin) {
+        fclose(f_in);
+    }
+
+    if (f_out && f_out != stdout) {
+        fclose(f_out);
+    }
+
+    return err;
 }
