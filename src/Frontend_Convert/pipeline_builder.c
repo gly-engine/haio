@@ -14,6 +14,7 @@ static char *unsupported_token_error(convert_token_type_t type)
 {
     static char unsupported_generator[] = "generator inputs are not supported yet";
     static char unsupported_fx[] = "-fx is not supported by the pipeline yet";
+    static char unsupported_crop_geometry[] = "-crop geometry is not supported by the pipeline yet";
     static char unsupported_token[] = "unsupported convert token";
 
     switch (type) {
@@ -22,9 +23,10 @@ static char *unsupported_token_error(convert_token_type_t type)
             return unsupported_generator;
         case CONVERT_TOKEN_FILTER_FX:
             return unsupported_fx;
+        case CONVERT_TOKEN_FILTER_CROP:
+            return unsupported_crop_geometry;
         case CONVERT_TOKEN_INPUT_FILE:
         case CONVERT_TOKEN_OUTPUT_FILE:
-        case CONVERT_TOKEN_FILTER_CROP:
             break;
     }
 
@@ -62,6 +64,11 @@ int convert_build_pipeline(convert_command_t *cmd, haio_pipeline_t *pipe)
 
         switch (token->type) {
             case CONVERT_TOKEN_FILTER_CROP:
+                if (token->value) {
+                    set_error(cmd, unsupported_token_error(token->type), token->value);
+                    return 1;
+                }
+
                 if (PipelineStepAdd(pipe, HAIO_TYPE_FILTER_CROP)) {
                     return 1;
                 }
