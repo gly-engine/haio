@@ -19,6 +19,15 @@ int main(void)
     }
     {
         char *argv[] = {
+            "convert", "input.png", "-crop", "10x10+5+5", "output.ppm"
+        };
+        assert(!convert_tokenize_args(&cmd, 5, argv));
+        assert(cmd.token_count == 3);
+        assert(cmd.tokens[1].type == CONVERT_TOKEN_FILTER_CROP);
+        assert(strcmp(cmd.tokens[1].value, "10x10+5+5") == 0);
+    }
+    {
+        char *argv[] = {
             "convert", "-size", "512x512", "xc:white", "-fx", "j/h", "out.png"
         };
         assert(!convert_tokenize_args(&cmd, 7, argv));
@@ -66,19 +75,19 @@ int main(void)
         assert(cmd.output_format == HAIO_TYPE_IMG_PPM);
     }
     {
-        char *argv[] = { "convert", "input.png", "jpeg:-" };
+        char *argv[] = { "convert", "input.png", "png:-" };
         assert(!convert_tokenize_args(&cmd, 3, argv));
         assert(cmd.output_is_stdout);
         assert(strcmp(cmd.output_path, "-") == 0);
         assert(cmd.output_format_name != NULL);
-        assert(cmd.output_format == HAIO_TYPE_NULL);
+        assert(cmd.output_format == HAIO_TYPE_IMG_PNG);
     }
     {
-        char *argv[] = { "convert", "jpeg:renamed.png", "out.ppm" };
+        char *argv[] = { "convert", "png:renamed.bin", "out.ppm" };
         assert(!convert_tokenize_args(&cmd, 3, argv));
-        assert(strcmp(cmd.input_path, "renamed.png") == 0);
+        assert(strcmp(cmd.input_path, "renamed.bin") == 0);
         assert(cmd.input_format_name != NULL);
-        assert(cmd.input_format == HAIO_TYPE_NULL);
+        assert(cmd.input_format == HAIO_TYPE_IMG_PNG);
     }
     {
         char *argv[] = { "convert", "png:", "out.ppm" };

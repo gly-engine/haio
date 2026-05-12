@@ -44,6 +44,11 @@ static bool known_source_prefix(char *name, size_t len)
         convert_slice_iequals(name, len, "radial-gradient");
 }
 
+static bool is_crop_geometry(char *token)
+{
+    return strchr(token, 'x') && strchr(token, '+');
+}
+
 static int token_add(
     convert_command_t *cmd,
     convert_token_type_t type,
@@ -249,15 +254,21 @@ int convert_tokenize_args(convert_command_t *cmd, int argc, char* argv[])
         }
 
         if (string_equals(token, "-crop")) {
+            char *crop = NULL;
+
             if (pending_size) {
                 convert_set_error(cmd, size_without_generator, pending_size);
                 return 1;
             }
 
+            if ((i + 1) < argc - 1 && is_crop_geometry(argv[i + 1])) {
+                crop = argv[++i];
+            }
+
             if (token_add(
                 cmd,
                 CONVERT_TOKEN_FILTER_CROP,
-                NULL,
+                crop,
                 NULL,
                 HAIO_TYPE_FILTER_CROP
             )) {
