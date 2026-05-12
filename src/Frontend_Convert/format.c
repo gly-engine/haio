@@ -1,18 +1,10 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "haio.h"
 #include "haio/functions.h"
 #include "convert.h"
-
-static char ascii_lower(char c)
-{
-    if ('A' <= c && c <= 'Z') {
-        return (char)(c + ('a' - 'A'));
-    }
-
-    return c;
-}
 
 bool convert_slice_iequals(char *txt, size_t len, const char *expected)
 {
@@ -21,7 +13,7 @@ bool convert_slice_iequals(char *txt, size_t len, const char *expected)
     }
 
     for (size_t i = 0; i < len; i++) {
-        if (ascii_lower(txt[i]) != ascii_lower(expected[i])) {
+        if (tolower((unsigned char)txt[i]) != tolower((unsigned char)expected[i])) {
             return false;
         }
     }
@@ -51,32 +43,23 @@ char *convert_find_format_separator(char *txt)
 
 bool convert_known_format_prefix(char *name, size_t len)
 {
-    return convert_slice_iequals(name, len, "png") ||
-        convert_slice_iequals(name, len, "ppm") ||
-        convert_slice_iequals(name, len, "y4m") ||
-        convert_slice_iequals(name, len, "jpg") ||
-        convert_slice_iequals(name, len, "jpeg");
+    return convert_format_from_name(name, len) != HAIO_TYPE_NULL;
 }
 
 haio_type_t convert_format_from_name(char *name, size_t len)
 {
+    char ext[4] = { 0 };
+
     if (!name || !len) {
         return HAIO_TYPE_NULL;
     }
 
-    if (convert_slice_iequals(name, len, "png")) {
-        return HAIO_TYPE_IMG_PNG;
+    if (len > sizeof(ext)) {
+        return HAIO_TYPE_NULL;
     }
 
-    if (convert_slice_iequals(name, len, "ppm")) {
-        return HAIO_TYPE_IMG_PPM;
-    }
-
-    if (convert_slice_iequals(name, len, "y4m")) {
-        return HAIO_TYPE_IMG_Y4M420;
-    }
-
-    return HAIO_TYPE_NULL;
+    memcpy(ext, name, len);
+    return GetFormatFromExtension(ext);
 }
 
 haio_type_t convert_format_from_path(char *path)
@@ -90,20 +73,6 @@ haio_type_t convert_format_from_path(char *path)
     return GetFormatFromExtension(ext);
 }
 
-haio_type_t convert_input_format_from_bytes(const unsigned char *buffer, size_t len)
-{
-    static const unsigned char png_signature[] = {
-        0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'
-    };
-
-    if (len >= sizeof(png_signature) &&
-        memcmp(buffer, png_signature, sizeof(png_signature)) == 0) {
-        return HAIO_TYPE_IMG_PNG;
-    }
-
-    return HAIO_TYPE_NULL;
-}
-
 haio_type_t convert_input_format_from_file(FILE *f_in, char *path)
 {
     unsigned char buffer[CONVERT_FORMAT_PROBE_SIZE];
@@ -111,7 +80,7 @@ haio_type_t convert_input_format_from_file(FILE *f_in, char *path)
     size_t nread;
 
     nread = fread(buffer, sizeof(unsigned char), sizeof(buffer), f_in);
-    format = convert_input_format_from_bytes(buffer, nread);
+    format = GetFormatFromMagic(buffer, nread);
 
     if (fseek(f_in, 0, SEEK_SET)) {
         return HAIO_TYPE_NULL;

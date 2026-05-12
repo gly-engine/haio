@@ -47,7 +47,6 @@ typedef struct {
 } convert_command_t;
 
 haio_type_t convert_format_from_path(char *path);
-haio_type_t convert_input_format_from_bytes(const unsigned char *buffer, size_t len);
 haio_type_t convert_input_format_from_file(FILE *f_in, char *path);
 void convert_print_unsupported_format(const char *kind, char *format_name, char *fallback);
 int convert_tokenize_args(convert_command_t *cmd, int argc, char* argv[]);
