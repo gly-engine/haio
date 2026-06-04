@@ -1,0 +1,7 @@
+build*/
+vendor/
+.DS_Store
+*.db
+*.out
+*.exe
+*.bin
