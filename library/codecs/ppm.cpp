@@ -9,4 +9,4 @@ Stage Encode<Format::PPM>() {
         return out;
     };
 }
-}  // namespace Haio
+}
