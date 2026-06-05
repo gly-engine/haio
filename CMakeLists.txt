@@ -2,17 +2,35 @@ cmake_minimum_required(VERSION 3.19)
 include(FetchContent)
 
 project("haio" LANGUAGES CXX)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-file(GLOB_RECURSE HAIO_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/*/*.cpp")
-add_executable(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}/source/main.cpp;${HAIO_SOURCES}")
+file(GLOB_RECURSE HAIO_LIB_SOURCES "${CMAKE_CURRENT_LIST_DIR}/library/*/*.cpp")
+file(GLOB_RECURSE HAIO_BIN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/*/*.cpp")
+add_executable(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}/source/main.cpp;${HAIO_BIN_SOURCES}")
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
 set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
 if (WINDOWS)
     file(GLOB_RECURSE HAIO_WINDOWS_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/platform/microslop/*.cpp")
     target_sources(${PROJECT_NAME} PRIVATE "${HAIO_WINDOWS_SOURCES}")
+endif()
+
+
+option(HAIO_TESTS "Unit Tests" OFF)
+if(HAIO_TESTS)
+    include(CTest)
+    set(tests
+        "test_image_convert_png_to_ppm,library/codecs/decode_png.cpp"
+    )
+    foreach(deps IN LISTS tests)
+        string(REPLACE "," ";${CMAKE_SOURCE_DIR}/" deps "${deps}")
+        list(GET deps 0 tests_name)
+        list(REMOVE_AT deps 0)
+        add_executable("${tests_name}" "${CMAKE_SOURCE_DIR}/tests/${tests_name}.cpp;${deps};${HAIO_LIB_SOURCES}")
+        target_include_directories(${tests_name} PRIVATE "${CMAKE_SOURCE_DIR}/include;${CMAKE_BINARY_DIR}/include")
+        add_test(NAME "${tests_name}" COMMAND "${tests_name}")
+    endforeach()
 endif()
