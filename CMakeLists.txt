@@ -18,12 +18,11 @@ if (WINDOWS)
     target_sources(${PROJECT_NAME} PRIVATE "${HAIO_WINDOWS_SOURCES}")
 endif()
 
-
 option(HAIO_TESTS "Unit Tests" OFF)
 if(HAIO_TESTS)
     include(CTest)
     set(tests
-        "test_image_convert_png_to_ppm,library/codecs/decode_png.cpp"
+        "test_image_convert_png_to_ppm,library/codecs/png.cpp"
     )
     foreach(deps IN LISTS tests)
         string(REPLACE "," ";${CMAKE_SOURCE_DIR}/" deps "${deps}")
@@ -34,3 +33,9 @@ if(HAIO_TESTS)
         add_test(NAME "${tests_name}" COMMAND "${tests_name}")
     endforeach()
 endif()
+
+set(WUFFS_VERSION "0.3.4")
+set(WUFFS_DIR "${CMAKE_SOURCE_DIR}/vendor/wuffs")
+set(WUFFS_DOWNLOAD "https://github.com/google/wuffs-mirror-release-c/archive/refs/tags/v${WUFFS_VERSION}.tar.gz")
+FetchContent_Populate(wuffs URL "${WUFFS_DOWNLOAD}" SOURCE_DIR "${WUFFS_DIR}")
+set_source_files_properties("${CMAKE_CURRENT_LIST_DIR}/library/codecs/png.cpp" PROPERTIES INCLUDE_DIRECTORIES "${WUFFS_DIR}/release/c")
