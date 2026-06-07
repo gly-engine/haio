@@ -14,8 +14,9 @@ std::string basename(const std::string& path) {
 }
 
 int main(int argc, char** argv) {
-    std::ifstream file(argv[1], std::ios::binary);
+    if (argc < 2) return 1;
 
+    std::ifstream file(argv[1], std::ios::binary);
     if (!file) return 1;
 
     std::vector<unsigned char> buffer(
@@ -29,6 +30,8 @@ int main(int argc, char** argv) {
     std::cout << "const unsigned char " << varname << "[] = {\n";
 
     for (size_t i = 0; i < buffer.size(); ++i) {
+        if (i % perline == 0) std::cout << "  ";
+
         std::cout << "0x"
                   << std::hex << std::setw(2) << std::setfill('0')
                   << static_cast<int>(buffer[i]);
@@ -37,7 +40,11 @@ int main(int argc, char** argv) {
         if ((i + 1) % perline == 0) std::cout << "\n";
     }
 
-    std::cout << "\n};\n";
-    std::cout << "const unsigned int " << varname << "_len = " << buffer.size() << ";\n";
+    if (buffer.size() % perline != 0) std::cout << "\n";
+
+    std::cout << "};\n";
+    std::cout << "const unsigned int " << varname << "_len = "
+              << std::dec << buffer.size() << ";\n";
+
     return 0;
 }

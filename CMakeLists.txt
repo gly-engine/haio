@@ -8,6 +8,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/shaders")
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include/shaders")
 file(GLOB_RECURSE HAIO_LIB_SOURCES "${CMAKE_CURRENT_LIST_DIR}/library/*/*.cpp")
 file(GLOB_RECURSE HAIO_BIN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/*/*.cpp")
 add_executable(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}/source/main.cpp;${HAIO_LIB_SOURCES};${HAIO_BIN_SOURCES}")
@@ -55,7 +57,6 @@ add_library(volk STATIC ${VOLK_DIR}/volk.c)
 target_link_libraries(${PROJECT_NAME} PRIVATE volk)
 target_include_directories(volk SYSTEM PRIVATE "${VULKAN_DIR}/include")
 
-if(FALSE)
 set(SHADERC_VERSION "v2026.2")
 set(SHADERC_DIR "${CMAKE_SOURCE_DIR}/vendor/vulkan/shaderc")
 set(SHADERC_DOWNLOAD "https://github.com/google/shaderc/archive/refs/tags/${SHADERC_VERSION}.tar.gz")
@@ -63,17 +64,22 @@ ExternalProject_Add(shaderc
     URL ${SHADERC_DOWNLOAD}
     PREFIX ${CMAKE_BINARY_DIR}/shaderc
     SOURCE_DIR ${SHADERC_DIR}
-    UPDATE_COMMAND python utils/git-sync-deps
     PATCH_COMMAND sed -i "s/if *(GLSLANG_ENABLE_INSTALL)/if(FALSE)/" ${SHADERC_DIR}/third_party/glslang/CMakeLists.txt
     CMAKE_ARGS
         -DSHADERC_SKIP_TESTS=ON
         -DSHADERC_SKIP_INSTALL=ON
         -DCMAKE_BUILD_TYPE=Release
-    BUILD_COMMAND cmake --build <BINARY_DIR> --target glslc
+        -G "MinGW Makefiles"
+    BUILD_COMMAND cmake --build <BINARY_DIR> --target glslc_exe
     INSTALL_COMMAND ""
 )
 
-add_executable(xxdbin scripts/xxd.cpp)
+add_executable(glslc IMPORTED)
+ExternalProject_Get_Property(shaderc BINARY_DIR)
+set_target_properties(glslc PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/glslc/glslc${CMAKE_EXECUTABLE_SUFFIX}")
+add_dependencies(glslc shaderc)
+
+add_executable(xxd scripts/xxd.cpp)
 file(GLOB_RECURSE GLSL_SOURCES "${CMAKE_SOURCE_DIR}/shaders/*.glsl")
 set(GENERATED_HEADERS "")
 foreach(GLSL ${GLSL_SOURCES})
@@ -84,20 +90,19 @@ foreach(GLSL ${GLSL_SOURCES})
 
     add_custom_command(
         OUTPUT ${SPIRV_OUT}
-        COMMAND glslc ${GLSL} -o ${SPIRV_OUT}
+        COMMAND $<TARGET_FILE:glslc> -fshader-stage=comp ${GLSL} -o ${SPIRV_OUT}
         DEPENDS ${GLSL}
-        COMMENT "Compiling ${GLSL} -> ${SPIRV_OUT}"
+        COMMENT "Compiling shader: ${GLSL_NAME}"
     )
 
     add_custom_command(
         OUTPUT ${HEADER_OUT}
-        COMMAND xxdbin ${SPIRV_OUT} ${HEADER_OUT}
-        DEPENDS ${SPIRV_OUT} xxdbin
-        COMMENT "Embedding ${SPIRV_OUT} -> ${HEADER_OUT}"
+        COMMAND $<TARGET_FILE:xxd> ${SPIRV_OUT} > ${HEADER_OUT}
+        DEPENDS ${SPIRV_OUT} xxd
+        COMMENT "Embedding shader: ${GLSL_NAME}"
     )
 
     list(APPEND GENERATED_HEADERS ${HEADER_OUT})
 endforeach()
-add_custom_target(shader_headers DEPENDS ${GENERATED_HEADERS})
-add_dependencies(${PROJECT_NAME} shader_headers)
-endif()
+add_custom_target(haio_shaders DEPENDS ${GENERATED_HEADERS} shaderc)
+add_dependencies(${PROJECT_NAME} haio_shaders)
