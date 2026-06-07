@@ -1,6 +1,7 @@
 #include "haio_common.hpp"
 #include "haio_formats.hpp"
 #include "haio_iwindow.hpp"
+#include "haio_vulkan.hpp"
 
 namespace Haio {
 
