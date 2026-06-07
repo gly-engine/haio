@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+add_executable(xxd scripts/xxd.cpp)
+add_executable(replace scripts/replace.cpp)
+
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include/shaders")
@@ -64,7 +67,10 @@ ExternalProject_Add(shaderc
     URL ${SHADERC_DOWNLOAD}
     PREFIX ${CMAKE_BINARY_DIR}/shaderc
     SOURCE_DIR ${SHADERC_DIR}
-    PATCH_COMMAND sed -i "s/if *(GLSLANG_ENABLE_INSTALL)/if(FALSE)/" ${SHADERC_DIR}/third_party/glslang/CMakeLists.txt
+    PATCH_COMMAND $<TARGET_FILE:replace>
+        "${SHADERC_DIR}/third_party/glslang/CMakeLists.txt"
+        "if *(GLSLANG_ENABLE_INSTALL)"
+        "if(FALSE)"
     CMAKE_ARGS
         -DSHADERC_SKIP_TESTS=ON
         -DSHADERC_SKIP_INSTALL=ON
@@ -73,13 +79,13 @@ ExternalProject_Add(shaderc
     BUILD_COMMAND cmake --build <BINARY_DIR> --target glslc_exe
     INSTALL_COMMAND ""
 )
+ExternalProject_Add_StepDependencies(shaderc patch replace)
+ExternalProject_Get_Property(shaderc BINARY_DIR)
 
 add_executable(glslc IMPORTED)
-ExternalProject_Get_Property(shaderc BINARY_DIR)
 set_target_properties(glslc PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/glslc/glslc${CMAKE_EXECUTABLE_SUFFIX}")
 add_dependencies(glslc shaderc)
 
-add_executable(xxd scripts/xxd.cpp)
 file(GLOB_RECURSE GLSL_SOURCES "${CMAKE_SOURCE_DIR}/shaders/*.glsl")
 set(GENERATED_HEADERS "")
 foreach(GLSL ${GLSL_SOURCES})
