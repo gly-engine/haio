@@ -9,17 +9,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(xxd scripts/xxd.cpp)
 add_executable(replace scripts/replace.cpp)
+find_package(Python REQUIRED COMPONENTS Interpreter)
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include/shaders")
 file(GLOB_RECURSE HAIO_LIB_SOURCES "${CMAKE_CURRENT_LIST_DIR}/library/*/*.cpp")
-file(GLOB_RECURSE HAIO_BIN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/*/*.cpp")
+#TODO: file(GLOB_RECURSE HAIO_BIN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/*/*.cpp")
 add_executable(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}/source/main.cpp;${HAIO_LIB_SOURCES};${HAIO_BIN_SOURCES}")
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
 set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-if (WINDOWS)
+if (WIN32)
     file(GLOB_RECURSE HAIO_WINDOWS_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/platform/microslop/*.cpp")
     target_sources(${PROJECT_NAME} PRIVATE "${HAIO_WINDOWS_SOURCES}")
 endif()
@@ -67,16 +68,18 @@ ExternalProject_Add(shaderc
     URL ${SHADERC_DOWNLOAD}
     PREFIX ${CMAKE_BINARY_DIR}/shaderc
     SOURCE_DIR ${SHADERC_DIR}
+    UPDATE_COMMAND cd ${SHADERC_DIR} && $<TARGET_FILE:Python::Interpreter> utils/git-sync-deps
     PATCH_COMMAND $<TARGET_FILE:replace>
         "${SHADERC_DIR}/third_party/glslang/CMakeLists.txt"
-        "if *(GLSLANG_ENABLE_INSTALL)"
+        "if \\(GLSLANG_ENABLE_INSTALL\\)"
         "if(FALSE)"
     CMAKE_ARGS
         -DSHADERC_SKIP_TESTS=ON
         -DSHADERC_SKIP_INSTALL=ON
+        -DSHADERC_SKIP_EXAMPLES=ON
         -DCMAKE_BUILD_TYPE=Release
-        -G "MinGW Makefiles"
-    BUILD_COMMAND cmake --build <BINARY_DIR> --target glslc_exe
+        -G "${CMAKE_GENERATOR}"
+    BUILD_COMMAND $(MAKE) -C <BINARY_DIR> glslc_exe
     INSTALL_COMMAND ""
 )
 ExternalProject_Add_StepDependencies(shaderc patch replace)
