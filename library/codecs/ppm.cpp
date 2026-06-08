@@ -1,12 +1,23 @@
 #include "haio.hpp"
 
 namespace Haio {
+
 template <>
 Stage Encode<Format::PPM>() {
-    return [](const Image &img) {
-        std::vector<uint8_t> buffer = {0, 1, 2, 3, 4};
-        Image out{Format::PPM, 6, 5, buffer};
-        return out;
+    return [](const Image& img) {
+        std::string header = "P6\n" + std::to_string(img.width) + " "
+                           + std::to_string(img.height) + "\n255\n";
+        std::vector<uint8_t> buffer(header.begin(), header.end());
+
+        if (img.type == Format::RGBA8888) {
+            buffer.reserve(buffer.size() + img.width * img.height * 3);
+            Vulkan::getInstance().transformRGBAtoRGB(img.data, buffer);
+        } else {
+            buffer.insert(buffer.end(), img.data.begin(), img.data.end());
+        }
+
+        return Image{Format::PPM, img.width, img.height, std::move(buffer)};
     };
 }
-}
+
+} // namespace Haio

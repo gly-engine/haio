@@ -1,3 +1,4 @@
+#pragma once
 #include <haio_common.hpp>
 
 namespace Haio {

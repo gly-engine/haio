@@ -1,13 +1,8 @@
+#include "vm.hpp"
 #include <haio.hpp>
 #include <volk.h>
 
 namespace Haio {
-    struct Vulkan::Vm {
-        VkInstance instance;
-        VkPhysicalDevice physicalDevice;
-        VkDevice device;
-        VkQueue computeQueue;
-    };
 
     Vulkan::Vulkan(): vm(new Vm{}) {
         if (volkInitialize() != VK_SUCCESS) {
@@ -59,8 +54,13 @@ namespace Haio {
         queueCreateInfo.queueCount = 1;
         queueCreateInfo.pQueuePriorities = &queuePriority;
 
+        VkPhysicalDeviceShaderFloat16Int8Features int8Features{};
+        int8Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES;
+        int8Features.shaderInt8 = VK_TRUE;
+
         VkDeviceCreateInfo deviceCreateInfo{};
         deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+        deviceCreateInfo.pNext = &int8Features;
         deviceCreateInfo.queueCreateInfoCount = 1;
         deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
 
@@ -69,6 +69,7 @@ namespace Haio {
         }
         volkLoadDevice(vm->device);
 
+        vm->computeFamilyIndex = computeFamilyIndex;
         vkGetDeviceQueue(vm->device, computeFamilyIndex, 0, &vm->computeQueue);
     }
 
