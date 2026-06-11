@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 include(FetchContent)
 include(ExternalProject)
+include(CheckCXXCompilerFlag)
 
 project("haio" LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 23)
@@ -15,6 +16,32 @@ file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include/shaders")
 file(GLOB_RECURSE HAIO_LIB_SOURCES "${CMAKE_CURRENT_LIST_DIR}/library/*/*.cpp")
+
+set(ETCPAK_VERSION "2.1")
+set(ETCPAK_DIR "${CMAKE_SOURCE_DIR}/vendor/etcpak")
+set(ETCPAK_DOWNLOAD "https://github.com/wolfpld/etcpak/archive/refs/tags/${ETCPAK_VERSION}.tar.gz")
+FetchContent_Populate(etcpak URL "${ETCPAK_DOWNLOAD}" SOURCE_DIR "${ETCPAK_DIR}")
+set(ETCPAK_SOURCES
+    "${ETCPAK_DIR}/bcdec.c"
+    "${ETCPAK_DIR}/Decode.cpp"
+    "${ETCPAK_DIR}/Dither.cpp"
+    "${ETCPAK_DIR}/ProcessRGB.cpp"
+    "${ETCPAK_DIR}/Tables.cpp"
+)
+list(APPEND HAIO_LIB_SOURCES ${ETCPAK_SOURCES})
+set_source_files_properties(
+    "${CMAKE_CURRENT_LIST_DIR}/library/codecs/etc1.cpp"
+    ${ETCPAK_SOURCES}
+    PROPERTIES INCLUDE_DIRECTORIES "${ETCPAK_DIR}"
+)
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64|i[3-6]86)$")
+    check_cxx_compiler_flag("-msse4.1" HAIO_HAS_SSE41)
+    if(HAIO_HAS_SSE41)
+        set_source_files_properties(${ETCPAK_SOURCES} PROPERTIES COMPILE_OPTIONS "-msse4.1")
+    endif()
+endif()
+
 #TODO: file(GLOB_RECURSE HAIO_BIN_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/*/*.cpp")
 add_executable(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}/source/main.cpp;${HAIO_LIB_SOURCES};${HAIO_BIN_SOURCES}")
 target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include;${CMAKE_BINARY_DIR}/include")
@@ -106,6 +133,8 @@ if(HAIO_TESTS)
     include(CTest)
     set(tests
         "test_image_convert_png_to_ppm,library/codecs/png.cpp"
+        "test_image_etc1_roundtrip,library/codecs/etc1.cpp"
+        "test_image_convert_png_to_etc1_ppm,library/codecs/png.cpp,library/codecs/etc1.cpp,library/codecs/ppm.cpp"
     )
     foreach(deps IN LISTS tests)
         string(REPLACE "," ";${CMAKE_SOURCE_DIR}/" deps "${deps}")
