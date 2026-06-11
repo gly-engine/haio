@@ -135,6 +135,7 @@ if(HAIO_TESTS)
         "test_image_convert_png_to_ppm,library/codecs/png.cpp"
         "test_image_etc1_roundtrip,library/codecs/etc1.cpp"
         "test_image_convert_png_to_etc1_ppm,library/codecs/png.cpp,library/codecs/etc1.cpp,library/codecs/ppm.cpp"
+        "test_gpu_formats_roundtrip,library/codecs/etc1.cpp,library/codecs/gpu_containers.cpp,library/codecs/rgb565.cpp"
     )
     foreach(deps IN LISTS tests)
         string(REPLACE "," ";${CMAKE_SOURCE_DIR}/" deps "${deps}")

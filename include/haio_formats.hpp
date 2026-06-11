@@ -9,7 +9,12 @@ enum class Format {
     RGBA8888,
     RGB888,
     YUV420,
-    ETC1
+    ETC1,
+    RGB565,
+    PVR,
+    DDS,
+    KTX,
+    KTX2
 };
 
 }
