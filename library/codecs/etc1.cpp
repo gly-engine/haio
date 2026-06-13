@@ -9,25 +9,21 @@
 #include <Decode.hpp>
 #include <ProcessRGB.hpp>
 
-namespace Haio {
-
-namespace {
-
-int paddedSize(int size) {
+static int paddedSize(int size) {
     return (size + 3) & ~3;
 }
 
-size_t blockCount(int width, int height) {
+static size_t blockCount(int width, int height) {
     return static_cast<size_t>(paddedSize(width) / 4) * static_cast<size_t>(paddedSize(height) / 4);
 }
 
-void validateDimensions(int width, int height) {
+static void validateDimensions(int width, int height) {
     if (width <= 0 || height <= 0) {
         throw std::runtime_error("etc1 images require positive width and height");
     }
 }
 
-std::vector<uint32_t> makePaddedBGRA(const Image& img, int paddedWidth, int paddedHeight) {
+static std::vector<uint32_t> makePaddedBGRA(const Haio::Image& img, int paddedWidth, int paddedHeight) {
     const auto expectedSize = static_cast<size_t>(img.width) * static_cast<size_t>(img.height) * 4;
     if (img.data.size() != expectedSize) {
         throw std::runtime_error("invalid rgba8888 data size for etc1 encode");
@@ -51,7 +47,8 @@ std::vector<uint32_t> makePaddedBGRA(const Image& img, int paddedWidth, int padd
     return pixels;
 }
 
-}
+
+namespace Haio {
 
 template <>
 Stage Encode<Format::ETC1>() {

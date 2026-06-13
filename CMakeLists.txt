@@ -63,6 +63,14 @@ set(VULKAN_DIR "${CMAKE_SOURCE_DIR}/vendor/vulkan/vulkan")
 set(VULKAN_DOWNLOAD "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/${VULKAN_VERSION}.tar.gz")
 FetchContent_Populate(vulkan URL ${VULKAN_DOWNLOAD} SOURCE_DIR ${VULKAN_DIR})
 
+set(HAIO_GPU_CONTAINER_SOURCES
+    "${CMAKE_CURRENT_LIST_DIR}/library/codecs/ktx.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/library/codecs/ktx2.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/library/codecs/pvr.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/library/codecs/dds.cpp"
+)
+set_source_files_properties(${HAIO_GPU_CONTAINER_SOURCES} PROPERTIES INCLUDE_DIRECTORIES "${VULKAN_DIR}/include")
+
 set(VOLK_VERSION "1.4.350")
 set(VOLK_DIR "${CMAKE_SOURCE_DIR}/vendor/vulkan/volk")
 set(VOLK_DOWNLOAD "https://github.com/zeux/volk/archive/refs/tags/${VOLK_VERSION}.tar.gz")
@@ -135,7 +143,7 @@ if(HAIO_TESTS)
         "test_image_convert_png_to_ppm,library/codecs/png.cpp"
         "test_image_etc1_roundtrip,library/codecs/etc1.cpp"
         "test_image_convert_png_to_etc1_ppm,library/codecs/png.cpp,library/codecs/etc1.cpp,library/codecs/ppm.cpp"
-        "test_gpu_formats_roundtrip,library/codecs/etc1.cpp,library/codecs/gpu_containers.cpp,library/codecs/rgb565.cpp"
+        "test_gpu_formats_roundtrip,library/codecs/etc1.cpp,library/codecs/ktx.cpp,library/codecs/pvr.cpp,library/codecs/dds.cpp,library/codecs/ktx2.cpp,library/codecs/rgb565.cpp"
     )
     foreach(deps IN LISTS tests)
         string(REPLACE "," ";${CMAKE_SOURCE_DIR}/" deps "${deps}")

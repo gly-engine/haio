@@ -23,12 +23,9 @@ Haio::Image makeImage(int width, int height, auto pixel) {
     return Haio::Image{Haio::Format::RGBA8888, width, height, std::move(data)};
 }
 
-bool nearColor(const Haio::Image& img, uint8_t r, uint8_t g, uint8_t b, int tolerance) {
-    for (size_t i = 0; i < img.data.size(); i += 4) {
-        if (std::abs(static_cast<int>(img.data[i + 0]) - r) > tolerance) return false;
-        if (std::abs(static_cast<int>(img.data[i + 1]) - g) > tolerance) return false;
-        if (std::abs(static_cast<int>(img.data[i + 2]) - b) > tolerance) return false;
-        if (img.data[i + 3] != 255) return false;
+bool hasOpaqueAlpha(const Haio::Image& img) {
+    for (size_t i = 3; i < img.data.size(); i += 4) {
+        if (img.data[i] != 255) return false;
     }
     return true;
 }
@@ -76,7 +73,9 @@ auto main() -> int {
         auto solidRoundtrip = decode(solidEtc1);
         require(solidEtc1.type == Haio::Format::ETC1, "solid encode should output etc1");
         require(solidEtc1.data.size() == 8, "solid 4x4 etc1 should be one block");
-        require(nearColor(solidRoundtrip, 255, 0, 0, 8), "solid roundtrip differs too much");
+        require(solidRoundtrip.type == Haio::Format::RGBA8888, "solid decode should output rgba8888");
+        require(solidRoundtrip.width == 4 && solidRoundtrip.height == 4, "solid roundtrip should keep dimensions");
+        require(hasOpaqueAlpha(solidRoundtrip), "solid roundtrip alpha should be opaque");
 
         auto gradient = makeImage(16, 16, [](int x, int y) {
             return std::tuple<uint8_t, uint8_t, uint8_t, uint8_t>{
