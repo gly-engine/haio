@@ -2,7 +2,7 @@
 #include "haio_formats.hpp"
 #include "haio_buffer.hpp"
 #include "haio_iwindow.hpp"
-#include "haio_vulkan.hpp"
+#include "haio_pipeline.hpp"
 
 namespace Haio {
 

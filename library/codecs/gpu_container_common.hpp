@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
-#include <vulkan/vulkan_core.h>
 
 namespace Haio::GpuContainer {
 
@@ -18,6 +17,9 @@ static constexpr uint32_t GL_RGBA = 0x1908;
 static constexpr uint32_t GL_RGBA8 = 0x8058;
 static constexpr uint32_t GL_RGB565 = 0x8d62;
 static constexpr uint32_t GL_ETC1_RGB8_OES = 0x8d64;
+static constexpr uint32_t VK_FORMAT_R5G6B5_UNORM_PACK16 = 4;
+static constexpr uint32_t VK_FORMAT_R8G8B8A8_UNORM = 37;
+static constexpr uint32_t VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK = 147;
 
 struct Profile {
     uint32_t glType;
