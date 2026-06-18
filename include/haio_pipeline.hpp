@@ -2,6 +2,7 @@
 
 #include "haio_common.hpp"
 #include "haio_formats.hpp"
+#include "haio_object.hpp"
 
 #include <optional>
 #include <unordered_map>
@@ -15,18 +16,6 @@ struct Blob {
     std::string contentType = "application/octet-stream";
     std::string path;
     std::vector<uint8_t> data;
-};
-
-struct Rect {
-    int x = 0;
-    int y = 0;
-    int width = 0;
-    int height = 0;
-};
-
-struct Size {
-    int width = 0;
-    int height = 0;
 };
 
 enum class TokenKind {

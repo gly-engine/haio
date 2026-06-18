@@ -1,49 +1,10 @@
 #include <haio.hpp>
+#include <haio_string.hpp>
 
 #include <boost/url/encoding_opts.hpp>
 #include <boost/url/parse.hpp>
 
-#include <charconv>
 #include <stdexcept>
-
-namespace {
-
-int parseInt(std::string_view value) {
-    int out = 0;
-    const auto* begin = value.data();
-    const auto* end = value.data() + value.size();
-    const auto [ptr, ec] = std::from_chars(begin, end, out);
-    if (ec != std::errc{} || ptr != end) throw std::runtime_error("invalid integer: " + std::string(value));
-    return out;
-}
-
-std::vector<std::string_view> split(std::string_view value, char sep) {
-    std::vector<std::string_view> parts;
-    while (true) {
-        const auto pos = value.find(sep);
-        parts.push_back(value.substr(0, pos));
-        if (pos == std::string_view::npos) break;
-        value.remove_prefix(pos + 1);
-    }
-    return parts;
-}
-
-Haio::Size parseSize(std::string_view value) {
-    const auto sep = value.find_first_of("xX");
-    if (sep == std::string_view::npos) {
-        const auto side = parseInt(value);
-        return {side, side};
-    }
-    return {parseInt(value.substr(0, sep)), parseInt(value.substr(sep + 1))};
-}
-
-Haio::Rect parseRect(std::string_view value) {
-    const auto parts = split(value, ',');
-    if (parts.size() != 4) throw std::runtime_error("crop expects x,y,width,height");
-    return {parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2]), parseInt(parts[3])};
-}
-
-}
 
 namespace Haio {
 
@@ -122,10 +83,10 @@ std::vector<Token> parseQueryTokens(std::string_view query) {
     const auto values = parseQueryMap(query);
     std::vector<Token> tokens;
 
-    if (auto it = values.find("crop"); it != values.end()) tokens.push_back(Tokens::Crop(parseRect(it->second)));
-    if (auto it = values.find("size"); it != values.end()) tokens.push_back(Tokens::Resize(parseSize(it->second)));
-    if (auto it = values.find("resize"); it != values.end()) tokens.push_back(Tokens::Resize(parseSize(it->second)));
-    if (auto it = values.find("radius"); it != values.end()) tokens.push_back(Tokens::Radius(parseInt(it->second)));
+    if (auto it = values.find("crop"); it != values.end()) tokens.push_back(Tokens::Crop(String::getRect(it->second)));
+    if (auto it = values.find("size"); it != values.end()) tokens.push_back(Tokens::Resize(String::getSize(it->second)));
+    if (auto it = values.find("resize"); it != values.end()) tokens.push_back(Tokens::Resize(String::getSize(it->second)));
+    if (auto it = values.find("radius"); it != values.end()) tokens.push_back(Tokens::Radius(String::getInt(it->second)));
     if (auto it = values.find("format"); it != values.end()) tokens.push_back(Tokens::Encode(formatFromName(it->second)));
 
     return tokens;

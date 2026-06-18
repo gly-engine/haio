@@ -14,7 +14,6 @@ Haio::Image decodeByFormat(const Haio::Blob& blob, Haio::Format format) {
     Haio::Image raw{Haio::Format::RAW, 0, 0, blob.data};
     switch (format) {
         case Haio::Format::PNG: return Haio::Decode<Haio::Format::PNG>()(raw);
-        case Haio::Format::WEBP: return Haio::Decode<Haio::Format::WEBP>()(raw);
         case Haio::Format::KTX: return Haio::Decode<Haio::Format::KTX>()(raw);
         case Haio::Format::KTX2: return Haio::Decode<Haio::Format::KTX2>()(raw);
         case Haio::Format::PVR: return Haio::Decode<Haio::Format::PVR>()(raw);
@@ -40,7 +39,6 @@ Blob encodeImage(const Image& image, Format format, std::string path) {
     switch (format) {
         case Format::PNG: return blobFromImage(Encode<Format::PNG>()(image), std::move(path));
         case Format::PPM: return blobFromImage(Encode<Format::PPM>()(image), std::move(path));
-        case Format::WEBP: return blobFromImage(Encode<Format::WEBP>()(image), std::move(path));
         case Format::ETC1: return blobFromImage(Encode<Format::ETC1>()(image), std::move(path));
         case Format::RGB565: return blobFromImage(Encode<Format::RGB565>()(image), std::move(path));
         case Format::KTX: return blobFromImage(Encode<Format::KTX>()(image), std::move(path));

@@ -4,9 +4,9 @@
 #include <stdexcept>
 
 int main() {
-    const auto values = Haio::parseQueryMap("?size=16x16&format=webp&name=hello+world&file=a%2Fb.png");
+    const auto values = Haio::parseQueryMap("?size=16x16&format=png&name=hello+world&file=a%2Fb.png");
     assert(values.at("size") == "16x16");
-    assert(values.at("format") == "webp");
+    assert(values.at("format") == "png");
     assert(values.at("name") == "hello world");
     assert(values.at("file") == "a/b.png");
 

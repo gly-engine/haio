@@ -29,7 +29,6 @@ Format formatFromName(std::string_view name) {
     const auto key = lower(name);
     if (key == "png") return Format::PNG;
     if (key == "ppm") return Format::PPM;
-    if (key == "webp") return Format::WEBP;
     if (key == "rgba" || key == "rgba8888") return Format::RGBA8888;
     if (key == "rgb" || key == "rgb888") return Format::RGB888;
     if (key == "etc1") return Format::ETC1;
@@ -51,7 +50,6 @@ std::string_view formatName(Format format) {
         case Format::RAW: return "raw";
         case Format::PNG: return "png";
         case Format::PPM: return "ppm";
-        case Format::WEBP: return "webp";
         case Format::RGBA8888: return "rgba8888";
         case Format::RGB888: return "rgb888";
         case Format::YUV420: return "yuv420";
@@ -73,7 +71,6 @@ std::string_view contentTypeFor(Format format) {
     switch (format) {
         case Format::PNG: return "image/png";
         case Format::PPM: return "image/x-portable-pixmap";
-        case Format::WEBP: return "image/webp";
         case Format::KTX: return "image/ktx";
         case Format::KTX2: return "image/ktx2";
         case Format::DDS: return "image/vnd-ms.dds";
@@ -86,7 +83,6 @@ bool isEncodedImageFormat(Format format) {
     switch (format) {
         case Format::PNG:
         case Format::PPM:
-        case Format::WEBP:
         case Format::ETC1:
         case Format::RGB565:
         case Format::PVR:

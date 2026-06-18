@@ -6,7 +6,6 @@ enum class Format {
     RAW,
     PNG,
     PPM,
-    WEBP,
     RGBA8888,
     RGB888,
     YUV420,
