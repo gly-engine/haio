@@ -7,9 +7,12 @@
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
+#include <boost/url/parse.hpp>
 
 #include <algorithm>
 #include <iostream>
+#include <numeric>
+#include <string_view>
 
 namespace asio = boost::asio;
 namespace beast = boost::beast;
@@ -18,28 +21,21 @@ using tcp = asio::ip::tcp;
 
 namespace {
 
-std::string urlDecode(std::string_view input) {
-    std::string out;
-    out.reserve(input.size());
-    for (size_t i = 0; i < input.size(); i++) {
-        if (input[i] == '%' && i + 2 < input.size()) {
-            auto hex = [](char c) -> int {
-                if ('0' <= c && c <= '9') return c - '0';
-                if ('a' <= c && c <= 'f') return c - 'a' + 10;
-                if ('A' <= c && c <= 'F') return c - 'A' + 10;
-                return -1;
-            };
-            const int hi = hex(input[i + 1]);
-            const int lo = hex(input[i + 2]);
-            if (hi >= 0 && lo >= 0) {
-                out.push_back(static_cast<char>((hi << 4) | lo));
-                i += 2;
-                continue;
-            }
+std::string toString(std::string_view value) {
+    return {value.begin(), value.end()};
+}
+
+std::string joinSegments(const std::vector<std::string>& segments, size_t first) {
+    return std::accumulate(
+        segments.begin() + static_cast<std::ptrdiff_t>(first),
+        segments.end(),
+        std::string{},
+        [](std::string out, const std::string& segment) {
+            if (!out.empty()) out.push_back('/');
+            out += segment;
+            return out;
         }
-        out.push_back(input[i] == '+' ? ' ' : input[i]);
-    }
-    return out;
+    );
 }
 
 struct Route {
@@ -49,23 +45,27 @@ struct Route {
 };
 
 Route parseRoute(std::string_view target) {
-    const auto q = target.find('?');
-    auto path = target.substr(0, q);
-    auto query = q == std::string_view::npos ? std::string_view{} : target.substr(q + 1);
+    auto parsed = boost::urls::parse_origin_form(target);
+    if (!parsed) throw std::runtime_error("invalid request target: " + parsed.error().message());
 
+    const auto encodedPath = toString(parsed->encoded_path());
     constexpr std::string_view prefix = "/cdn/";
-    if (!path.starts_with(prefix)) throw std::runtime_error("expected /cdn/<bucket>/<path>");
-    path.remove_prefix(prefix.size());
+    if (!encodedPath.starts_with(prefix)) throw std::runtime_error("expected /cdn/<bucket>/<path>");
 
-    const auto slash = path.find('/');
-    if (slash == std::string_view::npos) {
-        return Route{"file", urlDecode(path), std::string(query)};
+    std::vector<std::string> segments;
+    for (auto segment : parsed->segments()) segments.emplace_back(segment);
+    if (segments.empty() || segments.front() != "cdn") throw std::runtime_error("expected /cdn/<bucket>/<path>");
+
+    const auto tail = std::string_view(encodedPath).substr(prefix.size());
+    const auto query = parsed->has_query() ? toString(parsed->encoded_query()) : std::string{};
+    if (tail.find('/') == std::string_view::npos) {
+        return Route{"file", segments.size() > 1 ? segments[1] : std::string{}, query};
     }
 
-    auto bucket = urlDecode(path.substr(0, slash));
-    auto rest = urlDecode(path.substr(slash + 1));
+    auto bucket = segments.size() > 1 ? segments[1] : std::string{};
+    auto rest = segments.size() > 2 ? joinSegments(segments, 2) : std::string{};
     if (bucket.empty()) bucket = "file";
-    return Route{std::move(bucket), std::move(rest), std::string(query)};
+    return Route{std::move(bucket), std::move(rest), query};
 }
 
 bool hasTokenKind(const std::vector<Haio::Token>& tokens, Haio::TokenKind kind) {
