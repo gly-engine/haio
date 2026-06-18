@@ -4,9 +4,11 @@
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
+#include <boost/url/parse.hpp>
+#include <boost/url/url.hpp>
 
 #include <fstream>
-#include <sstream>
+#include <string_view>
 
 namespace asio = boost::asio;
 namespace beast = boost::beast;
@@ -46,29 +48,62 @@ Haio::Blob readFileBlob(const Haio::Cdn::BucketConfig& bucket, std::string path)
 struct HttpTarget {
     std::string host;
     std::string port = "80";
+    std::string authority;
     std::string target = "/";
 };
 
-HttpTarget parseHttpTarget(std::string endpoint, std::string path) {
-    if (endpoint.starts_with("http://")) endpoint.erase(0, 7);
-    if (endpoint.starts_with("https://")) throw std::runtime_error("https buckets are not supported yet");
-
-    const auto slash = endpoint.find('/');
-    std::string hostPort = slash == std::string::npos ? endpoint : endpoint.substr(0, slash);
-    std::string prefix = slash == std::string::npos ? std::string{} : endpoint.substr(slash);
-
-    HttpTarget out;
-    if (const auto colon = hostPort.find(':'); colon != std::string::npos) {
-        out.host = hostPort.substr(0, colon);
-        out.port = hostPort.substr(colon + 1);
-    } else {
-        out.host = hostPort;
-    }
-    out.target = ensureSlash(prefix + "/" + path);
-    return out;
+std::string toString(std::string_view value) {
+    return {value.begin(), value.end()};
 }
 
-asio::awaitable<Haio::Blob> fetchHttp(std::string host, std::string port, std::string target, std::string pathForFormat) {
+std::string joinUrlPath(std::string_view prefix, std::string_view path) {
+    if (prefix.empty() || prefix == "/") return ensureSlash(std::string(path));
+    if (path.empty()) return ensureSlash(std::string(prefix));
+
+    std::string out(prefix);
+    if (!out.ends_with('/')) out.push_back('/');
+    if (path.starts_with('/')) path.remove_prefix(1);
+    out.append(path);
+    return ensureSlash(std::move(out));
+}
+
+std::string requestTarget(const boost::urls::url& url) {
+    auto target = toString(url.encoded_path());
+    if (target.empty()) target = "/";
+    if (url.has_query()) {
+        target.push_back('?');
+        target += toString(url.encoded_query());
+    }
+    return target;
+}
+
+std::string withDefaultHttpScheme(std::string endpoint) {
+    if (!endpoint.starts_with("http://") && !endpoint.starts_with("https://")) {
+        endpoint.insert(0, "http://");
+    }
+    return endpoint;
+}
+
+HttpTarget parseHttpTarget(std::string endpoint, std::string path) {
+    auto normalized = withDefaultHttpScheme(std::move(endpoint));
+    auto parsed = boost::urls::parse_uri(normalized);
+    if (!parsed) throw std::runtime_error("invalid http bucket endpoint: " + parsed.error().message());
+
+    boost::urls::url url(*parsed);
+    if (url.scheme() == "https") throw std::runtime_error("https buckets are not supported yet");
+    if (url.scheme() != "http") throw std::runtime_error("unsupported http bucket scheme: " + toString(url.scheme()));
+
+    url.set_path(joinUrlPath(url.path(), path));
+
+    return HttpTarget{
+        .host = toString(url.host()),
+        .port = url.has_port() ? toString(url.port()) : "80",
+        .authority = toString(url.encoded_host_and_port()),
+        .target = requestTarget(url),
+    };
+}
+
+asio::awaitable<Haio::Blob> fetchHttp(std::string host, std::string port, std::string authority, std::string target, std::string pathForFormat) {
     auto executor = co_await asio::this_coro::executor;
     tcp::resolver resolver(executor);
     beast::tcp_stream stream(executor);
@@ -77,7 +112,7 @@ asio::awaitable<Haio::Blob> fetchHttp(std::string host, std::string port, std::s
     co_await stream.async_connect(results, asio::use_awaitable);
 
     http::request<http::empty_body> req{http::verb::get, target, 11};
-    req.set(http::field::host, host);
+    req.set(http::field::host, authority.empty() ? host : authority);
     req.set(http::field::user_agent, "haio-cdn");
 
     co_await http::async_write(stream, req, asio::use_awaitable);
@@ -105,9 +140,8 @@ asio::awaitable<Blob> fetchBucket(const Config& config, std::string bucketName, 
     if (bucketName == "http") {
         const auto slash = path.find('/');
         if (slash == std::string::npos) throw std::runtime_error("inline http bucket expects /cdn/http/host/path");
-        auto host = path.substr(0, slash);
-        auto target = path.substr(slash);
-        co_return co_await fetchHttp(std::move(host), "80", ensureSlash(target), target);
+        auto target = parseHttpTarget(path, "");
+        co_return co_await fetchHttp(std::move(target.host), std::move(target.port), std::move(target.authority), std::move(target.target), target.target);
     }
 
     auto it = config.buckets.find(bucketName);
@@ -130,7 +164,7 @@ asio::awaitable<Blob> fetchBucket(const Config& config, std::string bucketName, 
             target.target = ensureSlash(bucket.prefix + "/" + path);
         }
         if (target.host.empty()) throw std::runtime_error("http bucket has no host");
-        co_return co_await fetchHttp(std::move(target.host), std::move(target.port), std::move(target.target), path);
+        co_return co_await fetchHttp(std::move(target.host), std::move(target.port), std::move(target.authority), std::move(target.target), path);
     }
 
     if (bucket.type == "s3") {
@@ -138,7 +172,7 @@ asio::awaitable<Blob> fetchBucket(const Config& config, std::string bucketName, 
             throw std::runtime_error("s3 bucket needs endpoint/base_url for now");
         }
         auto target = parseHttpTarget(bucket.endpoint, path);
-        co_return co_await fetchHttp(std::move(target.host), std::move(target.port), std::move(target.target), path);
+        co_return co_await fetchHttp(std::move(target.host), std::move(target.port), std::move(target.authority), std::move(target.target), path);
     }
 
     throw std::runtime_error("unsupported bucket type: " + bucket.type);

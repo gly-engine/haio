@@ -12,7 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Threads REQUIRED)
 find_package(PNG REQUIRED)
-find_package(Boost REQUIRED)
+find_package(Boost REQUIRED COMPONENTS url)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(WEBP REQUIRED IMPORTED_TARGET libwebp)
 
@@ -48,7 +48,7 @@ target_include_directories(haio_core
     PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include"
     PRIVATE "${ETCPAK_DIR}" "${WUFFS_DIR}/release/c"
 )
-target_link_libraries(haio_core PUBLIC PNG::PNG PkgConfig::WEBP Boost::headers Threads::Threads)
+target_link_libraries(haio_core PUBLIC PNG::PNG PkgConfig::WEBP Boost::headers Boost::url Threads::Threads)
 
 if(WIN32)
     file(GLOB_RECURSE HAIO_WINDOWS_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/platform/microslop/*.cpp")
@@ -67,6 +67,7 @@ if(HAIO_TESTS)
         "test_image_etc1_roundtrip"
         "test_image_convert_png_to_etc1_ppm"
         "test_gpu_formats_roundtrip"
+        "test_url_parsing"
     )
     foreach(test_name IN LISTS tests)
         add_executable("${test_name}" "${CMAKE_SOURCE_DIR}/tests/${test_name}.cpp")

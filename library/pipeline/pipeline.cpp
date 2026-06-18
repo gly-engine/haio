@@ -1,30 +1,12 @@
 #include <haio.hpp>
 
+#include <boost/url/encoding_opts.hpp>
+#include <boost/url/parse.hpp>
+
 #include <charconv>
-#include <sstream>
 #include <stdexcept>
 
 namespace {
-
-std::string urlDecode(std::string_view input) {
-    std::string out;
-    out.reserve(input.size());
-    for (size_t i = 0; i < input.size(); i++) {
-        if (input[i] == '%' && i + 2 < input.size()) {
-            unsigned int value = 0;
-            std::stringstream ss;
-            ss << std::hex << input.substr(i + 1, 2);
-            ss >> value;
-            out.push_back(static_cast<char>(value));
-            i += 2;
-        } else if (input[i] == '+') {
-            out.push_back(' ');
-        } else {
-            out.push_back(input[i]);
-        }
-    }
-    return out;
-}
 
 int parseInt(std::string_view value) {
     int out = 0;
@@ -120,15 +102,18 @@ Token Encode(Format format) {
 std::unordered_map<std::string, std::string> parseQueryMap(std::string_view query) {
     std::unordered_map<std::string, std::string> out;
     if (!query.empty() && query.front() == '?') query.remove_prefix(1);
-    while (!query.empty()) {
-        const auto amp = query.find('&');
-        const auto item = query.substr(0, amp);
-        const auto eq = item.find('=');
-        const auto key = urlDecode(item.substr(0, eq));
-        const auto value = eq == std::string_view::npos ? std::string{} : urlDecode(item.substr(eq + 1));
-        if (!key.empty()) out[key] = value;
-        if (amp == std::string_view::npos) break;
-        query.remove_prefix(amp + 1);
+    if (query.empty()) return out;
+
+    std::string target = "/?";
+    target.append(query);
+
+    auto parsed = boost::urls::parse_origin_form(target);
+    if (!parsed) throw std::runtime_error("invalid query: " + parsed.error().message());
+
+    boost::urls::encoding_opts opts;
+    opts.space_as_plus = true;
+    for (const auto& param : parsed->params(opts)) {
+        if (!param.key.empty()) out[param.key] = param.has_value ? param.value : std::string{};
     }
     return out;
 }
