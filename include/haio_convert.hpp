@@ -3,6 +3,7 @@
 #include "haio.hpp"
 
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -53,6 +54,8 @@ struct Command {
 };
 
 Command parseArgs(int argc, char* argv[]);
+Command parseCommandLine(std::string_view text);
+std::vector<std::string> lexCommandLine(std::string_view text);
 Pipeline buildPipeline(const Command& command);
 int runCli(int argc, char* argv[]);
 

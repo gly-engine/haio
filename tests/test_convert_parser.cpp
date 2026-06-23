@@ -55,6 +55,19 @@ int main() {
         assert(cmd.outputFormat == Haio::Format::PNG);
     }
     {
+        auto cmd = Haio::Convert::parseCommandLine(R"cmd(convert input.png -fx "u*v + 0.2*sin(pi*u)" output.ppm)cmd");
+        assert(!cmd.error);
+        assert(cmd.tokens[1].type == FilterFx);
+        assert(cmd.tokens[1].value == "u*v + 0.2*sin(pi*u)");
+    }
+    {
+        auto args = Haio::Convert::lexCommandLine(R"(convert background.jpg \( foreground.png -resize 800x \) output.png)");
+        assert(args.size() == 8);
+        assert(args[2] == "(");
+        assert(args[5] == "800x");
+        assert(args[6] == ")");
+    }
+    {
         auto cmd = parse({"convert", "-size", "512x512", "xc:white", "-fx", "j/h", "out.png"});
         assert(!cmd.error);
         assert(cmd.hasGenerator);
@@ -97,6 +110,11 @@ int main() {
         auto cmd = parse({"convert", "input.png", "-crop", "10x", "out.ppm"});
         assert(cmd.error);
         assert(cmd.error.token == "10x");
+    }
+    {
+        auto cmd = parse({"convert", "input.png", "--resize", "8", "out.ppm"});
+        assert(cmd.error);
+        assert(cmd.error.token == "8");
     }
     {
         auto cmd = parse({"convert", "-size", "512x512", "-crop", "xc:white", "out.ppm"});

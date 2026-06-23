@@ -1,9 +1,12 @@
 #include <haio.hpp>
 
-#include <png.h>
+#include <spng.h>
 
+#include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
+#include <string_view>
 
 #define WUFFS_IMPLEMENTATION
 #define WUFFS_CONFIG__MODULES
@@ -17,16 +20,9 @@
 
 namespace {
 
-struct PngWriteTarget {
-    std::vector<uint8_t>* data;
-};
-
-void writePngBytes(png_structp png, png_bytep bytes, png_size_t len) {
-    auto* target = static_cast<PngWriteTarget*>(png_get_io_ptr(png));
-    target->data->insert(target->data->end(), bytes, bytes + len);
+void checkSpng(int err, std::string_view message) {
+    if (err) throw std::runtime_error(std::string(message) + ": " + spng_strerror(err));
 }
-
-void flushPngBytes(png_structp) {}
 
 }
 
@@ -96,35 +92,31 @@ Stage Encode<Format::PNG>() {
             throw std::runtime_error("invalid rgba8888 image for png encode");
         }
 
-        png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
-        if (!png) throw std::runtime_error("failed to create png writer");
+        std::unique_ptr<spng_ctx, decltype(&spng_ctx_free)> ctx(spng_ctx_new(SPNG_CTX_ENCODER), spng_ctx_free);
+        if (!ctx) throw std::runtime_error("failed to create png writer");
 
-        png_infop info = png_create_info_struct(png);
-        if (!info) {
-            png_destroy_write_struct(&png, nullptr);
-            throw std::runtime_error("failed to create png info");
-        }
+        checkSpng(spng_set_option(ctx.get(), SPNG_ENCODE_TO_BUFFER, 1), "failed to configure png writer");
 
-        std::vector<uint8_t> buffer;
-        PngWriteTarget target{&buffer};
+        spng_ihdr ihdr{};
+        ihdr.width = static_cast<uint32_t>(img.width);
+        ihdr.height = static_cast<uint32_t>(img.height);
+        ihdr.bit_depth = 8;
+        ihdr.color_type = SPNG_COLOR_TYPE_TRUECOLOR_ALPHA;
+        ihdr.compression_method = 0;
+        ihdr.filter_method = 0;
+        ihdr.interlace_method = SPNG_INTERLACE_NONE;
 
-        if (setjmp(png_jmpbuf(png))) {
-            png_destroy_write_struct(&png, &info);
-            throw std::runtime_error("failed to encode png");
-        }
+        checkSpng(spng_set_ihdr(ctx.get(), &ihdr), "failed to set png header");
+        checkSpng(spng_encode_image(ctx.get(), img.data.data(), img.data.size(), SPNG_FMT_PNG, SPNG_ENCODE_FINALIZE), "failed to encode png");
 
-        png_set_write_fn(png, &target, writePngBytes, flushPngBytes);
-        png_set_IHDR(png, info, img.width, img.height, 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-        png_write_info(png, info);
+        size_t size = 0;
+        int err = 0;
+        std::unique_ptr<void, decltype(&std::free)> bytes(spng_get_png_buffer(ctx.get(), &size, &err), std::free);
+        checkSpng(err, "failed to read encoded png");
+        if (!bytes) throw std::runtime_error("failed to read encoded png");
 
-        std::vector<png_bytep> rows(static_cast<size_t>(img.height));
-        for (int y = 0; y < img.height; y++) {
-            rows[static_cast<size_t>(y)] = const_cast<png_bytep>(img.data.data() + static_cast<size_t>(y) * static_cast<size_t>(img.width) * 4);
-        }
-        png_write_image(png, rows.data());
-        png_write_end(png, nullptr);
-        png_destroy_write_struct(&png, &info);
-
+        const auto* begin = static_cast<const uint8_t*>(bytes.get());
+        std::vector<uint8_t> buffer(begin, begin + size);
         return Image{Format::PNG, img.width, img.height, std::move(buffer)};
     };
 }

@@ -1,4 +1,5 @@
 #include <haio_convert.hpp>
+#include <haio_convert_grammar.hpp>
 #include <haio_string.hpp>
 
 #include <boost/spirit/home/x3.hpp>
@@ -6,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>
+#include <vector>
 
 namespace x3 = boost::spirit::x3;
 
@@ -71,6 +73,31 @@ void setError(Command& command, std::string message, std::string token = {}) {
 
 bool isOption(std::string_view token) {
     return token.starts_with('-') && token != "-";
+}
+
+std::string unescapeDoubleQuoted(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size(); i++) {
+        if (text[i] == '\\' && i + 1 < text.size()) {
+            out.push_back(text[++i]);
+        } else {
+            out.push_back(text[i]);
+        }
+    }
+    return out;
+}
+
+std::string normalizeLexeme(std::string text) {
+    if (text == "\\(") return "(";
+    if (text == "\\)") return ")";
+    if (text.size() >= 2 && text.front() == '\'' && text.back() == '\'') {
+        return text.substr(1, text.size() - 2);
+    }
+    if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
+        return unescapeDoubleQuoted(std::string_view(text).substr(1, text.size() - 2));
+    }
+    return text;
 }
 
 TokenType generatorType(std::string_view prefix) {
@@ -154,14 +181,14 @@ bool tokenizeSource(Command& command, std::string token, std::string pendingSize
     return tokenizeInput(command, std::move(token));
 }
 
-std::string requireOptionValue(Command& command, int& i, int argc, char* argv[], std::string_view token, std::string_view option) {
+std::string requireOptionValue(Command& command, size_t& i, std::span<const std::string> args, std::string_view token, std::string_view option) {
     const auto prefix = std::string(option) + '=';
     if (token.starts_with(prefix)) return std::string(token.substr(prefix.size()));
-    if (i + 1 >= argc) {
+    if (i + 1 >= args.size()) {
         setError(command, "missing convert option argument", std::string(option));
         return {};
     }
-    return argv[++i];
+    return args[++i];
 }
 
 bool addCrop(Command& command, std::string value, bool required) {
@@ -216,27 +243,9 @@ bool addFx(Command& command, std::string value) {
     return addToken(command, Token{.type = TokenType::FilterFx, .value = std::move(value)});
 }
 
-} // namespace
-
-Error::operator bool() const noexcept {
-    return !message.empty();
-}
-
-bool parseSizeToken(std::string_view text, Size& out) {
-    return String::tryGetSize(text, out);
-}
-
-bool parseCropGeometryToken(std::string_view text, Rect& out) {
-    return String::tryGetCropGeometry(text, out);
-}
-
-bool parseRectToken(std::string_view text, Rect& out) {
-    return String::tryGetRect(text, out);
-}
-
-Command parseArgs(int argc, char* argv[]) {
+Command parseTokens(std::span<const std::string> args) {
     Command command;
-    if (argc <= 2) {
+    if (args.size() <= 2) {
         setError(command, "missing convert input");
         return command;
     }
@@ -244,11 +253,11 @@ Command parseArgs(int argc, char* argv[]) {
     std::string pendingSize;
     bool hasOutput = false;
 
-    for (int i = 1; i < argc; i++) {
-        const std::string_view token = argv[i];
+    for (size_t i = 1; i < args.size(); i++) {
+        const std::string_view token = args[i];
 
         if (token == "-size") {
-            pendingSize = requireOptionValue(command, i, argc, argv, token, "-size");
+            pendingSize = requireOptionValue(command, i, args, token, "-size");
             if (command.error) return command;
             continue;
         }
@@ -258,7 +267,7 @@ Command parseArgs(int argc, char* argv[]) {
                 setError(command, "-size must be followed by a generator source", pendingSize);
                 return command;
             }
-            auto value = requireOptionValue(command, i, argc, argv, token, "-fx");
+            auto value = requireOptionValue(command, i, args, token, "-fx");
             if (command.error || !addFx(command, std::move(value))) return command;
             continue;
         }
@@ -270,12 +279,12 @@ Command parseArgs(int argc, char* argv[]) {
             }
 
             std::string value;
-            if (i + 1 < argc && !isOption(argv[i + 1])) {
+            if (i + 1 < args.size() && !isOption(args[i + 1])) {
                 Rect ignored;
-                const std::string_view next = argv[i + 1];
+                const std::string_view next = args[i + 1];
                 if (parseCropGeometryToken(next, ignored) || parseRectToken(next, ignored)) {
-                    value = argv[++i];
-                } else if (i + 2 < argc) {
+                    value = args[++i];
+                } else if (i + 2 < args.size()) {
                     setError(command, "invalid crop geometry", std::string(next));
                     return command;
                 }
@@ -286,28 +295,28 @@ Command parseArgs(int argc, char* argv[]) {
         }
 
         if (token == "--crop" || token.starts_with("--crop=")) {
-            auto value = requireOptionValue(command, i, argc, argv, token, "--crop");
+            auto value = requireOptionValue(command, i, args, token, "--crop");
             if (command.error || !addCrop(command, std::move(value), true)) return command;
             continue;
         }
 
         if (token == "--size" || token.starts_with("--size=") || token == "--resize" || token.starts_with("--resize=") || token == "-resize" || token.starts_with("-resize=")) {
             const auto option = token.starts_with("--size") ? "--size" : token.starts_with("--resize") ? "--resize" : "-resize";
-            auto value = requireOptionValue(command, i, argc, argv, token, option);
+            auto value = requireOptionValue(command, i, args, token, option);
             if (command.error || !addResize(command, std::move(value), option)) return command;
             continue;
         }
 
         if (token == "--radius" || token.starts_with("--radius=") || token == "-radius" || token.starts_with("-radius=")) {
             const auto option = token.starts_with("--radius") ? "--radius" : "-radius";
-            auto value = requireOptionValue(command, i, argc, argv, token, option);
+            auto value = requireOptionValue(command, i, args, token, option);
             if (command.error || !addRadius(command, std::move(value))) return command;
             continue;
         }
 
         if (token == "--format" || token.starts_with("--format=") || token == "-format" || token.starts_with("-format=")) {
             const auto option = token.starts_with("--format") ? "--format" : "-format";
-            auto value = requireOptionValue(command, i, argc, argv, token, option);
+            auto value = requireOptionValue(command, i, args, token, option);
             if (command.error || !addFormat(command, std::move(value))) return command;
             continue;
         }
@@ -353,6 +362,49 @@ Command parseArgs(int argc, char* argv[]) {
     }
 
     return command;
+}
+
+} // namespace
+
+Error::operator bool() const noexcept {
+    return !message.empty();
+}
+
+bool parseSizeToken(std::string_view text, Size& out) {
+    return String::tryGetSize(text, out);
+}
+
+bool parseCropGeometryToken(std::string_view text, Rect& out) {
+    return String::tryGetCropGeometry(text, out);
+}
+
+bool parseRectToken(std::string_view text, Rect& out) {
+    return String::tryGetRect(text, out);
+}
+
+std::vector<std::string> lexCommandLine(std::string_view text) {
+    std::vector<std::string> args;
+    auto first = text.begin();
+    const auto last = text.end();
+    if (!x3::parse(first, last, Lexer::cmdline, args) || first != last) {
+        throw std::runtime_error("invalid convert command line");
+    }
+
+    std::ranges::transform(args, args.begin(), normalizeLexeme);
+    return args;
+}
+
+Command parseCommandLine(std::string_view text) {
+    return parseTokens(lexCommandLine(text));
+}
+
+Command parseArgs(int argc, char* argv[]) {
+    std::vector<std::string> args;
+    args.reserve(static_cast<size_t>(std::max(argc, 0)));
+    for (int i = 0; i < argc; i++) {
+        args.emplace_back(argv[i]);
+    }
+    return parseTokens(args);
 }
 
 } // namespace Haio::Convert

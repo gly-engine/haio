@@ -1,14 +1,11 @@
 #include <haio_convert.hpp>
 
-#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 
 namespace Haio::Convert {
 namespace {
-
-constexpr std::array<uint8_t, 8> pngMagic = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
 
 void printUsage() {
     std::cerr << "usage:\n"
@@ -41,13 +38,6 @@ std::vector<uint8_t> readFile(const std::filesystem::path& path) {
     return readStream(in);
 }
 
-Format detectMagic(const std::vector<uint8_t>& data) {
-    if (data.size() >= pngMagic.size() && std::equal(pngMagic.begin(), pngMagic.end(), data.begin())) {
-        return Format::PNG;
-    }
-    return Format::RAW;
-}
-
 Blob readInputBlob(Command& command) {
     Blob blob;
     blob.path = command.inputPath;
@@ -56,7 +46,7 @@ Blob readInputBlob(Command& command) {
     blob.data = command.inputPath == "-" ? readStream(std::cin) : readFile(command.inputPath);
 
     if (command.inputFormatName.empty()) {
-        if (const auto magic = detectMagic(blob.data); magic != Format::RAW) {
+        if (const auto magic = formatFromMagic(blob.data); magic != Format::RAW) {
             command.inputFormat = magic;
             blob.format = magic;
             blob.contentType = contentTypeFor(magic);

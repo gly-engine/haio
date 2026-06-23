@@ -5,6 +5,7 @@
 #include "haio_object.hpp"
 
 #include <optional>
+#include <span>
 #include <unordered_map>
 
 namespace Haio {
@@ -59,6 +60,7 @@ Token Encode(Format format);
 
 Format formatFromName(std::string_view name);
 Format formatFromExtension(std::string_view path);
+Format formatFromMagic(std::span<const uint8_t> data);
 std::string_view formatName(Format format);
 std::string_view extensionFor(Format format);
 std::string_view contentTypeFor(Format format);

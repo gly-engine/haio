@@ -39,12 +39,7 @@ int getInt(std::string_view value) {
 
 bool tryGetSize(std::string_view value, Size& out) {
     const auto sep = value.find_first_of("xX");
-    if (sep == std::string_view::npos) {
-        int side = 0;
-        if (!parseInt(value, side) || side <= 0) return false;
-        out = {side, side};
-        return true;
-    }
+    if (sep == std::string_view::npos) return false;
 
     int width = 0;
     int height = 0;

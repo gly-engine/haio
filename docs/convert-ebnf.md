@@ -3,28 +3,35 @@
 parser implementation: boost.spirit x3.
 
 ```ebnf
-convert-command    = "convert" , source , { filter } , output ;
-source             = file-spec | generator ;
-output             = file-spec ;
-file-spec          = [ format-prefix , ":" ] , path ;
-format-prefix      = "png" | "ppm" | "etc1" | "rgb565" | "pvr" | "dds" | "ktx" | "ktx2" | "raw" ;
-path               = non-empty-token ;
-generator          = size-option , generator-source ;
-size-option        = "-size" , size ;
-generator-source   = generator-kind , ":" , generator-value ;
-generator-kind     = "xc" | "canvas" | "gradient" | "radial-gradient" ;
-filter             = crop-filter | resize-filter | radius-filter | format-filter | fx-filter ;
-crop-filter        = "-crop" , [ crop-geometry ]
+paren         = "\(" | "\)" | "(" | ")" ;
+single-quoted = "'" , { any-character - "'" } , "'" ;
+double-quoted = """ , { "\" , any-character | any-character - """ } , """ ;
+word          = non-empty-token-without-space-quote-or-paren ;
+arg           = single-quoted | double-quoted | paren | word ;
+cmdline       = { arg } ;
+
+convert-command  = "convert" , source , { filter } , output ;
+source           = file-spec | generator ;
+output           = file-spec ;
+file-spec        = [ format-prefix , ":" ] , path ;
+format-prefix    = "png" | "ppm" | "etc1" | "rgb565" | "pvr" | "dds" | "ktx" | "ktx2" | "raw" ;
+path             = arg ;
+generator        = size-option , generator-source ;
+size-option      = "-size" , size ;
+generator-source = generator-kind , ":" , generator-value ;
+generator-kind   = "xc" | "canvas" | "gradient" | "radial-gradient" ;
+filter           = crop-filter | resize-filter | radius-filter | format-filter | fx-filter ;
+crop-filter      = "-crop" , [ crop-geometry ]
                   | "--crop" , rect ;
-resize-filter      = ( "--size" | "--resize" | "-resize" ) , size ;
-radius-filter      = ( "--radius" | "-radius" ) , integer ;
-format-filter      = ( "--format" | "-format" ) , format-prefix ;
-fx-filter          = "-fx" , expression ;
-size               = integer , ( "x" | "X" ) , integer ;
-crop-geometry      = integer , ( "x" | "X" ) , integer , [ signed-integer , signed-integer ] ;
-rect               = integer , "," , integer , "," , integer , "," , integer ;
-integer            = digit , { digit } ;
-signed-integer     = ( "+" | "-" ) , integer ;
+resize-filter    = ( "--size" | "--resize" | "-resize" ) , size ;
+radius-filter    = ( "--radius" | "-radius" ) , integer ;
+format-filter    = ( "--format" | "-format" ) , format-prefix ;
+fx-filter        = "-fx" , expression ;
+size             = integer , ( "x" | "X" ) , integer ;
+crop-geometry    = integer , ( "x" | "X" ) , integer , [ signed-integer , signed-integer ] ;
+rect             = integer , "," , integer , "," , integer , "," , integer ;
+integer          = digit , { digit } ;
+signed-integer   = ( "+" | "-" ) , integer ;
 ```
 
 ## behavior

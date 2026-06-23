@@ -1,6 +1,7 @@
 #include <haio.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <stdexcept>
 
@@ -43,6 +44,15 @@ Format formatFromName(std::string_view name) {
 
 Format formatFromExtension(std::string_view path) {
     return formatFromName(lastExtension(path));
+}
+
+Format formatFromMagic(std::span<const uint8_t> data) {
+    constexpr std::array<uint8_t, 8> pngSignature = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    if (data.size() >= pngSignature.size() && std::equal(pngSignature.begin(), pngSignature.end(), data.begin())) {
+        return Format::PNG;
+    }
+
+    return Format::RAW;
 }
 
 std::string_view formatName(Format format) {
