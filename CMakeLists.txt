@@ -15,17 +15,6 @@ find_package(Threads REQUIRED)
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 file(GLOB_RECURSE HAIO_LIB_SOURCES "${CMAKE_CURRENT_LIST_DIR}/library/*/*.cpp")
 
-add_executable(xxd "${CMAKE_CURRENT_LIST_DIR}/scripts/xxd.cpp")
-add_executable(replace "${CMAKE_CURRENT_LIST_DIR}/scripts/replace.cpp")
-add_executable(convert_ebnf "${CMAKE_CURRENT_LIST_DIR}/scripts/convert_ebnf.cpp")
-target_include_directories(convert_ebnf PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
-add_custom_command(
-    OUTPUT "${CMAKE_CURRENT_LIST_DIR}/docs/convert-ebnf.md"
-    COMMAND $<TARGET_FILE:convert_ebnf> > "${CMAKE_CURRENT_LIST_DIR}/docs/convert-ebnf.md"
-    DEPENDS convert_ebnf
-)
-add_custom_target(haio_convert_docs ALL DEPENDS "${CMAKE_CURRENT_LIST_DIR}/docs/convert-ebnf.md")
-
 set(ETCPAK_VERSION "2.1")
 set(ETCPAK_DIR "${CMAKE_SOURCE_DIR}/vendor/etcpak")
 set(ETCPAK_DOWNLOAD "https://github.com/wolfpld/etcpak/archive/refs/tags/${ETCPAK_VERSION}.tar.gz")
@@ -65,6 +54,18 @@ set(WUFFS_VERSION "v0.3.4")
 set(WUFFS_DIR "${CMAKE_SOURCE_DIR}/vendor/wuffs")
 set(WUFFS_DOWNLOAD "https://github.com/google/wuffs-mirror-release-c/archive/refs/tags/${WUFFS_VERSION}.tar.gz")
 FetchContent_Populate(wuffs URL "${WUFFS_DOWNLOAD}" SOURCE_DIR "${WUFFS_DIR}")
+
+add_executable(xxd "${CMAKE_CURRENT_LIST_DIR}/scripts/xxd.cpp")
+add_executable(replace "${CMAKE_CURRENT_LIST_DIR}/scripts/replace.cpp")
+add_executable(convert_ebnf "${CMAKE_CURRENT_LIST_DIR}/scripts/convert_ebnf.cpp")
+target_include_directories(convert_ebnf PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+target_link_libraries(convert_ebnf PRIVATE Boost::spirit)
+add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_LIST_DIR}/docs/convert-ebnf.md"
+    COMMAND $<TARGET_FILE:convert_ebnf> > "${CMAKE_CURRENT_LIST_DIR}/docs/convert-ebnf.md"
+    DEPENDS convert_ebnf
+)
+add_custom_target(haio_convert_docs ALL DEPENDS "${CMAKE_CURRENT_LIST_DIR}/docs/convert-ebnf.md")
 
 add_library(haio_core STATIC ${HAIO_LIB_SOURCES} ${ETCPAK_SOURCES})
 target_include_directories(haio_core
