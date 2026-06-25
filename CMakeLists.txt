@@ -48,7 +48,7 @@ endif()
 set(BOOST_VERSION "1.91.0-1")
 set(BOOST_DIR "${CMAKE_SOURCE_DIR}/vendor/boost")
 set(BOOST_DOWNLOAD "https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-cmake.tar.xz")
-set(BOOST_INCLUDE_LIBRARIES url asio beast CACHE STRING "" FORCE)
+set(BOOST_INCLUDE_LIBRARIES url asio beast spirit CACHE STRING "" FORCE)
 FetchContent_Populate(boost URL "${BOOST_DOWNLOAD}" SOURCE_DIR "${BOOST_DIR}")
 add_subdirectory("${BOOST_DIR}" "${CMAKE_BINARY_DIR}/boost" EXCLUDE_FROM_ALL)
 
@@ -71,7 +71,7 @@ target_include_directories(haio_core
     PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include"
     PRIVATE "${ETCPAK_DIR}" "${WUFFS_DIR}/release/c"
 )
-target_link_libraries(haio_core PUBLIC spng_static Boost::url Boost::asio Boost::beast Threads::Threads)
+target_link_libraries(haio_core PUBLIC spng_static Boost::url Boost::asio Boost::beast Boost::spirit Threads::Threads)
 
 if(WIN32)
     file(GLOB_RECURSE HAIO_WINDOWS_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/platform/microslop/*.cpp")
