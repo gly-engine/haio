@@ -57,14 +57,33 @@ console.log(toBase62(300));
 
 #### Commands
 
+Image names may specify `WIDTH` and `HEIGHT` independently. When the target dimensions differ from the image dimensions, the image is scaled using **nearest-neighbor (pixel replication)**, preserving each source pixel's color without interpolation.
+
 | Blit | Commit | Description |
-| :--: | :----: | :---------: |
-| a    | A      | Lines: even, duplicate to odd
-| b    | B      | Lines: odd, duplicate to even
-| c    | C      | Lines: even, no duplication
-| d    | D      | Lines: odd, no duplication
-| e    | E      | Columns: even, duplicate to odd
-| f    | F      | Columns: odd, duplicate to even
-| g    | G      | Columns: even, no duplication
-| h    | H      | Columns: odd, no duplication
-| z    | Z      | Full image (entire chunk visible)
+| :--: | :----: | :---------- |
+| a    | A      | `⠛` Solid tint
+| b    | B      | `⠃` Vertical interlaced tint
+| c    | C      | `⠉` Horizontal interlaced tint
+| d    | D      | `⠁` Stippled tint
+| e    | E      | Erase Masking
+
+- **Erase Masking:** Is a `solid tint` of the alpha channel that permanently applies transparency. uses a 1-bit monochrome PCX bitmap, where `1` represents opaque and `0` represents transparent.
+
+## Examples
+
+### An YUV with alpha channel image
+
+| file | content | description |
+| :--- | :-----: | :------------ 
+| `0000000000.txt` | `0 0 128 128` | delimitation of the image within the container
+| `1e00002424.pcx` | | transparency mask
+| `2B00002424.y4m` | | YUV image to be filled and displayed
+
+### An RGB progressive stream Image
+
+| file | content | description |
+| :--- | :-----: | :------------ 
+| `0000000000.txt` | `0 0 128 128` | delimitation of the image within the container
+| `1e00002424.pcx` | | 128x128 transparency mask
+| `2A00002424.ppm` | | 64x64 RGB image that will be stretched
+| `3B00002424.ppm` | | 64x64 RGB image with the complementary pixels to form the full resolution
