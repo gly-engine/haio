@@ -15,6 +15,10 @@ const haio_worker_t haio_codec_workers[] = {
         .func = EncodeRGBA8ToPPM
     },
     {
+        .steps = { HAIO_TYPE_IMG_RGBA8, HAIO_TYPE_IMG_ZCIS },
+        .func = EncodeRGBA8ToZCIS
+    },
+    {
         .steps = { HAIO_TYPE_IMG_RGBA8, HAIO_TYPE_IMG_BMP },
         .func = ConvertNotImplemented
     },

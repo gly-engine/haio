@@ -25,7 +25,8 @@ typedef struct {
 static const haio_ext_t extensions[] = {
     { { "png" }, SIZE(3), HAIO_TYPE_IMG_PNG },
     { { "ppm" }, SIZE(3), HAIO_TYPE_IMG_PPM },
-    { { "y4m" }, SIZE(3), HAIO_TYPE_IMG_Y4M420 }
+    { { "y4m" }, SIZE(3), HAIO_TYPE_IMG_Y4M420 },
+    { { { 'z', 'c', 'i', 's' } }, SIZE(4), HAIO_TYPE_IMG_ZCIS }
 };
 
 haio_type_t GetFormatFromExtension(char *const txt)
@@ -33,9 +34,15 @@ haio_type_t GetFormatFromExtension(char *const txt)
     if (!txt || !txt[0]) {
         return HAIO_TYPE_NULL;
     }
-
-    uint32_t key;
-    __builtin_memcpy(&key, txt, sizeof(key));
+    uint32_t key = 0;
+    size_t len = 0;
+    while (len < sizeof(key) && txt[len]) {
+        len++;
+    }
+    if (len < 3 || (len == sizeof(key) && txt[len])) {
+        return HAIO_TYPE_NULL;
+    }
+    __builtin_memcpy(&key, txt, len);
 
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
     key = __builtin_bswap32(key);
