@@ -167,6 +167,8 @@ if(HAIO_TEST)
     set(tests
         "test_get_format_from_extension,src/Common_String/get_format_from_ext.c"
         "test_get_codec_workers_from_formats,src/Backend_Workers/codecs.c"
+        "test_encode_zcis,src/Backend_Codecs/encode_zcis.c,src/Driver_Memory/buffer.c"
+        "test_pipeline_output_queue,src/Backend_Workers/pipeline.c,src/Driver_Memory/buffer.c"
     )
     foreach(deps IN LISTS tests)
         string(REPLACE "," ";${CMAKE_SOURCE_DIR}/" deps "${deps}")
@@ -174,6 +176,7 @@ if(HAIO_TEST)
         list(REMOVE_AT deps 0)
         add_executable("${tests_name}" "${CMAKE_SOURCE_DIR}/tests/${tests_name}.c;${deps}")
         target_include_directories(${tests_name} PRIVATE "${CMAKE_SOURCE_DIR}/include;${CMAKE_BINARY_DIR}/include")
+        add_dependencies(${tests_name} haio_functions haio_codec_paths)
         add_test(NAME "${tests_name}" COMMAND "${tests_name}")
     endforeach()
 endif()

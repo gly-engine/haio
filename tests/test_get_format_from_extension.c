@@ -14,6 +14,7 @@ int main()
     assert(GetFormatFromExtension("png")== HAIO_TYPE_IMG_PNG);
     assert(GetFormatFromExtension("ppm")== HAIO_TYPE_IMG_PPM);
     assert(GetFormatFromExtension("y4m")== HAIO_TYPE_IMG_Y4M420);
+    assert(GetFormatFromExtension("zcis")== HAIO_TYPE_IMG_ZCIS);
     // case unsensitive
     assert(GetFormatFromExtension("Png") == HAIO_TYPE_IMG_PNG);
     assert(GetFormatFromExtension("PNG") == HAIO_TYPE_IMG_PNG);
@@ -22,11 +23,13 @@ int main()
     static const volatile char png[] = " png";
     static const volatile char ppm[] = "  ppm";
     static const volatile char y4m[] = "   y4m";
+    static const volatile char zcis[] = "    zcis";
     assert(GetFormatFromExtension((char *const) &png[1]) == HAIO_TYPE_IMG_PNG);
     assert(GetFormatFromExtension((char *const) &ppm[2]) == HAIO_TYPE_IMG_PPM);
     assert(GetFormatFromExtension((char *const) &y4m[3]) == HAIO_TYPE_IMG_Y4M420);
+    assert(GetFormatFromExtension((char *const) &zcis[4]) == HAIO_TYPE_IMG_ZCIS);
     // protection: memory invasion
-    static const char gz[] = {'g', 'z'};
+    static const char gz[] = {'g', 'z', '\0'};
     assert(GetFormatFromExtension((char *const) gz) == HAIO_TYPE_NULL);
     return 0;
 }

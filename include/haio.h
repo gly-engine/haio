@@ -22,6 +22,7 @@ typedef enum {
     HAIO_TYPE_IMG_BMP,
     HAIO_TYPE_IMG_YUV420,
     HAIO_TYPE_IMG_Y4M420,
+    HAIO_TYPE_IMG_ZCIS,
     HAIO_TYPE_IMG_RGBA8,
     HAIO_TYPE_FILTER_CROP,
     HAIO_TYPE_COUNT
@@ -74,6 +75,7 @@ typedef struct {
     haio_buffer_t aux;
     haio_canvas_t canvas;
     haio_worker_fsm_t state;
+    char *error;
 } haio_worker_handle_t;
 
 typedef void (*haio_worker_func_t)(haio_worker_handle_t *handle, haio_buffer_t *src, haio_buffer_t *dst);
