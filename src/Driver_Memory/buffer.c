@@ -17,16 +17,22 @@ static inline void BufferPush43_scalar(uint8_t *dst, const uint8_t *src, size_t 
         src++;
     }
 }
+static inline void store_rgb12(uint8_t *dst, __m128i packed) {
+    _mm_storel_epi64((__m128i *) dst, packed);
+    uint32_t tail = (uint32_t) _mm_cvtsi128_si32(_mm_srli_si128(packed, 8));
+    memcpy(dst + 8, &tail, sizeof(tail));
+}
+
 
 __attribute__((target("avx2")))
 static inline void BufferPush43_avx2(uint8_t *dst, const uint8_t *src, size_t pixels) {
     size_t simd_pixels = pixels & ~7ULL;
 
     const __m256i shuffle = _mm256_setr_epi8(
-         0,  1,  2,   4,  5,  6,   8,  9,
-        10, 12, 13, 14, 16, 17, 18, 20,
-        21, 22, 24, 25, 26, 28, 29, 30,
-        -1, -1, -1, -1, -1, -1, -1, -1
+         0,  1,  2,  4,  5,  6,  8,  9,
+        10, 12, 13, 14, -1, -1, -1, -1,
+         0,  1,  2,  4,  5,  6,  8,  9,
+        10, 12, 13, 14, -1, -1, -1, -1
     );
 
     size_t i = 0;
@@ -34,10 +40,8 @@ static inline void BufferPush43_avx2(uint8_t *dst, const uint8_t *src, size_t pi
         __m256i v = _mm256_loadu_si256((const __m256i *)src);
         __m256i r = _mm256_shuffle_epi8(v, shuffle);
 
-        _mm_storeu_si128((__m128i *)dst,
-                         _mm256_castsi256_si128(r));
-        _mm_storel_epi64((__m128i *)(dst + 16),
-                         _mm256_extracti128_si256(r, 1));
+        store_rgb12(dst, _mm256_castsi256_si128(r));
+        store_rgb12(dst + 12, _mm256_extracti128_si256(r, 1));
 
         src += 32;
         dst += 24;
@@ -61,7 +65,7 @@ static inline void BufferPush43_ssse3(uint8_t *dst, const uint8_t *src, size_t p
         __m128i v = _mm_loadu_si128((const __m128i *)src);
         __m128i r = _mm_shuffle_epi8(v, shuffle);
 
-        _mm_storeu_si128((__m128i *)dst, r);
+        store_rgb12(dst, r);
 
         src += 16;
         dst += 12;
@@ -100,7 +104,7 @@ int BufferEnsureCapacity(haio_buffer_t *buf, size_t len)
 
 int BufferPush(haio_buffer_t *buf, const void *data, size_t len) {
     if (!buf) return 1;
-    if (BufferEnsureCapacity(buf, len + buf->len)) return 2;
+    if (BufferEnsureCapacity(buf, len)) return 2;
 
     memcpy(buf->data.u8 + buf->len, data, len);
     buf->len += len;
@@ -128,9 +132,8 @@ int BufferPush43(haio_buffer_t *buf, const void *data, size_t len)
     if (pixels == 0) return 3;
 
     size_t out_len = pixels * 3;
-    size_t needed  = buf->len + out_len;
 
-    if (BufferEnsureCapacity(buf, needed)) return 2;
+    if (BufferEnsureCapacity(buf, out_len)) return 2;
 
     uint8_t *dst = buf->data.u8 + buf->len;
     const uint8_t *src = (const uint8_t *)data;
@@ -167,7 +170,7 @@ int BufferPushString(haio_buffer_t *buf, const char *fmt, ...)
         return 2;
     }
 
-    if(BufferEnsureCapacity(buf, buf->len + (size_t)needed + 1)) return 2;
+    if(BufferEnsureCapacity(buf, (size_t)needed + 1)) return 2;
 
     vsnprintf(&buf->data.str[buf->len], buf->size, fmt, args_copy);
     va_end(args_copy);
@@ -231,8 +234,7 @@ void BufferReset(haio_buffer_t *buf) {
 }
 
 void BufferClose(haio_buffer_t *buf) {
-    if (!buf) return;
-    if (!buf->data.ptr || !buf->len) return;
+    if (!buf || !buf->data.ptr) return;
     free(buf->data.ptr);
     buf->data.ptr = NULL;
     buf->size = 0;
