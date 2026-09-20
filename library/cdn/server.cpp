@@ -10,6 +10,7 @@
 #include <boost/url/parse.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <numeric>
 #include <string_view>
@@ -68,6 +69,21 @@ Route parseRoute(std::string_view target) {
     return Route{std::move(bucket), std::move(rest), query};
 }
 
+std::string downloadName(std::string_view path, Haio::Format format) {
+    const auto slash = path.find_last_of('/');
+    const auto base = slash == std::string_view::npos ? path : path.substr(slash + 1);
+
+    std::string name;
+    for (const char c : base) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.') name.push_back(c);
+    }
+    if (const auto dot = name.find_last_of('.'); dot != std::string::npos) name.resize(dot);
+    if (name.find_first_not_of('.') == std::string::npos) name = "download";
+
+    if (format == Haio::Format::RAW) return name;
+    return name + '.' + std::string(Haio::extensionFor(format));
+}
+
 bool hasTokenKind(const std::vector<Haio::Token>& tokens, Haio::TokenKind kind) {
     return std::ranges::any_of(tokens, [kind](const Haio::Token& token) { return token.kind == kind; });
 }
@@ -92,7 +108,7 @@ http::response<http::vector_body<uint8_t>> makeText(http::status status, std::st
 }
 
 asio::awaitable<http::response<http::vector_body<uint8_t>>> handleRequest(const Haio::Cdn::Config& config, http::request<http::string_body> req) {
-    if (req.method() != http::verb::get) {
+    if (req.method() != http::verb::get && req.method() != http::verb::head) {
         co_return makeText(http::status::method_not_allowed, "method not allowed\n");
     }
 
@@ -114,7 +130,12 @@ asio::awaitable<http::response<http::vector_body<uint8_t>>> handleRequest(const 
             blob = Haio::runPipeline(std::move(blob), pipeline);
         }
 
-        co_return makeResponse(http::status::ok, blob.contentType.empty() ? Haio::contentTypeFor(blob.format) : blob.contentType, std::move(blob.data));
+        const auto filename = downloadName(route.path, blob.format);
+        const auto contentType = blob.contentType.empty() ? std::string(Haio::contentTypeFor(blob.format)) : blob.contentType;
+
+        auto res = makeResponse(http::status::ok, contentType, std::move(blob.data));
+        res.set(http::field::content_disposition, "inline; filename=\"" + filename + "\"");
+        co_return res;
     } catch (const std::exception& err) {
         co_return makeText(http::status::bad_request, std::string(err.what()) + "\n");
     }
@@ -127,7 +148,13 @@ asio::awaitable<void> session(tcp::socket socket, Haio::Cdn::Config config) {
             http::request<http::string_body> req;
             co_await http::async_read(socket, buffer, req, asio::use_awaitable);
             const bool close = req.need_eof();
+            const bool headOnly = req.method() == http::verb::head;
             auto res = co_await handleRequest(config, std::move(req));
+            if (headOnly) {
+                const auto size = res.body().size();
+                res.body().clear();
+                res.content_length(size);
+            }
             res.keep_alive(!close);
             co_await http::async_write(socket, res, asio::use_awaitable);
             if (close) break;
