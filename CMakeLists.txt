@@ -6,49 +6,20 @@ project("haio" LANGUAGES C CXX)
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/fetch.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/cpp26.cmake")
 
 find_package(Threads REQUIRED)
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-file(GLOB_RECURSE HAIO_LIB_SOURCES "${CMAKE_CURRENT_LIST_DIR}/library/*/*.cpp")
-
-set(ETCPAK_VERSION "2.1")
-set(ETCPAK_DIR "${CMAKE_SOURCE_DIR}/vendor/etcpak")
-set(ETCPAK_DOWNLOAD "https://github.com/wolfpld/etcpak/archive/refs/tags/${ETCPAK_VERSION}.tar.gz")
-FetchContent_Populate(etcpak URL "${ETCPAK_DOWNLOAD}" SOURCE_DIR "${ETCPAK_DIR}")
-set(ETCPAK_SOURCES
-    "${ETCPAK_DIR}/bcdec.c"
-    "${ETCPAK_DIR}/Decode.cpp"
-    "${ETCPAK_DIR}/Dither.cpp"
-    "${ETCPAK_DIR}/ProcessRGB.cpp"
-    "${ETCPAK_DIR}/Tables.cpp"
-)
-
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64|i[3-6]86)$")
-    check_cxx_compiler_flag("-msse4.1" HAIO_HAS_SSE41)
-    if(HAIO_HAS_SSE41)
-        set_source_files_properties(${ETCPAK_SOURCES} PROPERTIES COMPILE_OPTIONS "-msse4.1")
-    endif()
-endif()
+file(GLOB_RECURSE HAIO_LIB_SOURCES "${CMAKE_CURRENT_LIST_DIR}/library/*.cpp")
 
 set(BOOST_VERSION "1.91.0-1")
 set(BOOST_DIR "${CMAKE_SOURCE_DIR}/vendor/boost")
 set(BOOST_DOWNLOAD "https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-cmake.tar.xz")
 set(BOOST_INCLUDE_LIBRARIES url asio beast spirit CACHE STRING "" FORCE)
-FetchContent_Populate(boost URL "${BOOST_DOWNLOAD}" SOURCE_DIR "${BOOST_DIR}")
+haio_fetch(boost "${BOOST_DOWNLOAD}" "${BOOST_DIR}" CMakeLists.txt)
 add_subdirectory("${BOOST_DIR}" "${CMAKE_BINARY_DIR}/boost" EXCLUDE_FROM_ALL)
-
-set(SPNG_VERSION "v0.7.4")
-set(SPNG_DIR "${CMAKE_SOURCE_DIR}/vendor/spng")
-set(SPNG_DOWNLOAD "https://github.com/randy408/libspng/archive/refs/tags/${SPNG_VERSION}.tar.gz")
-set(SPNG_SHARED OFF CACHE BOOL "" FORCE)
-set(SPNG_STATIC ON CACHE BOOL "" FORCE)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-FetchContent_Populate(spng URL "${SPNG_DOWNLOAD}" SOURCE_DIR "${SPNG_DIR}")
-add_subdirectory("${SPNG_DIR}" "${CMAKE_BINARY_DIR}/spng" EXCLUDE_FROM_ALL)
 
 set(WOLFSSL_VERSION "v5.9.2-stable")
 set(WOLFSSL_DIR "${CMAKE_SOURCE_DIR}/vendor/wolfssl")
@@ -57,7 +28,7 @@ set(WOLFSSL_ASIO yes CACHE STRING "" FORCE)
 set(WOLFSSL_EXAMPLES no CACHE STRING "" FORCE)
 set(WOLFSSL_CRYPT_TESTS no CACHE STRING "" FORCE)
 set(WOLFSSL_INSTALL no CACHE STRING "" FORCE)
-FetchContent_Populate(wolfssl URL "${WOLFSSL_DOWNLOAD}" SOURCE_DIR "${WOLFSSL_DIR}")
+haio_fetch(wolfssl "${WOLFSSL_DOWNLOAD}" "${WOLFSSL_DIR}" CMakeLists.txt)
 add_subdirectory("${WOLFSSL_DIR}" "${CMAKE_BINARY_DIR}/wolfssl" EXCLUDE_FROM_ALL)
 
 # wolfssl keeps WOLFSSL_ASIO's defines PRIVATE and exports only its own root, so a
@@ -66,11 +37,6 @@ add_subdirectory("${WOLFSSL_DIR}" "${CMAKE_BINARY_DIR}/wolfssl" EXCLUDE_FROM_ALL
 set(HAIO_TLS_DEFINITIONS
     BOOST_ASIO_USE_WOLFSSL OPENSSL_ALL OPENSSL_EXTRA HAVE_EX_DATA
     WOLFSSL_KEY_GEN HAVE_OCSP OPENSSL_NO_SSL2 OPENSSL_NO_SSL3)
-
-set(WUFFS_VERSION "v0.3.4")
-set(WUFFS_DIR "${CMAKE_SOURCE_DIR}/vendor/wuffs")
-set(WUFFS_DOWNLOAD "https://github.com/google/wuffs-mirror-release-c/archive/refs/tags/${WUFFS_VERSION}.tar.gz")
-FetchContent_Populate(wuffs URL "${WUFFS_DOWNLOAD}" SOURCE_DIR "${WUFFS_DIR}")
 
 add_executable(xxd "${CMAKE_CURRENT_LIST_DIR}/scripts/xxd.cpp")
 add_executable(replace "${CMAKE_CURRENT_LIST_DIR}/scripts/replace.cpp")
@@ -84,12 +50,92 @@ add_custom_command(
 )
 add_custom_target(haio_convert_docs ALL DEPENDS "${CMAKE_CURRENT_LIST_DIR}/docs/convert-ebnf.md")
 
-add_library(haio_core STATIC ${HAIO_LIB_SOURCES} ${ETCPAK_SOURCES})
+# the codec registry is the source tree itself: every "template <> ... X<Format::F, Color::P>"
+# found in a codec becomes a declaration, which is all the concepts need to see.
+#
+# it runs at build time and not at configure time on purpose. CONFIGURE_DEPENDS
+# re-globs when the set of files changes, never when their contents do, so editing
+# a codec to add or drop a capability would otherwise leave a stale header behind.
+file(GLOB HAIO_CONTAINER_DIRS CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/library/backend/codecs/container/*")
+file(GLOB_RECURSE HAIO_COLOR_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/library/backend/codecs/color/*.cpp")
+list(SORT HAIO_CONTAINER_DIRS)
+list(SORT HAIO_COLOR_SOURCES)
+
+set(HAIO_CODEC_SOURCES "")
+set(HAIO_CODEC_SOURCES_EXTRA "")
+set(HAIO_CODEC_LIBRARIES "")
+set(HAIO_CODECS_OFF "")
+
+# one directory per container, one file per capability: -DHAIO_CODEC_ZCIS=OFF drops
+# the whole format, and a codec's own cmake may add finer switches such as
+# -DHAIO_USE_SPNG=OFF, which drops png encoding and keeps detect and decode
+foreach(HAIO_CODEC_DIR IN LISTS HAIO_CONTAINER_DIRS)
+    if(NOT IS_DIRECTORY "${HAIO_CODEC_DIR}")
+        continue()
+    endif()
+    get_filename_component(name "${HAIO_CODEC_DIR}" NAME)
+    string(TOUPPER "${name}" upper)
+    option(HAIO_CODEC_${upper} "build the ${name} codec" ON)
+
+    file(GLOB HAIO_CODEC_SOURCES_THIS CONFIGURE_DEPENDS "${HAIO_CODEC_DIR}/*.cpp")
+    list(SORT HAIO_CODEC_SOURCES_THIS)
+
+    if(NOT HAIO_CODEC_${upper})
+        list(APPEND HAIO_CODECS_OFF "${name}")
+        list(REMOVE_ITEM HAIO_LIB_SOURCES ${HAIO_CODEC_SOURCES_THIS})
+        continue()
+    endif()
+
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/cmake/codec_${name}.cmake")
+        include("${CMAKE_CURRENT_LIST_DIR}/cmake/codec_${name}.cmake")
+    endif()
+
+    list(APPEND HAIO_CODEC_SOURCES ${HAIO_CODEC_SOURCES_THIS})
+    file(GLOB every "${HAIO_CODEC_DIR}/*.cpp")
+    foreach(source IN LISTS every)
+        if(NOT source IN_LIST HAIO_CODEC_SOURCES_THIS)
+            list(REMOVE_ITEM HAIO_LIB_SOURCES "${source}")
+            get_filename_component(capability "${source}" NAME_WE)
+            list(APPEND HAIO_CODECS_OFF "${name}/${capability}")
+        endif()
+    endforeach()
+endforeach()
+
+# colour conversions come in pairs of files rather than directories, so their cmake
+# attaches dependencies by name
+foreach(colour IN ITEMS etc1)
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/cmake/color_${colour}.cmake")
+        include("${CMAKE_CURRENT_LIST_DIR}/cmake/color_${colour}.cmake")
+    endif()
+endforeach()
+list(APPEND HAIO_CODEC_SOURCES ${HAIO_COLOR_SOURCES})
+
+if(HAIO_CODECS_OFF)
+    message(STATUS "haio: disabled -- ${HAIO_CODECS_OFF}")
+endif()
+
+set(HAIO_CODECS_HEADER "${CMAKE_BINARY_DIR}/include/haio_codecs.hpp")
+set(HAIO_FORMATS_HEADER "${CMAKE_CURRENT_LIST_DIR}/include/haio_formats.hpp")
+add_executable(gen_codecs "${CMAKE_CURRENT_LIST_DIR}/scripts/gen_codecs.cpp")
+add_custom_command(
+    OUTPUT "${HAIO_CODECS_HEADER}"
+    COMMAND $<TARGET_FILE:gen_codecs> "${HAIO_CODECS_HEADER}"
+            --formats "${HAIO_FORMATS_HEADER}" ${HAIO_CODEC_SOURCES}
+    DEPENDS gen_codecs "${HAIO_FORMATS_HEADER}" ${HAIO_CODEC_SOURCES}
+    COMMENT "scanning codecs for their capabilities"
+)
+add_custom_target(haio_codecs DEPENDS "${HAIO_CODECS_HEADER}")
+
+add_library(haio_core STATIC ${HAIO_LIB_SOURCES} ${HAIO_CODEC_SOURCES_EXTRA})
+# nothing third party leaks in here: each codec attaches what it needs to its own
+# source file in cmake/codec_<name>.cmake
 target_include_directories(haio_core
     PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include"
-    PRIVATE "${ETCPAK_DIR}" "${WUFFS_DIR}/release/c"
+           "${CMAKE_BINARY_DIR}/include"
 )
-target_link_libraries(haio_core PUBLIC spng_static wolfssl Boost::url Boost::asio Boost::beast Boost::spirit Threads::Threads)
+target_link_libraries(haio_core PUBLIC ${HAIO_CODEC_LIBRARIES} wolfssl Boost::url Boost::asio Boost::beast Boost::spirit Threads::Threads)
+target_compile_options(haio_core PUBLIC ${HAIO_CXX_FLAGS})
+add_dependencies(haio_core haio_codecs)
 target_compile_definitions(haio_core PRIVATE ${HAIO_TLS_DEFINITIONS})
 target_include_directories(haio_core BEFORE PRIVATE "${WOLFSSL_DIR}/wolfssl")
 
@@ -115,8 +161,24 @@ if(HAIO_TESTS)
         "test_convert_parser"
         "test_format_from_magic"
         "test_encode_zcis"
+        "test_color_rgba8888_to_rgb888"
+        "test_decode_netpbm"
+        "test_format_mime"
+        "test_transform_concepts"
     )
     foreach(test_name IN LISTS tests)
+        # a test named after a codec has nothing to assert once that codec is off
+        set(skip_test OFF)
+        foreach(disabled IN LISTS HAIO_CODECS_OFF)
+            if(test_name MATCHES "${disabled}")
+                set(skip_test ON)
+            endif()
+        endforeach()
+        if(skip_test)
+            message(STATUS "haio: skipping ${test_name}, its codec is disabled")
+            continue()
+        endif()
+
         add_executable("${test_name}" "${CMAKE_SOURCE_DIR}/tests/${test_name}.cpp")
         target_link_libraries("${test_name}" PRIVATE haio_core)
         if(test_name STREQUAL "test_image_convert_png_to_ppm")

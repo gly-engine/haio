@@ -1,66 +1,38 @@
 #pragma once
 
-#include "haio.hpp"
+#include "haio_codec.hpp"
 
-#include <optional>
-#include <span>
-#include <string>
-#include <string_view>
-#include <vector>
+namespace Haio {
 
-namespace Haio::Convert {
+/**
+ * how many bytes one image of this colour and size takes. block formats round up to
+ * whole blocks, so this is not always width times height times something.
+ */
+Result<size_t> sizeOf(Color color, Size size);
 
-enum class TokenType {
-    InputFile,
-    OutputFile,
-    GeneratorXc,
-    GeneratorGradient,
-    FilterCrop,
-    FilterResize,
-    FilterRadius,
-    FilterFormat,
-    FilterFx,
-};
+namespace Codecs {
 
-struct Error {
-    std::string message;
-    std::string token;
+/**
+ * the shape every Convert specialisation has: check, allocate, hand the work to Move.
+ * it lives here so a new colour pair is one Move and one line instead of ten.
+ */
+template <Color From, Color To>
+    requires Movable<From, To>
+Result<Image<To>> convertVia(Image<From> src) {
+    const Size size{src.width, src.height};
+    HAIO_TRY(want, sizeOf(From, size));
+    if (src.data.size() != want) {
+        HAIO_FAIL(InvalidInput, "image data does not match its own size");
+    }
 
-    explicit operator bool() const noexcept;
-};
+    HAIO_TRY(bytes, sizeOf(To, size));
+    Image<To> out{src.width, src.height, std::vector<uint8_t>(bytes)};
+    if (auto moved = Move<From, To>(src.data, out.data, size); !moved) {
+        return std::unexpected(moved.error());
+    }
+    return out;
+}
 
-struct Token {
-    TokenType type = TokenType::InputFile;
-    std::string value;
-    std::string arg;
-    Format format = Format::RAW;
-    std::optional<Rect> rect;
-    std::optional<Size> size;
-    int radius = 0;
-};
-
-struct Command {
-    Error error;
-    bool hasInput = false;
-    bool hasGenerator = false;
-    bool outputIsStdout = false;
-    std::string inputPath;
-    std::string outputPath;
-    std::string inputFormatName;
-    std::string outputFormatName;
-    Format inputFormat = Format::RAW;
-    Format outputFormat = Format::RAW;
-    std::vector<Token> tokens;
-};
-
-Command parseArgs(int argc, char* argv[]);
-Command parseCommandLine(std::string_view text);
-std::vector<std::string> lexCommandLine(std::string_view text);
-Pipeline buildPipeline(const Command& command);
-int runCli(int argc, char* argv[]);
-
-bool parseSizeToken(std::string_view text, Size& out);
-bool parseCropGeometryToken(std::string_view text, Rect& out);
-bool parseRectToken(std::string_view text, Rect& out);
+}
 
 }

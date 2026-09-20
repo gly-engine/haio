@@ -1,4 +1,4 @@
-#include <haio_convert.hpp>
+#include <haio_cli.hpp>
 
 #include <cassert>
 #include <string>
@@ -6,17 +6,17 @@
 
 namespace {
 
-Haio::Convert::Command parse(std::vector<std::string> args) {
+Haio::Cli::Command parse(std::vector<std::string> args) {
     std::vector<char*> argv;
     argv.reserve(args.size());
     for (auto& arg : args) argv.push_back(arg.data());
-    return Haio::Convert::parseArgs(static_cast<int>(argv.size()), argv.data());
+    return Haio::Cli::parseArgs(static_cast<int>(argv.size()), argv.data());
 }
 
 }
 
 int main() {
-    using enum Haio::Convert::TokenType;
+    using enum Haio::Cli::TokenType;
 
     {
         auto cmd = parse({"convert", "input.png", "-crop", "output.ppm"});
@@ -55,13 +55,13 @@ int main() {
         assert(cmd.outputFormat == Haio::Format::PNG);
     }
     {
-        auto cmd = Haio::Convert::parseCommandLine(R"cmd(convert input.png -fx "u*v + 0.2*sin(pi*u)" output.ppm)cmd");
+        auto cmd = Haio::Cli::parseCommandLine(R"cmd(convert input.png -fx "u*v + 0.2*sin(pi*u)" output.ppm)cmd");
         assert(!cmd.error);
         assert(cmd.tokens[1].type == FilterFx);
         assert(cmd.tokens[1].value == "u*v + 0.2*sin(pi*u)");
     }
     {
-        auto args = Haio::Convert::lexCommandLine(R"(convert background.jpg \( foreground.png -resize 800x \) output.png)");
+        auto args = Haio::Cli::lexCommandLine(R"(convert background.jpg \( foreground.png -resize 800x \) output.png)");
         assert(args.size() == 8);
         assert(args[2] == "(");
         assert(args[5] == "800x");

@@ -1,5 +1,5 @@
 #include <haio_cdn.hpp>
-#include <haio_convert.hpp>
+#include <haio_cli.hpp>
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
@@ -57,31 +57,23 @@ int probeCommand(int argc, char* argv[]) {
         }
 
         const std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        const auto format = Haio::formatFromMagic(data);
+        const auto found = Haio::Detect(data);
 
         std::cout << path.string() << ": ";
-        if (format == Haio::Format::RAW) {
-            const auto foreign = Haio::describeForeignMagic(data);
-            std::cout << (foreign.empty() ? "unrecognised" : foreign);
-            if (!foreign.empty()) std::cout << " (haio cannot decode it)";
+        if (!found) {
+            std::cout << "unrecognised";
         } else {
-            std::cout << Haio::formatName(format);
-            try {
-                const Haio::Blob blob{format, std::string(Haio::contentTypeFor(format)), path.string(), data};
-                const auto image = Haio::decodeBlob(blob, format);
-                std::cout << ' ' << image.width << 'x' << image.height;
-            } catch (const std::exception&) {
-                // no decoder for this one, the name is all we can report
+            std::cout << Haio::formatName(found.format) << ' ' << Haio::colorName(found.color);
+            const Haio::Blob blob{found.format, found.color, std::string(Haio::contentTypeFor(found.format)), path.string(), data};
+            if (const auto image = Haio::Decode(blob); image) {
+                std::cout << ' ' << image->width << 'x' << image->height;
             }
+            // without a decoder the name is all we can report
         }
         std::cout << ", " << data.size() << " bytes";
 
-        Haio::Format fromName = Haio::Format::RAW;
-        try {
-            fromName = Haio::formatFromExtension(path.string());
-        } catch (const std::exception&) {
-        }
-        if (fromName != Haio::Format::RAW && fromName != format) {
+        const auto fromName = Haio::formatFromExtension(path.string());
+        if (fromName != Haio::Format::RAW && fromName != found.format) {
             std::cout << "  [extension says " << Haio::formatName(fromName) << ']';
             failures++;
         }
@@ -114,7 +106,7 @@ auto main(int argc, char* argv[]) -> int {
         }
 
         const std::string_view command = argv[1];
-        if (command == "convert") return Haio::Convert::runCli(argc - 1, argv + 1);
+        if (command == "convert") return Haio::Cli::runCli(argc - 1, argv + 1);
         if (command == "cdn") return cdnCommand(argc - 1, argv + 1);
         if (command == "probe") return probeCommand(argc - 1, argv + 1);
         if (command == "help" || command == "--help" || command == "-h") {

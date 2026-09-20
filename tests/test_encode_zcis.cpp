@@ -73,7 +73,7 @@ Ppm readPpm(const std::vector<Member>::value_type& member) {
     return ppm;
 }
 
-Haio::Image makeImage(int width, int height) {
+Haio::Image<Haio::Color::RGBA8888> makeImage(int width, int height) {
     std::vector<uint8_t> data(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
     for (size_t i = 0; i < data.size() / 4; i++) {
         data[i * 4 + 0] = static_cast<uint8_t>(i * 3 + 1);
@@ -81,16 +81,16 @@ Haio::Image makeImage(int width, int height) {
         data[i * 4 + 2] = static_cast<uint8_t>(i * 7 + 3);
         data[i * 4 + 3] = 255;
     }
-    return Haio::Image{Haio::Format::RGBA8888, width, height, std::move(data)};
+    return Haio::Image<Haio::Color::RGBA8888>{width, height, std::move(data)};
 }
 
 void testTwoLayersAreLossless() {
     const auto source = makeImage(8, 4);
-    const auto encoded = Haio::Encode<Haio::Format::ZCIS>()(source);
-    assert(encoded.type == Haio::Format::ZCIS);
-    assert(encoded.width == 8 && encoded.height == 4);
+    const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS>(source);
+    assert(encoded);
+    assert(encoded->format == Haio::Format::ZCIS);
 
-    const auto members = readArchive(encoded.data);
+    const auto members = readArchive(encoded->data);
     assert(members.size() == 3);
 
     assert(members[0].name == "000000000000.txt");
@@ -119,8 +119,9 @@ void testTwoLayersAreLossless() {
 }
 
 void testSingleRowDropsTheRefineLayer() {
-    const auto encoded = Haio::Encode<Haio::Format::ZCIS>()(makeImage(8, 1));
-    const auto members = readArchive(encoded.data);
+    const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS>(makeImage(8, 1));
+    assert(encoded);
+    const auto members = readArchive(encoded->data);
 
     assert(members.size() == 2);
     assert(members[0].name == "000000000000.txt");
@@ -129,20 +130,17 @@ void testSingleRowDropsTheRefineLayer() {
 }
 
 void testRejectsOversizedCanvas() {
-    bool threw = false;
-    try {
-        Haio::Encode<Haio::Format::ZCIS>()(makeImage(3844, 2));
-    } catch (const std::exception&) {
-        threw = true;
-    }
-    assert(threw);
+    const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS>(makeImage(3844, 2));
+    assert(!encoded);
+    assert(encoded.error().code == Haio::ErrorCode::InvalidInput);
 }
 
 void testFormatWiring() {
     assert(Haio::formatFromName("zcis") == Haio::Format::ZCIS);
     assert(Haio::formatFromExtension("photo.zcis") == Haio::Format::ZCIS);
     assert(Haio::formatName(Haio::Format::ZCIS) == "zcis");
-    assert(Haio::isEncodedImageFormat(Haio::Format::ZCIS));
+    static_assert(Haio::Codecs::Encodable<Haio::Format::ZCIS, Haio::Color::RGBA8888>);
+    static_assert(!Haio::Codecs::Decodable<Haio::Format::ZCIS, Haio::Color::RGBA8888>);
 }
 
 }

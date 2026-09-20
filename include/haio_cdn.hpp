@@ -15,8 +15,8 @@ namespace Haio::Cdn {
  *
  *   file://relative/dir     file:///absolute/dir
  *   http://host/prefix      https://host/prefix      s3://host/bucket
- *   https://*               open, the request names the host
- *   //*                     open, the request names the scheme and the host
+ *   https://\*               open, the request names the host
+ *   //\*                     open, the request names the scheme and the host
  */
 struct BucketConfig {
     std::string name;
@@ -38,7 +38,7 @@ struct Config {
 
 Config parseConfig(std::string_view text);
 Config loadConfig(const std::filesystem::path& path);
-boost::asio::awaitable<Blob> fetchBucket(const Config& config, std::string bucket, std::string path);
+boost::asio::awaitable<Result<Blob>> fetchBucket(const Config& config, std::string bucket, std::string path);
 boost::asio::awaitable<void> runServer(Config config);
 
 }

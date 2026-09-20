@@ -1,23 +1,15 @@
 #pragma once
 
+#include "haio_codec.hpp"
 #include "haio_common.hpp"
 #include "haio_formats.hpp"
 #include "haio_object.hpp"
+#include "haio_transform.hpp"
 
-#include <optional>
 #include <span>
 #include <unordered_map>
 
 namespace Haio {
-
-struct Image;
-
-struct Blob {
-    Format format = Format::RAW;
-    std::string contentType = "application/octet-stream";
-    std::string path;
-    std::vector<uint8_t> data;
-};
 
 enum class TokenKind {
     Source,
@@ -39,6 +31,7 @@ struct Token {
     int radius = 0;
 };
 
+/** a conversion described at runtime, which is what a url query builds */
 class Pipeline {
 public:
     Pipeline& operator|=(Token token);
@@ -58,25 +51,12 @@ Token Radius(int radius);
 Token Encode(Format format);
 }
 
-Format formatFromName(std::string_view name);
 Format formatFromExtension(std::string_view path);
-Format formatFromMagic(std::span<const uint8_t> data);
 Format formatFromContentType(std::string_view contentType);
-Format detectFormat(std::span<const uint8_t> data, std::string_view contentType = {}, std::string_view path = {});
-std::string_view describeForeignMagic(std::span<const uint8_t> data);
-std::string_view formatName(Format format);
 std::string_view extensionFor(Format format);
 std::string_view contentTypeFor(Format format);
-bool isEncodedImageFormat(Format format);
-bool isTransformFormat(Format format);
 
-Image decodeBlob(const Blob& blob, Format requested = Format::RAW);
-Blob encodeImage(const Image& image, Format format, std::string path = {});
-Blob runPipeline(Blob input, const Pipeline& pipeline);
-
-Image cropImage(const Image& image, Rect rect);
-Image resizeImage(const Image& image, Size size);
-Image roundImageCorners(const Image& image, int radius);
+Result<Blob> runPipeline(Blob input, const Pipeline& pipeline);
 
 std::vector<Token> parseQueryTokens(std::string_view query);
 std::unordered_map<std::string, std::string> parseQueryMap(std::string_view query);

@@ -1,4 +1,4 @@
-#include <haio_convert_grammar.hpp>
+#include <haio_cli_grammar.hpp>
 
 #include <algorithm>
 #include <iostream>
@@ -26,12 +26,12 @@ int main() {
     std::cout << "# convert cli grammar\n\n";
     std::cout << "parser implementation: boost.spirit x3.\n\n";
     std::cout << "```ebnf\n";
-    printRules(Haio::Convert::Lexer::ebnfRules);
+    printRules(Haio::Cli::Lexer::ebnfRules);
     std::cout << '\n';
-    printRules(Haio::Convert::Lexer::commandRules);
+    printRules(Haio::Cli::Lexer::commandRules);
     std::cout << "```\n\n";
     std::cout << "## behavior\n\n";
-    for (const auto& note : Haio::Convert::Lexer::notes) {
+    for (const auto& note : Haio::Cli::Lexer::notes) {
         std::cout << "- " << note.text << '\n';
     }
 

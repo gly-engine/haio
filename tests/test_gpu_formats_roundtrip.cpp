@@ -1,51 +1,56 @@
 #include <haio.hpp>
 
 #include <cmath>
-#include <cstdint>
-#include <exception>
 #include <iostream>
+#include <stdexcept>
+#include <vector>
 
 namespace {
-
-Haio::Image makeImage(int width, int height) {
-    std::vector<uint8_t> data(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            const auto off = (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 4;
-            data[off + 0] = static_cast<uint8_t>(x * 31 + y * 7);
-            data[off + 1] = static_cast<uint8_t>(x * 5 + y * 23);
-            data[off + 2] = static_cast<uint8_t>(x * 11 + y * 13);
-            data[off + 3] = 255;
-        }
-    }
-    return Haio::Image{Haio::Format::RGBA8888, width, height, std::move(data)};
-}
-
-double psnr(const Haio::Image& a, const Haio::Image& b) {
-    double mse = 0.0;
-    size_t count = 0;
-    for (size_t i = 0; i < a.data.size(); i += 4) {
-        for (int c = 0; c < 3; c++) {
-            const double d = static_cast<double>(a.data[i + c]) - static_cast<double>(b.data[i + c]);
-            mse += d * d;
-            count++;
-        }
-    }
-    mse /= static_cast<double>(count);
-    return mse == 0.0 ? 99.0 : 10.0 * std::log10((255.0 * 255.0) / mse);
-}
 
 void require(bool ok, const char* message) {
     if (!ok) throw std::runtime_error(message);
 }
 
-template <Haio::Format Container>
-void testContainer(const Haio::Image& img) {
-    auto container = Haio::Encode<Container>()(img);
-    auto restored = Haio::Decode<Container>()(container);
-    require(restored.type == img.type, "container format mismatch");
-    require(restored.width == img.width && restored.height == img.height, "container dimensions mismatch");
-    require(restored.data == img.data, "container payload mismatch");
+/** unwraps on the spot: anything failing here is the test failing */
+template <typename T>
+T unwrap(Haio::Result<T> result) {
+    if (!result) throw std::runtime_error(result.error().message);
+    return *std::move(result);
+}
+
+Haio::Image<Haio::Color::RGBA8888> makeImage(int width, int height) {
+    std::vector<uint8_t> data(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+    for (size_t i = 0; i < data.size() / 4; i++) {
+        data[i * 4 + 0] = static_cast<uint8_t>((i * 37) % 256);
+        data[i * 4 + 1] = static_cast<uint8_t>((i * 59) % 256);
+        data[i * 4 + 2] = static_cast<uint8_t>((i * 83) % 256);
+        data[i * 4 + 3] = 255;
+    }
+    return Haio::Image<Haio::Color::RGBA8888>{width, height, std::move(data)};
+}
+
+double psnr(const Haio::Image<Haio::Color::RGBA8888>& a, const Haio::Image<Haio::Color::RGBA8888>& b) {
+    double sum = 0;
+    for (size_t i = 0; i < a.data.size(); i++) {
+        const double diff = static_cast<double>(a.data[i]) - static_cast<double>(b.data[i]);
+        sum += diff * diff;
+    }
+    const double mse = sum / static_cast<double>(a.data.size());
+    return mse == 0 ? 99.0 : 10.0 * std::log10(255.0 * 255.0 / mse);
+}
+
+/**
+ * a container switched off with -DHAIO_CODEC_<NAME>=OFF has nothing to round trip,
+ * and one that never accepted this colour never had a pair to begin with.
+ */
+template <Haio::Format Container, Haio::Color P>
+void testContainer(const Haio::Image<P>& img) {
+    if constexpr (Haio::Codecs::Encodable<Container, P> && Haio::Codecs::Decodable<Container, P>) {
+        const auto container = unwrap(Haio::Codecs::Encode<Container, P>(Haio::Image<P>{img}));
+        const auto restored = unwrap(Haio::Codecs::Decode<Container, P>(container));
+        require(restored.width == img.width && restored.height == img.height, "container dimensions mismatch");
+        require(restored.data == img.data, "container payload mismatch");
+    }
 }
 
 }
@@ -53,15 +58,19 @@ void testContainer(const Haio::Image& img) {
 auto main() -> int {
     try {
         const auto rgba = makeImage(8, 8);
-        const auto rgb565 = Haio::Encode<Haio::Format::RGB565>()(rgba);
-        const auto rgb565Rgba = Haio::Decode<Haio::Format::RGB565>()(rgb565);
-        const auto etc1 = Haio::Encode<Haio::Format::ETC1>()(rgba);
+        const auto rgb565 = unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::RGB565>(rgba));
+        const auto rgb565Rgba = unwrap(Haio::Codecs::Convert<Haio::Color::RGB565, Haio::Color::RGBA8888>(rgb565));
+        const auto etc1 = unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::ETC1>(rgba));
 
         require(psnr(rgba, rgb565Rgba) > 40.0, "rgb565 psnr is too low");
 
         testContainer<Haio::Format::KTX>(rgba);
         testContainer<Haio::Format::KTX>(rgb565);
         testContainer<Haio::Format::KTX>(etc1);
+
+        testContainer<Haio::Format::KTX2>(rgba);
+        testContainer<Haio::Format::KTX2>(rgb565);
+        testContainer<Haio::Format::KTX2>(etc1);
 
         testContainer<Haio::Format::PVR>(rgba);
         testContainer<Haio::Format::PVR>(rgb565);
@@ -70,17 +79,9 @@ auto main() -> int {
         testContainer<Haio::Format::DDS>(rgba);
         testContainer<Haio::Format::DDS>(rgb565);
 
-        testContainer<Haio::Format::KTX2>(rgba);
-        testContainer<Haio::Format::KTX2>(rgb565);
-        testContainer<Haio::Format::KTX2>(etc1);
-
-        bool ddsRejectedEtc1 = false;
-        try {
-            (void)Haio::Encode<Haio::Format::DDS>()(etc1);
-        } catch (const std::runtime_error&) {
-            ddsRejectedEtc1 = true;
-        }
-        require(ddsRejectedEtc1, "dds should reject etc1");
+        // dds carries no etc1, and that is now a pair that was never declared
+        static_assert(!Haio::Codecs::Encodable<Haio::Format::DDS, Haio::Color::ETC1>);
+        static_assert(Haio::Codecs::Encodable<Haio::Format::KTX2, Haio::Color::ETC1>);
 
         return 0;
     } catch (const std::exception& err) {

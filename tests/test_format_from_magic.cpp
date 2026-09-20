@@ -12,100 +12,89 @@ std::vector<uint8_t> bytes(std::string_view text) {
 }
 
 void testEachDetectorMatchesOnlyItself() {
-    const std::vector<std::pair<Haio::Format, std::vector<uint8_t>>> samples = {
-        {Haio::Format::PNG, {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}},
-        {Haio::Format::KTX, {0xab, 'K', 'T', 'X', ' ', '1', '1', 0xbb, '\r', '\n', 0x1a, '\n'}},
-        {Haio::Format::KTX2, {0xab, 'K', 'T', 'X', ' ', '2', '0', 0xbb, '\r', '\n', 0x1a, '\n'}},
-        {Haio::Format::DDS, {'D', 'D', 'S', ' ', 124, 0, 0, 0}},
-        {Haio::Format::PVR, {'P', 'V', 'R', 0x03}},
-        {Haio::Format::PPM, {'P', '6', '\n'}},
-        {Haio::Format::ZCIS, {'!', '<', 'a', 'r', 'c', 'h', '>', '\n'}},
+    struct Sample { Haio::Format format; Haio::Color color; std::vector<uint8_t> data; };
+    const std::vector<Sample> samples = {
+        {Haio::Format::PNG,  Haio::Color::RGBA8888, {0x89,'P','N','G','\r','\n',0x1a,'\n',0,0,0,13,'I','H','D','R',0,0,0,8,0,0,0,8,8,6}},
+        {Haio::Format::PPM,  Haio::Color::RGB888,   {'P','6','\n'}},
+        {Haio::Format::ZCIS, Haio::Color::RGBA8888, {'!','<','a','r','c','h','>','\n'}},
     };
 
-    for (const auto& [format, data] : samples) {
-        assert(Haio::formatFromMagic(data) == format);
+    // a codec switched off with -DHAIO_CODEC_<NAME>=OFF stops recognising its own bytes
+    for (const auto& sample : samples) {
+        const auto found = Haio::Detect(sample.data);
+        if (Haio::detectable(sample.format, sample.color)) {
+            assert(found.format == sample.format && found.color == sample.color);
+        } else {
+            assert(!found);
+        }
     }
 }
 
 void testDetectIsPerFormat() {
-    const auto png = std::vector<uint8_t>{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
-    assert(Haio::Detect<Haio::Format::PNG>(png));
-    assert(!Haio::Detect<Haio::Format::KTX>(png));
-    assert(!Haio::Detect<Haio::Format::ZCIS>(png));
-
-    // headerless payloads carry nothing to recognise
-    assert(!Haio::Detect<Haio::Format::ETC1>(png));
-    assert(!Haio::Detect<Haio::Format::RGB565>(png));
+    // headerless colours declare no Detect at all, so asking is a compile error
+    static_assert(!Haio::Codecs::Detectable<Haio::Format::RAW, Haio::Color::ETC1>);
+    static_assert(Haio::Codecs::Detectable<Haio::Format::PNG, Haio::Color::RGBA8888>);
+    // recognised with no decoder behind it
+    static_assert(Haio::Codecs::Detectable<Haio::Format::PNG, Haio::Color::GRAY8>);
+    static_assert(!Haio::Codecs::Decodable<Haio::Format::PNG, Haio::Color::GRAY8>);
 }
 
-void testKtxVersionsDoNotCollide() {
-    const auto ktx = std::vector<uint8_t>{0xab, 'K', 'T', 'X', ' ', '1', '1', 0xbb, '\r', '\n', 0x1a, '\n'};
-    const auto ktx2 = std::vector<uint8_t>{0xab, 'K', 'T', 'X', ' ', '2', '0', 0xbb, '\r', '\n', 0x1a, '\n'};
 
-    assert(Haio::Detect<Haio::Format::KTX>(ktx) && !Haio::Detect<Haio::Format::KTX2>(ktx));
-    assert(Haio::Detect<Haio::Format::KTX2>(ktx2) && !Haio::Detect<Haio::Format::KTX>(ktx2));
-}
-
-void testDdsNeedsItsHeaderSize() {
-    // the four cc alone must not be enough
-    assert(Haio::formatFromMagic(bytes("DDS \x01\x00\x00\x00")) == Haio::Format::RAW);
-    assert(Haio::formatFromMagic(bytes("DDS ")) == Haio::Format::RAW);
-}
 
 void testTruncatedInputIsNotAMatch() {
-    assert(Haio::formatFromMagic({}) == Haio::Format::RAW);
-    assert(Haio::formatFromMagic(std::vector<uint8_t>{0x89, 'P'}) == Haio::Format::RAW);
-    assert(Haio::formatFromMagic(bytes("!<arc")) == Haio::Format::RAW);
+    assert(!Haio::Detect({}));
+    assert(!Haio::Detect(std::vector<uint8_t>{0x89, 'P'}));
+    assert(!Haio::Detect(bytes("!<arc")));
 }
 
-void testForeignFormatsAreNamed() {
-    assert(Haio::describeForeignMagic(std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xe0}) == "jpeg");
-    assert(Haio::describeForeignMagic(bytes("GIF89a....")) == "gif");
-    assert(Haio::describeForeignMagic(bytes("RIFF____WEBPVP8 ")) == "webp");
-    assert(Haio::describeForeignMagic(bytes("BM______")) == "bmp");
+/**
+ * jpeg used to be named by a hand written magic table beside the registry. it is a
+ * codec now, so the registry names it like any other, and a format with no detector
+ * is simply not recognised rather than named by a second mechanism.
+ */
+void testJpegIsRecognisedWithoutADecoder() {
+    const auto found = Haio::Detect(std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xe0});
+    assert(found);
+    assert(found.format == Haio::Format::JPEG);
+    assert(found.color == Haio::Color::YUV420);
 
-    assert(Haio::describeForeignMagic(bytes("not a picture")).empty());
-    // anything haio can read is not foreign
-    assert(Haio::describeForeignMagic(std::vector<uint8_t>{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}).empty());
+    // detected, and honest about not being able to open it
+    static_assert(Haio::Codecs::Detectable<Haio::Format::JPEG, Haio::Color::YUV420>);
+    static_assert(!Haio::Codecs::Decodable<Haio::Format::JPEG, Haio::Color::YUV420>);
+    assert(!Haio::Decode(Haio::Blob{Haio::Format::RAW, Haio::Color::RGBA8888, {}, {},
+                                    {0xff, 0xd8, 0xff, 0xe0}}));
+
+    // formats haio has no detector for are simply unrecognised
+    assert(!Haio::Detect(bytes("GIF89a....")));
+    assert(!Haio::Detect(bytes("BM______")));
 }
 
-void testContentTypeMapping() {
-    assert(Haio::formatFromContentType("image/png") == Haio::Format::PNG);
-    assert(Haio::formatFromContentType("image/png; charset=binary") == Haio::Format::PNG);
-    assert(Haio::formatFromContentType("  IMAGE/PNG  ") == Haio::Format::PNG);
-    assert(Haio::formatFromContentType("image/x-zcis") == Haio::Format::ZCIS);
+/** the file name names a container, and a container may answer to several spellings */
+void testExtensionsResolveThroughTheirAliases() {
+    assert(Haio::formatFromExtension("a.jpg") == Haio::Format::JPEG);
+    assert(Haio::formatFromExtension("a.jpeg") == Haio::Format::JPEG);
+    assert(Haio::formatFromExtension("a.pgm") == Haio::Format::PPM);
+    assert(Haio::formatFromExtension("a.pbm") == Haio::Format::PPM);
+    assert(Haio::formatFromExtension("a.PNG") == Haio::Format::PNG);
+    assert(Haio::formatFromExtension("a.xyz") == Haio::Format::RAW);
+    assert(Haio::formatFromExtension("noextension") == Haio::Format::RAW);
 
-    assert(Haio::formatFromContentType("image/jpeg") == Haio::Format::RAW);
-    assert(Haio::formatFromContentType("application/octet-stream") == Haio::Format::RAW);
-    assert(Haio::formatFromContentType({}) == Haio::Format::RAW);
+    // the first spelling is the one haio writes, and it round trips
+    for (const auto format : {Haio::Format::JPEG, Haio::Format::PPM, Haio::Format::PNG}) {
+        const auto ext = Haio::extensionFor(format);
+        assert(Haio::formatFromExtension("a." + std::string(ext)) == format);
+    }
 }
 
-void testBytesOutrankTheServerAndTheUrl() {
-    const auto png = std::vector<uint8_t>{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
 
-    // a gam creative: no extension in the url, content type is the only hint
-    assert(Haio::detectFormat(png, "image/png", "/creative_9931") == Haio::Format::PNG);
-    // the server lies, the bytes do not
-    assert(Haio::detectFormat(png, "image/jpeg", "/x.dds") == Haio::Format::PNG);
-    // nothing recognisable in the bytes, so the content type decides
-    assert(Haio::detectFormat(bytes("????"), "image/png", "/x") == Haio::Format::PNG);
-    // and the extension is the last resort
-    assert(Haio::detectFormat(bytes("????"), "application/octet-stream", "/x.ktx") == Haio::Format::KTX);
-    // an unknown extension must not throw, the way formatFromExtension does
-    assert(Haio::detectFormat(bytes("????"), {}, "/x.tar.gz") == Haio::Format::RAW);
-    assert(Haio::detectFormat({}, {}, {}) == Haio::Format::RAW);
-}
 
 }
 
 int main() {
     testEachDetectorMatchesOnlyItself();
     testDetectIsPerFormat();
-    testKtxVersionsDoNotCollide();
-    testDdsNeedsItsHeaderSize();
     testTruncatedInputIsNotAMatch();
-    testForeignFormatsAreNamed();
-    testContentTypeMapping();
-    testBytesOutrankTheServerAndTheUrl();
+    testJpegIsRecognisedWithoutADecoder();
+    testExtensionsResolveThroughTheirAliases();
     return 0;
 }
