@@ -19,28 +19,24 @@ std::string consumeValue(int& i, int argc, char* argv[], std::string_view arg, s
 }
 
 int cdnCommand(int argc, char* argv[]) {
+    const Haio::Cdn::Config defaults;
     std::filesystem::path configPath;
     std::filesystem::path root = ".";
-    auto config = Haio::Cdn::loadConfig({}, root);
+    std::string host = defaults.host;
+    unsigned short port = defaults.port;
 
     for (int i = 1; i < argc; i++) {
         const std::string_view arg = argv[i];
-        if (arg == "--port" || arg.starts_with("--port=")) config.port = static_cast<unsigned short>(std::stoi(consumeValue(i, argc, argv, arg, "--port")));
-        else if (arg == "--host" || arg.starts_with("--host=")) config.host = consumeValue(i, argc, argv, arg, "--host");
+        if (arg == "--port" || arg.starts_with("--port=")) port = static_cast<unsigned short>(std::stoi(consumeValue(i, argc, argv, arg, "--port")));
+        else if (arg == "--host" || arg.starts_with("--host=")) host = consumeValue(i, argc, argv, arg, "--host");
         else if (arg == "--config" || arg.starts_with("--config=")) configPath = consumeValue(i, argc, argv, arg, "--config");
         else if (arg == "--root" || arg.starts_with("--root=")) root = consumeValue(i, argc, argv, arg, "--root");
         else throw std::runtime_error("unknown cdn option: " + std::string(arg));
     }
 
-    if (!configPath.empty()) {
-        const auto host = config.host;
-        const auto port = config.port;
-        config = Haio::Cdn::loadConfig(configPath, root);
-        config.host = host;
-        config.port = port;
-    } else {
-        config.buckets["file"].root = root;
-    }
+    auto config = Haio::Cdn::loadConfig(configPath, root);
+    config.host = std::move(host);
+    config.port = port;
 
     boost::asio::io_context io;
     boost::asio::signal_set signals(io, SIGINT, SIGTERM);

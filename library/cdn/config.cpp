@@ -22,13 +22,21 @@ std::string unquote(std::string value) {
     return value;
 }
 
+/** a bare word would be ambiguous with a bucket name, so a file endpoint is spelled out */
+std::string toFileEndpoint(const std::filesystem::path& path) {
+    auto text = path.generic_string();
+    if (text.empty() || text == ".") return "./";
+    if (text.starts_with('/') || text.starts_with("./")) return text;
+    return "./" + text;
+}
+
 }
 
 namespace Haio::Cdn {
 
 Config loadConfig(const std::filesystem::path& path, std::filesystem::path defaultRoot) {
     Config config;
-    config.buckets["file"] = BucketConfig{.name = "file", .type = "file", .root = std::move(defaultRoot)};
+    config.buckets["file"] = BucketConfig{.name = "file", .type = "file", .endpoint = toFileEndpoint(defaultRoot)};
 
     if (path.empty() || !std::filesystem::exists(path)) return config;
 
@@ -64,9 +72,6 @@ Config loadConfig(const std::filesystem::path& path, std::filesystem::path defau
         current->values[key] = value;
 
         if (key == "type") current->type = value;
-        else if (key == "root" || key == "path") current->root = value;
-        else if (key == "host") current->host = value;
-        else if (key == "prefix") current->prefix = value;
         else if (key == "endpoint" || key == "base_url" || key == "url") current->endpoint = value;
     }
 

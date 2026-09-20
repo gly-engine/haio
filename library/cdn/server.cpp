@@ -171,6 +171,12 @@ asio::awaitable<void> listener(Haio::Cdn::Config config) {
     tcp::resolver resolver(executor);
     const auto resolved = co_await resolver.async_resolve(config.host, std::to_string(config.port), asio::use_awaitable);
     tcp::acceptor acceptor(executor, *resolved.begin());
+
+    for (const auto& [name, bucket] : config.buckets) {
+        if (bucket.type == "http" && bucket.endpoint.empty()) {
+            std::cerr << "warning: bucket \"" << name << "\" has no endpoint, so it will fetch whatever host the request names\n";
+        }
+    }
     std::cout << "haio cdn listening on http://" << config.host << ':' << config.port << "\n";
 
     for (;;) {

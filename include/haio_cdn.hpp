@@ -12,9 +12,6 @@ namespace Haio::Cdn {
 struct BucketConfig {
     std::string name;
     std::string type = "file";
-    std::filesystem::path root = ".";
-    std::string host;
-    std::string prefix;
     std::string endpoint;
     std::map<std::string, std::string> values;
 };

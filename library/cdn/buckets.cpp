@@ -1,21 +1,33 @@
 #include <haio_cdn.hpp>
 
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/redirect_error.hpp>
+#include <boost/asio/ssl.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
+#include <boost/beast/ssl.hpp>
 #include <boost/url/parse.hpp>
 #include <boost/url/url.hpp>
 
+#include <chrono>
 #include <fstream>
 #include <string_view>
 
 namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
+namespace urls = boost::urls;
 using tcp = asio::ip::tcp;
 
 namespace {
+
+constexpr auto httpTimeout = std::chrono::seconds(15);
+constexpr int maxRedirects = 5;
+
+std::string toString(std::string_view value) {
+    return {value.begin(), value.end()};
+}
 
 std::string ensureSlash(std::string value) {
     if (value.empty() || value.front() != '/') value.insert(value.begin(), '/');
@@ -35,25 +47,25 @@ std::filesystem::path safeJoin(const std::filesystem::path& root, std::string_vi
     return root / clean;
 }
 
+/** a file bucket names a directory the way an http one names a host: "/abs" or "./rel" */
+std::filesystem::path fileBucketRoot(const Haio::Cdn::BucketConfig& bucket) {
+    if (bucket.endpoint.empty()) {
+        throw std::runtime_error("file bucket \"" + bucket.name + "\" needs an endpoint starting with / or ./");
+    }
+    if (!bucket.endpoint.starts_with('/') && !bucket.endpoint.starts_with("./")) {
+        throw std::runtime_error("file bucket endpoint must start with / or ./, got: " + bucket.endpoint);
+    }
+    return std::filesystem::path(bucket.endpoint);
+}
+
 Haio::Blob readFileBlob(const Haio::Cdn::BucketConfig& bucket, std::string path) {
-    const auto fullPath = safeJoin(bucket.root, path);
+    const auto fullPath = safeJoin(fileBucketRoot(bucket), path);
     std::ifstream in(fullPath, std::ios::binary);
     if (!in) throw std::runtime_error("file not found: " + fullPath.string());
 
     std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     const auto format = Haio::formatFromExtension(fullPath.string());
     return Haio::Blob{format, std::string(Haio::contentTypeFor(format)), fullPath.string(), std::move(data)};
-}
-
-struct HttpTarget {
-    std::string host;
-    std::string port = "80";
-    std::string authority;
-    std::string target = "/";
-};
-
-std::string toString(std::string_view value) {
-    return {value.begin(), value.end()};
 }
 
 std::string joinUrlPath(std::string_view prefix, std::string_view path) {
@@ -67,7 +79,18 @@ std::string joinUrlPath(std::string_view prefix, std::string_view path) {
     return ensureSlash(std::move(out));
 }
 
-std::string requestTarget(const boost::urls::url& url) {
+void requireHttpScheme(const urls::url_view_base& url) {
+    if (url.scheme() != "http" && url.scheme() != "https") {
+        throw std::runtime_error("unsupported http bucket scheme: " + toString(url.scheme()));
+    }
+}
+
+std::string servicePort(const urls::url_view_base& url) {
+    if (url.has_port()) return toString(url.port());
+    return url.scheme() == "https" ? "443" : "80";
+}
+
+std::string requestTarget(const urls::url_view_base& url) {
     auto target = toString(url.encoded_path());
     if (target.empty()) target = "/";
     if (url.has_query()) {
@@ -84,35 +107,46 @@ std::string withDefaultHttpScheme(std::string endpoint) {
     return endpoint;
 }
 
-HttpTarget parseHttpTarget(std::string endpoint, std::string path) {
+urls::url parseEndpoint(std::string endpoint, std::string_view path) {
     auto normalized = withDefaultHttpScheme(std::move(endpoint));
-    auto parsed = boost::urls::parse_uri(normalized);
+    auto parsed = urls::parse_uri(normalized);
     if (!parsed) throw std::runtime_error("invalid http bucket endpoint: " + parsed.error().message());
 
-    boost::urls::url url(*parsed);
-    if (url.scheme() == "https") throw std::runtime_error("https buckets are not supported yet");
-    if (url.scheme() != "http") throw std::runtime_error("unsupported http bucket scheme: " + toString(url.scheme()));
-
+    urls::url url(*parsed);
+    requireHttpScheme(url);
     url.set_path(joinUrlPath(url.path(), path));
-
-    return HttpTarget{
-        .host = toString(url.host()),
-        .port = url.has_port() ? toString(url.port()) : "80",
-        .authority = toString(url.encoded_host_and_port()),
-        .target = requestTarget(url),
-    };
+    return url;
 }
 
-asio::awaitable<Haio::Blob> fetchHttp(std::string host, std::string port, std::string authority, std::string target, std::string pathForFormat) {
-    auto executor = co_await asio::this_coro::executor;
-    tcp::resolver resolver(executor);
-    beast::tcp_stream stream(executor);
+/** without an endpoint the bucket reads the upstream off the url: <scheme>/<host>/<path> */
+urls::url openBucketTarget(std::string_view path) {
+    const auto slash = path.find('/');
+    if (slash == std::string_view::npos) {
+        throw std::runtime_error("open http bucket expects /cdn/<bucket>/<scheme>/<host>/<path>");
+    }
 
-    auto results = co_await resolver.async_resolve(host, port, asio::use_awaitable);
-    co_await stream.async_connect(results, asio::use_awaitable);
+    const auto scheme = path.substr(0, slash);
+    if (scheme != "http" && scheme != "https") {
+        throw std::runtime_error("open http bucket expects a http or https scheme, got: " + toString(scheme));
+    }
+    return parseEndpoint(toString(scheme) + "://" + toString(path.substr(slash + 1)), {});
+}
 
+/** shared across requests: building it reloads the whole ca store every time */
+asio::ssl::context& tlsContext() {
+    static asio::ssl::context context = [] {
+        asio::ssl::context created(asio::ssl::context::tls_client);
+        created.set_default_verify_paths();
+        created.set_verify_mode(asio::ssl::verify_peer);
+        return created;
+    }();
+    return context;
+}
+
+template <typename Stream>
+asio::awaitable<http::response<http::vector_body<uint8_t>>> exchange(Stream& stream, std::string_view hostHeader, std::string_view target) {
     http::request<http::empty_body> req{http::verb::get, target, 11};
-    req.set(http::field::host, authority.empty() ? host : authority);
+    req.set(http::field::host, hostHeader);
     req.set(http::field::user_agent, "haio-cdn");
 
     co_await http::async_write(stream, req, asio::use_awaitable);
@@ -120,16 +154,87 @@ asio::awaitable<Haio::Blob> fetchHttp(std::string host, std::string port, std::s
     beast::flat_buffer buffer;
     http::response<http::vector_body<uint8_t>> res;
     co_await http::async_read(stream, buffer, res, asio::use_awaitable);
+    co_return res;
+}
 
+asio::awaitable<http::response<http::vector_body<uint8_t>>> request(const urls::url& url) {
+    auto executor = co_await asio::this_coro::executor;
+    tcp::resolver resolver(executor);
+
+    const auto host = toString(url.host());
+    const auto results = co_await resolver.async_resolve(host, servicePort(url), asio::use_awaitable);
+    const auto hostHeader = toString(url.encoded_host_and_port());
+    const auto target = requestTarget(url);
+
+    http::response<http::vector_body<uint8_t>> res;
     beast::error_code ec;
-    stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
-    if (res.result_int() < 200 || res.result_int() >= 300) {
-        throw std::runtime_error("http bucket returned status " + std::to_string(res.result_int()));
+    if (url.scheme() == "https") {
+        beast::ssl_stream<beast::tcp_stream> stream(executor, tlsContext());
+        if (!SSL_set_tlsext_host_name(stream.native_handle(), host.c_str())) {
+            throw std::runtime_error("could not set sni for " + host);
+        }
+        stream.set_verify_callback(asio::ssl::host_name_verification(host));
+
+        beast::get_lowest_layer(stream).expires_after(httpTimeout);
+        co_await beast::get_lowest_layer(stream).async_connect(results, asio::use_awaitable);
+        co_await stream.async_handshake(asio::ssl::stream_base::client, asio::use_awaitable);
+
+        res = co_await exchange(stream, hostHeader, target);
+
+        // a truncated shutdown is the normal case for servers that just close
+        co_await stream.async_shutdown(asio::redirect_error(asio::use_awaitable, ec));
+    } else {
+        beast::tcp_stream stream(executor);
+        stream.expires_after(httpTimeout);
+        co_await stream.async_connect(results, asio::use_awaitable);
+
+        res = co_await exchange(stream, hostHeader, target);
+
+        stream.socket().shutdown(tcp::socket::shutdown_both, ec);
     }
 
-    const auto format = Haio::formatFromExtension(pathForFormat.empty() ? target : pathForFormat);
-    co_return Haio::Blob{format, std::string(res[http::field::content_type]), pathForFormat, std::move(res.body())};
+    co_return res;
+}
+
+/** a redirect may move between http and https in either direction */
+urls::url redirectTarget(const urls::url& from, std::string_view location) {
+    auto ref = urls::parse_uri_reference(location);
+    if (!ref) throw std::runtime_error("upstream sent an invalid redirect: " + toString(location));
+
+    urls::url next;
+    if (const auto resolved = urls::resolve(from, *ref, next); !resolved) {
+        throw std::runtime_error("could not resolve redirect: " + toString(location));
+    }
+
+    requireHttpScheme(next);
+    return next;
+}
+
+asio::awaitable<Haio::Blob> fetchHttp(urls::url url, std::string pathForFormat) {
+    for (int hop = 0;; hop++) {
+        auto res = co_await request(url);
+        const auto status = res.result_int();
+
+        if (status >= 300 && status < 400) {
+            if (hop >= maxRedirects) {
+                throw std::runtime_error("upstream redirected more than " + std::to_string(maxRedirects) + " times");
+            }
+            const auto location = res[http::field::location];
+            if (location.empty()) {
+                throw std::runtime_error("upstream sent " + std::to_string(status) + " without a location header");
+            }
+            url = redirectTarget(url, std::string_view(location.data(), location.size()));
+            continue;
+        }
+
+        if (status < 200 || status >= 300) {
+            throw std::runtime_error("http bucket returned status " + std::to_string(status));
+        }
+
+        const auto format = Haio::formatFromExtension(pathForFormat.empty() ? requestTarget(url) : pathForFormat);
+        co_return Haio::Blob{format, std::string(res[http::field::content_type]), std::move(pathForFormat), std::move(res.body())};
+    }
 }
 
 }
@@ -137,18 +242,8 @@ asio::awaitable<Haio::Blob> fetchHttp(std::string host, std::string port, std::s
 namespace Haio::Cdn {
 
 asio::awaitable<Blob> fetchBucket(const Config& config, std::string bucketName, std::string path) {
-    if (bucketName == "http") {
-        const auto slash = path.find('/');
-        if (slash == std::string::npos) throw std::runtime_error("inline http bucket expects /cdn/http/host/path");
-        auto target = parseHttpTarget(path, "");
-        co_return co_await fetchHttp(std::move(target.host), std::move(target.port), std::move(target.authority), std::move(target.target), target.target);
-    }
-
-    auto it = config.buckets.find(bucketName);
-    if (it == config.buckets.end()) {
-        if (bucketName == "file") it = config.buckets.find("file");
-        if (it == config.buckets.end()) throw std::runtime_error("unknown bucket: " + bucketName);
-    }
+    const auto it = config.buckets.find(bucketName);
+    if (it == config.buckets.end()) throw std::runtime_error("unknown bucket: " + bucketName);
 
     const auto& bucket = it->second;
     if (bucket.type == "file" || bucket.type.empty()) {
@@ -156,23 +251,19 @@ asio::awaitable<Blob> fetchBucket(const Config& config, std::string bucketName, 
     }
 
     if (bucket.type == "http") {
-        HttpTarget target;
-        if (!bucket.endpoint.empty()) {
-            target = parseHttpTarget(bucket.endpoint, path);
-        } else {
-            target.host = bucket.host;
-            target.target = ensureSlash(bucket.prefix + "/" + path);
+        if (bucket.endpoint.empty()) {
+            auto url = openBucketTarget(path);
+            auto forFormat = requestTarget(url);
+            co_return co_await fetchHttp(std::move(url), std::move(forFormat));
         }
-        if (target.host.empty()) throw std::runtime_error("http bucket has no host");
-        co_return co_await fetchHttp(std::move(target.host), std::move(target.port), std::move(target.authority), std::move(target.target), path);
+        co_return co_await fetchHttp(parseEndpoint(bucket.endpoint, path), std::move(path));
     }
 
     if (bucket.type == "s3") {
         if (bucket.endpoint.empty()) {
             throw std::runtime_error("s3 bucket needs endpoint/base_url for now");
         }
-        auto target = parseHttpTarget(bucket.endpoint, path);
-        co_return co_await fetchHttp(std::move(target.host), std::move(target.port), std::move(target.authority), std::move(target.target), path);
+        co_return co_await fetchHttp(parseEndpoint(bucket.endpoint, path), std::move(path));
     }
 
     throw std::runtime_error("unsupported bucket type: " + bucket.type);

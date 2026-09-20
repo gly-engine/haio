@@ -50,6 +50,23 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_Populate(spng URL "${SPNG_DOWNLOAD}" SOURCE_DIR "${SPNG_DIR}")
 add_subdirectory("${SPNG_DIR}" "${CMAKE_BINARY_DIR}/spng" EXCLUDE_FROM_ALL)
 
+set(WOLFSSL_VERSION "v5.9.2-stable")
+set(WOLFSSL_DIR "${CMAKE_SOURCE_DIR}/vendor/wolfssl")
+set(WOLFSSL_DOWNLOAD "https://github.com/wolfSSL/wolfssl/archive/refs/tags/${WOLFSSL_VERSION}.tar.gz")
+set(WOLFSSL_ASIO yes CACHE STRING "" FORCE)
+set(WOLFSSL_EXAMPLES no CACHE STRING "" FORCE)
+set(WOLFSSL_CRYPT_TESTS no CACHE STRING "" FORCE)
+set(WOLFSSL_INSTALL no CACHE STRING "" FORCE)
+FetchContent_Populate(wolfssl URL "${WOLFSSL_DOWNLOAD}" SOURCE_DIR "${WOLFSSL_DIR}")
+add_subdirectory("${WOLFSSL_DIR}" "${CMAKE_BINARY_DIR}/wolfssl" EXCLUDE_FROM_ALL)
+
+# wolfssl keeps WOLFSSL_ASIO's defines PRIVATE and exports only its own root, so a
+# consumer has to repeat them and aim <openssl/*.h> at the shims, or the system
+# openssl headers win and the link fails on plain SSL_* symbols
+set(HAIO_TLS_DEFINITIONS
+    BOOST_ASIO_USE_WOLFSSL OPENSSL_ALL OPENSSL_EXTRA HAVE_EX_DATA
+    WOLFSSL_KEY_GEN HAVE_OCSP OPENSSL_NO_SSL2 OPENSSL_NO_SSL3)
+
 set(WUFFS_VERSION "v0.3.4")
 set(WUFFS_DIR "${CMAKE_SOURCE_DIR}/vendor/wuffs")
 set(WUFFS_DOWNLOAD "https://github.com/google/wuffs-mirror-release-c/archive/refs/tags/${WUFFS_VERSION}.tar.gz")
@@ -72,7 +89,9 @@ target_include_directories(haio_core
     PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include"
     PRIVATE "${ETCPAK_DIR}" "${WUFFS_DIR}/release/c"
 )
-target_link_libraries(haio_core PUBLIC spng_static Boost::url Boost::asio Boost::beast Boost::spirit Threads::Threads)
+target_link_libraries(haio_core PUBLIC spng_static wolfssl Boost::url Boost::asio Boost::beast Boost::spirit Threads::Threads)
+target_compile_definitions(haio_core PRIVATE ${HAIO_TLS_DEFINITIONS})
+target_include_directories(haio_core BEFORE PRIVATE "${WOLFSSL_DIR}/wolfssl")
 
 if(WIN32)
     file(GLOB_RECURSE HAIO_WINDOWS_SOURCES "${CMAKE_CURRENT_LIST_DIR}/source/platform/microslop/*.cpp")
