@@ -38,6 +38,7 @@ Format formatFromName(std::string_view name) {
     if (key == "dds") return Format::DDS;
     if (key == "ktx") return Format::KTX;
     if (key == "ktx2") return Format::KTX2;
+    if (key == "zcis") return Format::ZCIS;
     if (key == "raw" || key.empty()) return Format::RAW;
     throw std::runtime_error("unknown format: " + std::string(name));
 }
@@ -69,6 +70,7 @@ std::string_view formatName(Format format) {
         case Format::DDS: return "dds";
         case Format::KTX: return "ktx";
         case Format::KTX2: return "ktx2";
+        case Format::ZCIS: return "zcis";
     }
     return "raw";
 }
@@ -85,6 +87,7 @@ std::string_view contentTypeFor(Format format) {
         case Format::KTX2: return "image/ktx2";
         case Format::DDS: return "image/vnd-ms.dds";
         case Format::PVR: return "image/x-pvr";
+        case Format::ZCIS: return "image/x-zcis";
         default: return "application/octet-stream";
     }
 }
@@ -99,6 +102,7 @@ bool isEncodedImageFormat(Format format) {
         case Format::DDS:
         case Format::KTX:
         case Format::KTX2:
+        case Format::ZCIS:
             return true;
         default:
             return false;

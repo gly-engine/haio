@@ -95,6 +95,7 @@ if(HAIO_TESTS)
         "test_url_parsing"
         "test_convert_parser"
         "test_format_from_magic"
+        "test_encode_zcis"
     )
     foreach(test_name IN LISTS tests)
         add_executable("${test_name}" "${CMAKE_SOURCE_DIR}/tests/${test_name}.cpp")

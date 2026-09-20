@@ -45,6 +45,7 @@ Blob encodeImage(const Image& image, Format format, std::string path) {
         case Format::KTX2: return blobFromImage(Encode<Format::KTX2>()(image), std::move(path));
         case Format::PVR: return blobFromImage(Encode<Format::PVR>()(image), std::move(path));
         case Format::DDS: return blobFromImage(Encode<Format::DDS>()(image), std::move(path));
+        case Format::ZCIS: return blobFromImage(Encode<Format::ZCIS>()(image), std::move(path));
         default: throw std::runtime_error("unsupported encode format: " + std::string(formatName(format)));
     }
 }

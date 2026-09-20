@@ -1,5 +1,6 @@
 build*/
 vendor/
+branchs/
 .DS_Store
 *.db
 *.out

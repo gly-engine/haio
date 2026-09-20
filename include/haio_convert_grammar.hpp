@@ -38,7 +38,7 @@ inline constexpr std::array commandRules = {
     Rule{"source", "file-spec | generator"},
     Rule{"output", "file-spec"},
     Rule{"file-spec", R"([ format-prefix , ":" ] , path)"},
-    Rule{"format-prefix", R"("png" | "ppm" | "etc1" | "rgb565" | "pvr" | "dds" | "ktx" | "ktx2" | "raw")"},
+    Rule{"format-prefix", R"("png" | "ppm" | "etc1" | "rgb565" | "pvr" | "dds" | "ktx" | "ktx2" | "zcis" | "raw")"},
     Rule{"path", "arg"},
     Rule{"generator", "size-option , generator-source"},
     Rule{"size-option", R"("-size" , size)"},

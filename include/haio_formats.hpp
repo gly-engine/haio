@@ -14,7 +14,8 @@ enum class Format {
     PVR,
     DDS,
     KTX,
-    KTX2
+    KTX2,
+    ZCIS
 };
 
 }
