@@ -53,7 +53,7 @@ Haio::Blob readFileBlob(const Haio::Cdn::BucketConfig& bucket, std::string path)
     if (!in) throw std::runtime_error("file not found: " + fullPath.string());
 
     std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    const auto format = Haio::formatFromExtension(fullPath.string());
+    const auto format = Haio::detectFormat(data, {}, fullPath.string());
     return Haio::Blob{format, std::string(Haio::contentTypeFor(format)), fullPath.string(), std::move(data)};
 }
 
@@ -226,8 +226,13 @@ asio::awaitable<Haio::Blob> fetchHttp(urls::url url, std::string pathForFormat) 
             throw std::runtime_error("http bucket returned status " + std::to_string(status));
         }
 
-        const auto format = Haio::formatFromExtension(pathForFormat.empty() ? requestTarget(url) : pathForFormat);
-        co_return Haio::Blob{format, std::string(res[http::field::content_type]), std::move(pathForFormat), std::move(res.body())};
+        const auto contentType = res[http::field::content_type];
+        const auto format = Haio::detectFormat(
+            res.body(),
+            std::string_view(contentType.data(), contentType.size()),
+            pathForFormat.empty() ? requestTarget(url) : pathForFormat
+        );
+        co_return Haio::Blob{format, std::string(contentType), std::move(pathForFormat), std::move(res.body())};
     }
 }
 

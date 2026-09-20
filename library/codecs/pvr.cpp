@@ -1,6 +1,13 @@
 #include "gpu_container_common.hpp"
+#include "signature.hpp"
 
 namespace Haio {
+
+template <>
+bool Detect<Format::PVR>(std::span<const uint8_t> data) {
+    constexpr std::array<uint8_t, 4> magic = {'P', 'V', 'R', 0x03};
+    return Signature::matches(data, magic);
+}
 
 template <>
 Stage Encode<Format::PVR>() {

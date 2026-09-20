@@ -1,4 +1,5 @@
 #include <haio.hpp>
+#include "signature.hpp"
 
 #include <spng.h>
 
@@ -27,6 +28,12 @@ void checkSpng(int err, std::string_view message) {
 }
 
 namespace Haio {
+
+template <>
+bool Detect<Format::PNG>(std::span<const uint8_t> data) {
+    constexpr std::array<uint8_t, 8> magic = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    return Signature::matches(data, magic);
+}
 
 template <>
 Stage Decode<Format::PNG>() {

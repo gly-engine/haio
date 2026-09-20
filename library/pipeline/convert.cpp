@@ -18,7 +18,11 @@ Haio::Image decodeByFormat(const Haio::Blob& blob, Haio::Format format) {
         case Haio::Format::KTX2: return Haio::Decode<Haio::Format::KTX2>()(raw);
         case Haio::Format::PVR: return Haio::Decode<Haio::Format::PVR>()(raw);
         case Haio::Format::DDS: return Haio::Decode<Haio::Format::DDS>()(raw);
-        default: throw std::runtime_error("unsupported decode format: " + std::string(Haio::formatName(format)));
+        default:
+            if (const auto foreign = Haio::describeForeignMagic(blob.data); !foreign.empty()) {
+                throw std::runtime_error("input is " + std::string(foreign) + ", which haio cannot decode");
+            }
+            throw std::runtime_error("unsupported decode format: " + std::string(Haio::formatName(format)));
     }
 }
 

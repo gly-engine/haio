@@ -1,6 +1,13 @@
 #include "gpu_container_common.hpp"
+#include "signature.hpp"
 
 namespace Haio {
+
+template <>
+bool Detect<Format::KTX>(std::span<const uint8_t> data) {
+    constexpr std::array<uint8_t, 12> magic = {0xab, 'K', 'T', 'X', ' ', '1', '1', 0xbb, '\r', '\n', 0x1a, '\n'};
+    return Signature::matches(data, magic);
+}
 
 template <>
 Stage Encode<Format::KTX>() {

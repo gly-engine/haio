@@ -45,11 +45,26 @@ Blob readInputBlob(Command& command) {
     blob.contentType = contentTypeFor(blob.format);
     blob.data = command.inputPath == "-" ? readStream(std::cin) : readFile(command.inputPath);
 
-    if (command.inputFormatName.empty()) {
-        if (const auto magic = formatFromMagic(blob.data); magic != Format::RAW) {
-            command.inputFormat = magic;
-            blob.format = magic;
-            blob.contentType = contentTypeFor(magic);
+    const auto detected = formatFromMagic(blob.data);
+    const bool explicitFormat = !command.inputFormatName.empty();
+
+    if (detected != Format::RAW && detected != command.inputFormat) {
+        std::cerr << "warning: " << command.inputPath << " is " << formatName(detected)
+                  << ", not " << formatName(command.inputFormat);
+        if (explicitFormat) {
+            // the prefix was asked for on purpose, so it is honoured and only flagged
+            std::cerr << "; decoding as " << formatName(command.inputFormat) << " anyway\n";
+        } else {
+            std::cerr << "; decoding as " << formatName(detected) << '\n';
+            command.inputFormat = detected;
+            blob.format = detected;
+            blob.contentType = contentTypeFor(detected);
+        }
+    } else if (detected == Format::RAW) {
+        // a format we can name but not read never reaches a decoder that would only
+        // fail with a misleading message about the format it was expecting
+        if (const auto foreign = describeForeignMagic(blob.data); !foreign.empty()) {
+            throw std::runtime_error(command.inputPath + " is " + std::string(foreign) + ", which haio cannot decode");
         }
     }
 

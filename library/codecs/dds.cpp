@@ -1,6 +1,16 @@
 #include "gpu_container_common.hpp"
+#include "signature.hpp"
 
 namespace Haio {
+
+template <>
+bool Detect<Format::DDS>(std::span<const uint8_t> data) {
+    // "DDS " alone is a weak signal, so the header size that follows it is checked too
+    if (!Signature::matches(data, "DDS ") || data.size() < 8) return false;
+    const uint32_t headerSize = static_cast<uint32_t>(data[4]) | (static_cast<uint32_t>(data[5]) << 8)
+                              | (static_cast<uint32_t>(data[6]) << 16) | (static_cast<uint32_t>(data[7]) << 24);
+    return headerSize == 124;
+}
 
 template <>
 Stage Encode<Format::DDS>() {

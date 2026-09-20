@@ -1,4 +1,5 @@
 #include <haio.hpp>
+#include "signature.hpp"
 
 #include <stdexcept>
 
@@ -27,6 +28,12 @@ static void validateRGB565(const Haio::Image& img) {
 }
 
 namespace Haio {
+
+/** rgb565 payloads are bare pixels with no header, so there is nothing to recognise */
+template <>
+bool Detect<Format::RGB565>(std::span<const uint8_t>) {
+    return false;
+}
 
 template <>
 Stage Encode<Format::RGB565>() {

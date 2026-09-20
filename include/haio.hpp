@@ -17,6 +17,14 @@ struct Image {
 
 using Stage = std::function<Image(const Image&)>;
 
+/**
+ * true when the bytes carry this format's signature. it answers a question about
+ * bytes instead of transforming an image, so it is not a Stage: probing one blob
+ * against every format would copy the buffer once per format.
+ */
+template<Format F>
+bool Detect(std::span<const uint8_t> data);
+
 template<Format F>
 Stage Encode();
 

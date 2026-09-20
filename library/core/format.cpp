@@ -48,12 +48,66 @@ Format formatFromExtension(std::string_view path) {
 }
 
 Format formatFromMagic(std::span<const uint8_t> data) {
-    constexpr std::array<uint8_t, 8> pngSignature = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
-    if (data.size() >= pngSignature.size() && std::equal(pngSignature.begin(), pngSignature.end(), data.begin())) {
-        return Format::PNG;
-    }
-
+    if (Detect<Format::PNG>(data)) return Format::PNG;
+    if (Detect<Format::ZCIS>(data)) return Format::ZCIS;
+    if (Detect<Format::KTX2>(data)) return Format::KTX2;
+    if (Detect<Format::KTX>(data)) return Format::KTX;
+    if (Detect<Format::DDS>(data)) return Format::DDS;
+    if (Detect<Format::PVR>(data)) return Format::PVR;
+    if (Detect<Format::PPM>(data)) return Format::PPM;
     return Format::RAW;
+}
+
+/**
+ * formats haio can recognise but not read. naming them turns "unknown input" into
+ * something a caller can act on, without giving them an enum entry that has no codec.
+ */
+std::string_view describeForeignMagic(std::span<const uint8_t> data) {
+    const auto starts = [data](std::string_view magic) {
+        return data.size() >= magic.size()
+            && std::equal(magic.begin(), magic.end(), data.begin(), [](char a, uint8_t b) {
+                   return static_cast<uint8_t>(a) == b;
+               });
+    };
+
+    if (data.size() >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff) return "jpeg";
+    if (starts("GIF87a") || starts("GIF89a")) return "gif";
+    if (starts("RIFF") && data.size() >= 12 && starts("RIFF") && std::equal(data.begin() + 8, data.begin() + 12, "WEBP")) return "webp";
+    if (starts("BM")) return "bmp";
+    if (starts("II*") || starts("MM\0*")) return "tiff";
+    if (data.size() >= 4 && data[0] == 0x1f && data[1] == 0x8b) return "gzip";
+    return {};
+}
+
+Format formatFromContentType(std::string_view contentType) {
+    auto value = contentType.substr(0, contentType.find(';'));
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) value.remove_prefix(1);
+    while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) value.remove_suffix(1);
+
+    const auto key = lower(value);
+    if (key == "image/png") return Format::PNG;
+    if (key == "image/x-portable-pixmap" || key == "image/x-portable-anymap") return Format::PPM;
+    if (key == "image/ktx") return Format::KTX;
+    if (key == "image/ktx2") return Format::KTX2;
+    if (key == "image/vnd-ms.dds" || key == "image/vnd.ms-dds") return Format::DDS;
+    if (key == "image/x-pvr") return Format::PVR;
+    if (key == "image/x-zcis") return Format::ZCIS;
+    return Format::RAW;
+}
+
+/**
+ * the bytes win over what the server or the url claim, because those are the two
+ * things that lie: gam creatives carry no extension and are often mislabelled.
+ */
+Format detectFormat(std::span<const uint8_t> data, std::string_view contentType, std::string_view path) {
+    if (const auto magic = formatFromMagic(data); magic != Format::RAW) return magic;
+    if (const auto declared = formatFromContentType(contentType); declared != Format::RAW) return declared;
+
+    try {
+        return formatFromExtension(path);
+    } catch (const std::exception&) {
+        return Format::RAW;
+    }
 }
 
 std::string_view formatName(Format format) {

@@ -1,4 +1,5 @@
 #include <haio.hpp>
+#include "signature.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -47,8 +48,13 @@ static std::vector<uint32_t> makePaddedBGRA(const Haio::Image& img, int paddedWi
     return pixels;
 }
 
-
 namespace Haio {
+
+/** etc1 payloads are bare blocks with no header, so there is nothing to recognise */
+template <>
+bool Detect<Format::ETC1>(std::span<const uint8_t>) {
+    return false;
+}
 
 template <>
 Stage Encode<Format::ETC1>() {

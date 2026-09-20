@@ -1,4 +1,5 @@
 #include <haio.hpp>
+#include "signature.hpp"
 
 #include <algorithm>
 #include <array>
@@ -70,6 +71,11 @@ Haio::Image selectRows(const Haio::Image& image, int parity) {
 }
 
 namespace Haio {
+
+template <>
+bool Detect<Format::ZCIS>(std::span<const uint8_t> data) {
+    return Signature::matches(data, "!<arch>\n");
+}
 
 template <>
 Stage Encode<Format::ZCIS>() {
