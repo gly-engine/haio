@@ -6,37 +6,30 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
 
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 
 namespace {
 
-std::string consumeValue(int& i, int argc, char* argv[], std::string_view arg, std::string_view name) {
-    const std::string prefix = std::string(name) + "=";
-    if (arg.starts_with(prefix)) return std::string(arg.substr(prefix.size()));
-    if (i + 1 >= argc) throw std::runtime_error("missing value for " + std::string(name));
-    return argv[++i];
-}
-
 int cdnCommand(int argc, char* argv[]) {
-    const Haio::Cdn::Config defaults;
     std::filesystem::path configPath;
-    std::filesystem::path root = ".";
-    std::string host = defaults.host;
-    unsigned short port = defaults.port;
 
     for (int i = 1; i < argc; i++) {
         const std::string_view arg = argv[i];
-        if (arg == "--port" || arg.starts_with("--port=")) port = static_cast<unsigned short>(std::stoi(consumeValue(i, argc, argv, arg, "--port")));
-        else if (arg == "--host" || arg.starts_with("--host=")) host = consumeValue(i, argc, argv, arg, "--host");
-        else if (arg == "--config" || arg.starts_with("--config=")) configPath = consumeValue(i, argc, argv, arg, "--config");
-        else if (arg == "--root" || arg.starts_with("--root=")) root = consumeValue(i, argc, argv, arg, "--root");
-        else throw std::runtime_error("unknown cdn option: " + std::string(arg));
+        if (arg.starts_with('-')) throw std::runtime_error("unknown cdn option: " + std::string(arg));
+        if (!configPath.empty()) throw std::runtime_error("cdn takes a single config file");
+        configPath = arg;
     }
 
-    auto config = Haio::Cdn::loadConfig(configPath, root);
-    config.host = std::move(host);
-    config.port = port;
+    Haio::Cdn::Config config;
+    if (!configPath.empty()) {
+        config = Haio::Cdn::loadConfig(configPath);
+    } else if (const char* inlineToml = std::getenv("HAIO_CDN_TOML")) {
+        config = Haio::Cdn::parseConfig(inlineToml);
+    } else {
+        throw std::runtime_error("cdn needs a config file, or HAIO_CDN_TOML holding the config itself");
+    }
 
     boost::asio::io_context io;
     boost::asio::signal_set signals(io, SIGINT, SIGTERM);
@@ -49,7 +42,13 @@ int cdnCommand(int argc, char* argv[]) {
 void printHelp() {
     std::cout << "usage:\n"
               << "  haio convert <input> [filters] <output>\n"
-              << "  haio cdn [--host 0.0.0.0] [--port 8080] [--root .] [--config haio.toml]\n";
+              << "  haio cdn [config.toml]        without a file, reads HAIO_CDN_TOML\n"
+              << "\nconfig.toml:\n"
+              << "  host = \"0.0.0.0\"\n"
+              << "  port = 8080\n"
+              << "\n"
+              << "  [bucket.assets]\n"
+              << "  endpoint = \"file://assets\"\n";
 }
 
 }

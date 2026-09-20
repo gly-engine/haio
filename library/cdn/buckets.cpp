@@ -47,19 +47,8 @@ std::filesystem::path safeJoin(const std::filesystem::path& root, std::string_vi
     return root / clean;
 }
 
-/** a file bucket names a directory the way an http one names a host: "/abs" or "./rel" */
-std::filesystem::path fileBucketRoot(const Haio::Cdn::BucketConfig& bucket) {
-    if (bucket.endpoint.empty()) {
-        throw std::runtime_error("file bucket \"" + bucket.name + "\" needs an endpoint starting with / or ./");
-    }
-    if (!bucket.endpoint.starts_with('/') && !bucket.endpoint.starts_with("./")) {
-        throw std::runtime_error("file bucket endpoint must start with / or ./, got: " + bucket.endpoint);
-    }
-    return std::filesystem::path(bucket.endpoint);
-}
-
 Haio::Blob readFileBlob(const Haio::Cdn::BucketConfig& bucket, std::string path) {
-    const auto fullPath = safeJoin(fileBucketRoot(bucket), path);
+    const auto fullPath = safeJoin(bucket.root, path);
     std::ifstream in(fullPath, std::ios::binary);
     if (!in) throw std::runtime_error("file not found: " + fullPath.string());
 
@@ -100,34 +89,39 @@ std::string requestTarget(const urls::url_view_base& url) {
     return target;
 }
 
-std::string withDefaultHttpScheme(std::string endpoint) {
-    if (!endpoint.starts_with("http://") && !endpoint.starts_with("https://")) {
-        endpoint.insert(0, "http://");
-    }
-    return endpoint;
-}
-
 urls::url parseEndpoint(std::string endpoint, std::string_view path) {
-    auto normalized = withDefaultHttpScheme(std::move(endpoint));
-    auto parsed = urls::parse_uri(normalized);
-    if (!parsed) throw std::runtime_error("invalid http bucket endpoint: " + parsed.error().message());
+    const auto parsed = urls::parse_uri(endpoint);
+    if (!parsed) throw std::runtime_error("invalid bucket endpoint: " + endpoint);
 
     urls::url url(*parsed);
+    // s3 is plain https until it learns to sign
+    if (url.scheme() == "s3") url.set_scheme("https");
     requireHttpScheme(url);
     url.set_path(joinUrlPath(url.path(), path));
     return url;
 }
 
-/** without an endpoint the bucket reads the upstream off the url: <scheme>/<host>/<path> */
-urls::url openBucketTarget(std::string_view path) {
+/**
+ * an open bucket reads the upstream off the request: "https://*" leaves only the host
+ * to the url, "//*" leaves the scheme as well.
+ */
+urls::url openBucketTarget(const Haio::Cdn::BucketConfig& bucket, std::string_view path) {
+    if (!bucket.scheme.empty()) {
+        const auto scheme = bucket.scheme == "s3" ? std::string("https") : bucket.scheme;
+        if (path.empty()) {
+            throw std::runtime_error("open bucket expects /cdn/" + bucket.name + "/<host>/<path>");
+        }
+        return parseEndpoint(scheme + "://" + toString(path), {});
+    }
+
     const auto slash = path.find('/');
     if (slash == std::string_view::npos) {
-        throw std::runtime_error("open http bucket expects /cdn/<bucket>/<scheme>/<host>/<path>");
+        throw std::runtime_error("open bucket expects /cdn/" + bucket.name + "/<scheme>/<host>/<path>");
     }
 
     const auto scheme = path.substr(0, slash);
     if (scheme != "http" && scheme != "https") {
-        throw std::runtime_error("open http bucket expects a http or https scheme, got: " + toString(scheme));
+        throw std::runtime_error("open bucket expects a http or https scheme, got: " + toString(scheme));
     }
     return parseEndpoint(toString(scheme) + "://" + toString(path.substr(slash + 1)), {});
 }
@@ -246,27 +240,17 @@ asio::awaitable<Blob> fetchBucket(const Config& config, std::string bucketName, 
     if (it == config.buckets.end()) throw std::runtime_error("unknown bucket: " + bucketName);
 
     const auto& bucket = it->second;
-    if (bucket.type == "file" || bucket.type.empty()) {
+    if (bucket.scheme == "file") {
         co_return readFileBlob(bucket, std::move(path));
     }
 
-    if (bucket.type == "http") {
-        if (bucket.endpoint.empty()) {
-            auto url = openBucketTarget(path);
-            auto forFormat = requestTarget(url);
-            co_return co_await fetchHttp(std::move(url), std::move(forFormat));
-        }
-        co_return co_await fetchHttp(parseEndpoint(bucket.endpoint, path), std::move(path));
+    if (bucket.open) {
+        auto url = openBucketTarget(bucket, path);
+        auto forFormat = requestTarget(url);
+        co_return co_await fetchHttp(std::move(url), std::move(forFormat));
     }
 
-    if (bucket.type == "s3") {
-        if (bucket.endpoint.empty()) {
-            throw std::runtime_error("s3 bucket needs endpoint/base_url for now");
-        }
-        co_return co_await fetchHttp(parseEndpoint(bucket.endpoint, path), std::move(path));
-    }
-
-    throw std::runtime_error("unsupported bucket type: " + bucket.type);
+    co_return co_await fetchHttp(parseEndpoint(bucket.endpoint, path), std::move(path));
 }
 
 }

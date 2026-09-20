@@ -173,8 +173,8 @@ asio::awaitable<void> listener(Haio::Cdn::Config config) {
     tcp::acceptor acceptor(executor, *resolved.begin());
 
     for (const auto& [name, bucket] : config.buckets) {
-        if (bucket.type == "http" && bucket.endpoint.empty()) {
-            std::cerr << "warning: bucket \"" << name << "\" has no endpoint, so it will fetch whatever host the request names\n";
+        if (bucket.open) {
+            std::cerr << "warning: bucket \"" << name << "\" is open, so it will fetch whatever host the request names\n";
         }
     }
     std::cout << "haio cdn listening on http://" << config.host << ':' << config.port << "\n";
