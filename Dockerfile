@@ -19,11 +19,11 @@ ENV CXX=g++-16
 
 RUN cmake -Bbuild -H.
 RUN make -C build -j$(nproc --ignore 1)
-RUN strip bin/haio
+RUN strip build/bin/haio
 
 FROM scratch
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder /app/bin/haio /bin/haio
+COPY --from=builder /app/build/bin/haio /bin/haio
 
 ENTRYPOINT ["/bin/haio"]

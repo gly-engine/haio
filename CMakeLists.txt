@@ -86,11 +86,22 @@ add_subdirectory("${BOOST_DIR}" "${CMAKE_BINARY_DIR}/boost" EXCLUDE_FROM_ALL)
 # once the link went static and ld refused to read a shared object at all.
 #
 # it cannot simply be hidden: Boost.Redis disables itself outright when openssl is not
-# found, so it is found, and then removed from what it passes on.
+# found, so cmake/FindOpenSSL.cmake answers that it is -- with two empty targets -- and
+# they are dropped here rather than handed to everything downstream.
 if(TARGET boost_redis)
+    # an unset property reads back as HAIO_REDIS_LINKS-NOTFOUND, and writing that back
+    # asks the linker for -lHAIO_REDIS_LINKS-NOTFOUND, which is how a Boost.Redis that
+    # had quietly disabled itself used to report it: at link time, under a name no
+    # library ever had.
     get_target_property(HAIO_REDIS_LINKS boost_redis INTERFACE_LINK_LIBRARIES)
-    list(REMOVE_ITEM HAIO_REDIS_LINKS OpenSSL::Crypto OpenSSL::SSL)
-    set_target_properties(boost_redis PROPERTIES INTERFACE_LINK_LIBRARIES "${HAIO_REDIS_LINKS}")
+    if(HAIO_REDIS_LINKS)
+        list(REMOVE_ITEM HAIO_REDIS_LINKS OpenSSL::Crypto OpenSSL::SSL)
+        set_target_properties(boost_redis PROPERTIES INTERFACE_LINK_LIBRARIES "${HAIO_REDIS_LINKS}")
+    else()
+        message(FATAL_ERROR
+            "haio: Boost.Redis disabled itself, so the cdn would build without a redis cache. "
+            "cmake/FindOpenSSL.cmake is what it looks for and it did not win the search.")
+    endif()
 endif()
 
 set(WOLFSSL_VERSION "v5.9.2-stable")
