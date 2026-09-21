@@ -1,13 +1,11 @@
 #include <haio_codec.hpp>
 
+// the modules are compiled once, in backend/codecs/wuffs.cpp. NONMONOLITHIC keeps
+// the declarations without them, and IMPLEMENTATION is what completes the types:
+// wuffs leaves them opaque otherwise, and a decoder on the stack needs the size
+#define WUFFS_NONMONOLITHIC
 #define WUFFS_IMPLEMENTATION
 #define WUFFS_CONFIG__MODULES
-#define WUFFS_CONFIG__MODULE__BASE
-#define WUFFS_CONFIG__MODULE__GIF
-#define WUFFS_CONFIG__MODULE__ZLIB
-#define WUFFS_CONFIG__MODULE__DEFLATE
-#define WUFFS_CONFIG__MODULE__ADLER32
-#define WUFFS_CONFIG__MODULE__CRC32
 #include <wuffs-v0.4.c>
 
 namespace {
@@ -143,9 +141,7 @@ Result<Image<P>> decodeGif(const Blob& blob) {
  * @{
  */
 template <>
-Result<Image<Color::RGBA8888>> Decode<Format::GIF, Color::RGBA8888>(
-    const Blob& blob
-) {
+Result<Image<Color::RGBA8888>> Decode<Format::GIF, Color::RGBA8888>(const Blob& blob) {
     return decodeGif<Color::RGBA8888>(blob);
 }
 /** @} */
@@ -155,9 +151,7 @@ Result<Image<Color::RGBA8888>> Decode<Format::GIF, Color::RGBA8888>(
  * @{
  */
 template <>
-Result<Image<Color::RGB888>> Decode<Format::GIF, Color::RGB888>(
-    const Blob& blob
-) {
+Result<Image<Color::RGB888>> Decode<Format::GIF, Color::RGB888>(const Blob& blob) {
     return decodeGif<Color::RGB888>(blob);
 }
 /** @} */

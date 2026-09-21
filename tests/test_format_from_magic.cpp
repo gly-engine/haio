@@ -74,8 +74,12 @@ void testJpegIsACodecLikeAnyOther() {
     assert(!Haio::Decode(Haio::Blob{Haio::Format::RAW, Haio::Color::RGBA8888, {}, {},
                                     {0xff, 0xd8, 0xff, 0xe0}}));
 
+    const auto gif = Haio::Detect(bytes("GIF89a...."));
+    assert(gif);
+    assert(gif.format == Haio::Format::GIF);
+    assert(gif.color == Haio::Color::RGBA8888);
+
     // formats haio has no detector for are simply unrecognised
-    assert(!Haio::Detect(bytes("GIF89a....")));
     assert(!Haio::Detect(bytes("BM______")));
 }
 

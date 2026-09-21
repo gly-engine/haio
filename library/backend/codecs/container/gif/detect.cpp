@@ -21,10 +21,7 @@ bool headerSays(Haio::Bytes data) {
 namespace Haio::Codecs {
 
 /** what a gif holds when nobody asks for something else */
-template <>
-struct DefaultColor<Format::GIF> {
-    static constexpr Color value = Color::RGBA8888;
-};
+template <> struct DefaultColor<Format::GIF> { static constexpr Color value = Color::RGBA8888; };
 
 /**
  * @addtogroup detect

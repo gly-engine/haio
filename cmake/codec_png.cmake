@@ -5,16 +5,11 @@
 # expects: HAIO_CODEC_DIR, HAIO_CODEC_SOURCES_THIS
 # may drop sources, and appends to HAIO_CODEC_LIBRARIES
 
-option(HAIO_USE_WUFFS "decode png with wuffs" ON)
 option(HAIO_USE_SPNG "encode png with libspng" ON)
 
-if(HAIO_USE_WUFFS)
-    set(WUFFS_VERSION "v0.3.4")
-    set(WUFFS_DIR "${CMAKE_SOURCE_DIR}/vendor/wuffs")
-    set(WUFFS_DOWNLOAD "https://github.com/google/wuffs-mirror-release-c/archive/refs/tags/${WUFFS_VERSION}.tar.gz")
-    haio_fetch(wuffs "${WUFFS_DOWNLOAD}" "${WUFFS_DIR}" release/c/wuffs-v0.4.c)
+include("${CMAKE_CURRENT_LIST_DIR}/wuffs.cmake")
 
-    # header only, and included by this one file
+if(HAIO_USE_WUFFS)
     set_source_files_properties("${HAIO_CODEC_DIR}/decode.cpp" PROPERTIES
         INCLUDE_DIRECTORIES "${WUFFS_DIR}/release/c")
 else()
