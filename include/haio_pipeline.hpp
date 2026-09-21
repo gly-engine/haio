@@ -30,6 +30,14 @@ struct Token {
     std::string bucket;
     std::string path;
     Format format = Format::RAW;
+
+    /**
+     * Encode only: which colour to store inside the container, when somebody named
+     * one. nothing named is not the same as rgba8888: it means the container picks,
+     * which for most of them is the only colour they write anyway.
+     */
+    std::optional<Color> color;
+
     Rect rect;
     Size size;
 
@@ -63,7 +71,7 @@ Token Resize(Size size);
 Token ResizeByPercent(int percent);
 Token Radius(int radius);
 Token Palette(std::string palette, Dither dither, size_t limit, Limit limitHow);
-Token Encode(Format format);
+Token Encode(Format format, std::optional<Color> color = std::nullopt);
 }
 
 Format formatFromExtension(std::string_view path);

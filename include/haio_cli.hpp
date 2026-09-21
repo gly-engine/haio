@@ -27,6 +27,7 @@ enum class TokenType {
     FilterFormat,
     FilterFx,
     FilterPalette,
+    FilterPixFmt,
 };
 
 struct ParseError {
@@ -41,6 +42,7 @@ struct Token {
     std::string value;
     std::string arg;
     Format format = Format::RAW;
+    Color color = Color::RGBA8888;
     std::optional<Rect> rect;
     std::optional<Size> size;
     int radius = 0;
@@ -79,6 +81,11 @@ struct Command {
     std::string outputFormatName;
     Format inputFormat = Format::RAW;
     Format outputFormat = Format::RAW;
+
+    /** which colour to store inside the output, when -pix_fmt named one */
+    std::optional<Color> outputColor;
+    std::string outputColorName;
+
     std::vector<Token> tokens;
 };
 

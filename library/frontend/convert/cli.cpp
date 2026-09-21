@@ -1,4 +1,7 @@
 #include <haio_cli.hpp>
+#include <haio_cli_grammar.hpp>
+
+#include <algorithm>
 
 #include <filesystem>
 #include <fstream>
@@ -7,18 +10,38 @@
 namespace Haio::Cli {
 namespace {
 
+/**
+ * the options, off the same table the parser reads and the grammar documents.
+ *
+ * it used to be a third copy of the list, which is why it was missing -filter, -limit
+ * and -palete entirely and offered a --size the parser did not take.
+ */
 void printUsage() {
     std::cerr << "usage:\n"
               << "  haio convert input.png [filters] output.ppm\n"
               << "  haio convert png:- [filters] ppm:-\n"
-              << "\nfilters:\n"
-              << "  -crop [wxh+x+y]       crop using imagemagick-style geometry\n"
-              << "  --crop x,y,w,h        crop using explicit rectangle\n"
-              << "  --size wxh            resize image\n"
-              << "  --resize wxh          resize image\n"
-              << "  --radius r            round image corners\n"
-              << "  --format fmt          override output format\n"
-              << "  -fx expr              parse expression token, unsupported by backend for now\n";
+              << "\nfilters:\n";
+
+    const auto spelled = [](const Lexer::Option& option) {
+        auto out = std::string(option.spellings[0]);
+        if (option.args == 0) return out;
+        out += option.optional ? " [" + std::string(option.takes) + "]" : " " + std::string(option.takes);
+        return out;
+    };
+
+    size_t width = 0;
+    for (const auto& option : Lexer::options) {
+        if (option.filter) width = std::max(width, spelled(option).size());
+    }
+
+    for (const auto& option : Lexer::options) {
+        if (!option.filter) continue;
+        const auto line = spelled(option);
+        std::cerr << "  " << line << std::string(width - line.size() + 2, ' ') << option.help << '\n';
+    }
+
+    std::cerr << "\nevery option also takes its value after an =, and several answer to more than\n"
+                 "one spelling; docs/convert-ebnf.md lists them all.\n";
 }
 
 void printError(const ParseError& error) {

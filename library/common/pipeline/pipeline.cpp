@@ -70,9 +70,10 @@ Token Radius(int radius) {
     return token;
 }
 
-Token Encode(Format format) {
+Token Encode(Format format, std::optional<Color> color) {
     Token token{TokenKind::Encode};
     token.format = format;
+    token.color = color;
     return token;
 }
 }
@@ -115,7 +116,27 @@ std::vector<Token> parseQueryTokens(std::string_view query) {
     if (auto it = values.find("size"); it != values.end()) tokens.push_back(resizeToken(it->second));
     if (auto it = values.find("resize"); it != values.end()) tokens.push_back(resizeToken(it->second));
     if (auto it = values.find("radius"); it != values.end()) tokens.push_back(Tokens::Radius(String::getInt(it->second)));
-    if (auto it = values.find("format"); it != values.end()) tokens.push_back(Tokens::Encode(formatFromName(it->second)));
+    /**
+     * the colour inside the container, spelled the way ffmpeg spells it.
+     *
+     * it can arrive without a format, and that is a request rather than a mistake:
+     * "?pix_fmt=rgb565" with nothing to wrap it is raw pixels in that colour, which
+     * is what a caller loading a texture straight into a gpu is asking for.
+     */
+    auto pixelFormat = values.find("pix_fmt");
+    if (pixelFormat == values.end()) pixelFormat = values.find("pix_format");
+
+    std::optional<Color> color;
+    if (pixelFormat != values.end()) {
+        color = colorNamed(pixelFormat->second);
+        if (!color) throw std::runtime_error("unknown pixel format: " + pixelFormat->second);
+    }
+
+    if (auto it = values.find("format"); it != values.end()) {
+        tokens.push_back(Tokens::Encode(formatFromName(it->second), color));
+    } else if (color) {
+        tokens.push_back(Tokens::Encode(Format::RAW, color));
+    }
 
     return tokens;
 }

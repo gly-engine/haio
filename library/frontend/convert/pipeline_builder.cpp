@@ -16,7 +16,16 @@ Pipeline buildPipeline(const Command& command) {
     if (command.error) throw tokenError(command.error.message, command.error.token);
     if (command.hasGenerator) throw tokenError("generator inputs are not supported yet");
     if (command.inputFormat == Format::RAW) throw tokenError("unknown input format", command.inputPath);
-    if (command.outputFormat == Format::RAW) throw tokenError("unknown output format", command.outputPath);
+
+    /**
+     * "raw:" is the container that is not one: the pixels as they are, in whatever
+     * -pix_fmt asked for. it has to be named rather than guessed, because a file
+     * extension never means it, which is exactly what tells it apart from a format
+     * nobody recognised.
+     */
+    if (command.outputFormat == Format::RAW && command.outputFormatName.empty()) {
+        throw tokenError("unknown output format", command.outputPath);
+    }
 
     Pipeline pipeline;
     pipeline |= Tokens::Source("file", command.inputPath);
@@ -53,11 +62,14 @@ Pipeline buildPipeline(const Command& command) {
             case TokenType::InputFile:
             case TokenType::OutputFile:
             case TokenType::FilterFormat:
+            // both of these are answered by the encode token below rather than in
+            // place: they say what comes out, and nothing comes out until the end
+            case TokenType::FilterPixFmt:
                 break;
         }
     }
 
-    pipeline |= Tokens::Encode(command.outputFormat);
+    pipeline |= Tokens::Encode(command.outputFormat, command.outputColor);
     return pipeline;
 }
 

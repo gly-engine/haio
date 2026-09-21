@@ -46,16 +46,30 @@ constexpr Format formatFromName(std::string_view name) {
     return Format::RAW;
 }
 
-constexpr Color colorFromName(std::string_view name) {
+/**
+ * the colour somebody typed, or nothing when no colour answers to that name.
+ *
+ * the enumerator names come first and then colorAliases, which is every other name
+ * the same layouts go by. borrowing ffmpeg's option without its vocabulary would be
+ * borrowing the half that does not help.
+ */
+constexpr std::optional<Color> colorNamed(std::string_view name) {
     char buffer[32]{};
     const auto key = Detail::lowered(name, buffer);
     HAIO_FOR_EACH_COLOR(e) {
         if (lowerOf(e) == key) return std::meta::extract<Color>(e);
     }
-    // short spellings the enumerator name cannot carry until enum annotations land
-    if (key == "rgba") return Color::RGBA8888;
-    if (key == "rgb") return Color::RGB888;
-    return Color::RGBA8888;
+
+    for (const auto& alias : colorAliases) {
+        if (alias.spelling == key) return alias.color;
+    }
+    return std::nullopt;
+}
+
+/** the same question where an unknown name is not worth stopping for */
+constexpr Color colorFromName(std::string_view name) {
+    const auto color = colorNamed(name);
+    return color ? *color : Color::RGBA8888;
 }
 
 /** what a file turned out to be: the container and the colour it holds */
@@ -90,6 +104,43 @@ constexpr bool detectable(Format format, Color color) {
         }
     }
     return false;
+}
+
+constexpr bool encodable(Format format, Color color) {
+    HAIO_FOR_EACH_FORMAT(f) {
+        constexpr Format ff = std::meta::extract<Format>(f);
+        HAIO_FOR_EACH_COLOR(c) {
+            constexpr Color cc = std::meta::extract<Color>(c);
+            if (ff == format && cc == color) return Codecs::Encodable<ff, cc>;
+        }
+    }
+    return false;
+}
+
+/**
+ * the colour a container is written in when nobody names one: the one it declares as
+ * its own, and failing that the first it can write at all.
+ *
+ * before this there was only the second half, so the colour a file came out in was
+ * whichever one happened to be declared earliest in the enum. that is fine while a
+ * container writes one colour and arbitrary the moment it writes six.
+ */
+constexpr std::optional<Color> encodeColorFor(Format to) {
+    std::optional<Color> first;
+    HAIO_FOR_EACH_FORMAT(f) {
+        constexpr Format format = std::meta::extract<Format>(f);
+        if (format != to) continue;
+        HAIO_FOR_EACH_COLOR(c) {
+            constexpr Color color = std::meta::extract<Color>(c);
+            if constexpr (Codecs::Encodable<format, color>) {
+                if constexpr (Codecs::HasDefaultColor<format>) {
+                    if (Codecs::DefaultColor<format>::value == color) return color;
+                }
+                if (!first) first = color;
+            }
+        }
+    }
+    return first;
 }
 
 /**
@@ -136,15 +187,55 @@ inline Result<Image<Color::RGBA8888>> Decode(const Blob& blob) {
 }
 
 /**
- * the runtime way out. rgba8888 goes in because that is what the runtime decode
- * hands back; the colour stored inside is whichever one the format can take.
+ * the same picture in another colour, named at runtime.
  *
- * @todo the payload colour is picked here rather than asked for, so there is no way
- * to say "a ktx2 holding etc1" from the command line yet.
+ * it hands back bytes rather than an image because at runtime there is no Image<P> to
+ * hand back: the colour is a value here, and the type it would pick is a compile time
+ * thing. the callers that want one already know which they want and say so through
+ * Codecs::Convert.
  */
-inline Result<Blob> Encode(Image<Color::RGBA8888> image, Format to) {
+inline Result<std::vector<uint8_t>> Convert(const Image<Color::RGBA8888>& image, Color to) {
+    if (to == Color::RGBA8888) return image.data;
+
+    Result<std::vector<uint8_t>> out =
+        std::unexpected(Error{ErrorCode::UnsupportedFormat,
+                              "no route from rgba8888 to " + std::string(colorName(to))});
+
+    HAIO_FOR_EACH_COLOR(c) {
+        constexpr Color color = std::meta::extract<Color>(c);
+        if constexpr (Codecs::Convertible<Color::RGBA8888, color>) {
+            if (color != to) continue;
+
+            auto converted = Codecs::Convert<Color::RGBA8888, color>(image);
+            if (!converted) {
+                out = std::unexpected(converted.error());
+            } else {
+                out = std::move(converted->data);
+            }
+        }
+    }
+    return out;
+}
+
+/**
+ * the runtime way out. rgba8888 goes in because that is what the runtime decode
+ * hands back; the colour stored inside is the one asked for, or the one the container
+ * calls its own when nobody asked.
+ *
+ * naming it is what -pix_fmt does, and it is the only way to say "a ktx2 holding
+ * etc1" or "a tga holding bgr888" from a command line: the pair was always there in
+ * Codecs::Encode, with nothing but this bridge between it and a string.
+ */
+inline Result<Blob> Encode(Image<Color::RGBA8888> image, Format to, std::optional<Color> as = std::nullopt) {
+    const auto wanted = as ? as : encodeColorFor(to);
+    if (!wanted) {
+        return std::unexpected(Error{ErrorCode::UnsupportedFormat,
+                                     "cannot encode " + std::string(formatName(to))});
+    }
+
     Result<Blob> out = std::unexpected(Error{ErrorCode::UnsupportedFormat,
-                                             "cannot encode " + std::string(formatName(to))});
+                                             "a " + std::string(formatName(to)) + " cannot hold "
+                                                 + std::string(colorName(*wanted))});
     bool done = false;
 
     HAIO_FOR_EACH_COLOR(c) {
@@ -152,7 +243,7 @@ inline Result<Blob> Encode(Image<Color::RGBA8888> image, Format to) {
         HAIO_FOR_EACH_FORMAT(f) {
             constexpr Format format = std::meta::extract<Format>(f);
             if constexpr (Codecs::Encodable<format, color>) {
-                if (done || format != to) continue;
+                if (done || format != to || color != *wanted) continue;
 
                 if constexpr (color == Color::RGBA8888) {
                     out = Codecs::Encode<format, color>(image);
@@ -162,8 +253,32 @@ inline Result<Blob> Encode(Image<Color::RGBA8888> image, Format to) {
                     out = converted ? Codecs::Encode<format, color>(*std::move(converted))
                                     : Result<Blob>{std::unexpected(converted.error())};
                     done = true;
+                } else {
+                    // the pair exists and the road to it does not, which is a different
+                    // sentence from the container not holding that colour at all
+                    out = std::unexpected(Error{ErrorCode::UnsupportedFormat,
+                                                "no route from rgba8888 to " + std::string(colorName(color))});
+                    done = true;
                 }
             }
+        }
+    }
+    return out;
+}
+
+/**
+ * the indexed way out, for the containers that store a palette rather than expanding
+ * it. there is no conversion into it here on purpose: haio does not pick colours for
+ * anybody, so the picture arrives already fitted to a palette or not at all.
+ */
+inline Result<Blob> Encode(Image<Color::PALETTE> image, Format to) {
+    Result<Blob> out = std::unexpected(Error{ErrorCode::UnsupportedFormat,
+                                             "a " + std::string(formatName(to)) + " cannot hold a palette"});
+    HAIO_FOR_EACH_FORMAT(f) {
+        constexpr Format format = std::meta::extract<Format>(f);
+        if constexpr (Codecs::Encodable<format, Color::PALETTE>) {
+            if (format != to) continue;
+            out = Codecs::Encode<format, Color::PALETTE>(std::move(image));
         }
     }
     return out;

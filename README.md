@@ -6,13 +6,11 @@ image conversion and delivery tool, and also a "zcis" containerizer.
 use command `haio cdn config.toml` or paste intere config in enviroment `HAIO_CDN_TOML`.
 
 ```toml
+[cdn]
 port = 8080
 
 [bucket.assets]
 endpoint = "file://assets/"
-
-[bucket.tic80]
-endpoint = "https://tic80.com/cart/*.gif"
 
 [bucket.proxy]
 endpoint = "http://*"

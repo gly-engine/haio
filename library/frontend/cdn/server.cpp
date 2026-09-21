@@ -105,12 +105,16 @@ bool hasImageTransform(const std::vector<Haio::Token>& tokens) {
  * applies when the encode is the whole request. where it does apply it spends no cpu
  * and, more to the point, hands back the original bytes rather than a re-encode that
  * merely has the same pixels.
+ *
+ * a named colour counts as something else to do. two tga files are both tga and one
+ * of them is sixteen bits a pixel, so "the container it already is" stops being the
+ * whole question the moment -pix_fmt asks the other half of it.
  */
 bool alreadyWhatWasAsked(const std::vector<Haio::Token>& tokens, Haio::Format format) {
     if (tokens.empty() || format == Haio::Format::RAW) return false;
 
     return std::ranges::all_of(tokens, [format](const Haio::Token& token) {
-        return token.kind == Haio::TokenKind::Encode && token.format == format;
+        return token.kind == Haio::TokenKind::Encode && token.format == format && !token.color;
     });
 }
 

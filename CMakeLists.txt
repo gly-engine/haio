@@ -20,6 +20,51 @@ include("${CMAKE_CURRENT_LIST_DIR}/cmake/cpp26.cmake")
 # which is nobody's decision, just whoever was asked first.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
+# and neither does the binary: not libstdc++, not libgcc, not libc.
+#
+# running on whatever is in front of it is the point of a converter -- an old distro, a
+# scratch container, somebody else's build box -- and the four shared libraries it
+# still wanted were the only thing that made that a question. the toolchain is asked
+# here rather than at link time, because a missing libc.a fails as a screenful of
+# undefined references with nothing in it that says which package to install.
+#
+# hostname resolution is the exception, and it is glibc's rather than haio's:
+# getaddrinfo loads its nss plugins at run time whatever the binary was linked as, so
+# the cdn wants a host whose glibc matches the one it was built against. converting a
+# file resolves nothing and does not care.
+option(HAIO_STATIC "link the binary against nothing at all" ON)
+
+if(HAIO_STATIC)
+    include(CheckCXXSourceCompiles)
+    set(CMAKE_REQUIRED_LINK_OPTIONS "-static")
+    check_cxx_source_compiles("int main() { return 0; }" HAIO_HAS_STATIC_LINK)
+    unset(CMAKE_REQUIRED_LINK_OPTIONS)
+
+    if(NOT HAIO_HAS_STATIC_LINK)
+        message(FATAL_ERROR
+            "haio links its binary static and this toolchain has no static c++ runtime to link "
+            "against. debian and ubuntu keep it in libc6-dev and libstdc++-<version>-dev; "
+            "configure with -DHAIO_STATIC=OFF to link the shared ones instead.")
+    endif()
+
+    # gcc hands libgcc and libatomic to the linker as "gcc_s_asneeded" and
+    # "atomic_asneeded", names of no library at all: its own specs rewrite each into an
+    # --as-needed pair on the way past. cmake reads the list out of a shared link once,
+    # at configure time, and repeats it on every link line afterwards, so with -static
+    # the driver stops rewriting them and ld is handed two libraries that were never
+    # files. dropping them lets the driver put the static libgcc there itself, which is
+    # what the static branch of that same spec already says to do.
+    foreach(language C CXX)
+        set(HAIO_IMPLICIT_LINK "")
+        foreach(library IN LISTS CMAKE_${language}_IMPLICIT_LINK_LIBRARIES)
+            if(NOT library MATCHES "_asneeded$")
+                list(APPEND HAIO_IMPLICIT_LINK "${library}")
+            endif()
+        endforeach()
+        set(CMAKE_${language}_IMPLICIT_LINK_LIBRARIES "${HAIO_IMPLICIT_LINK}")
+    endforeach()
+endif()
+
 find_package(Threads REQUIRED)
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -31,6 +76,21 @@ set(BOOST_DOWNLOAD "https://github.com/boostorg/boost/releases/download/boost-${
 set(BOOST_INCLUDE_LIBRARIES url asio beast redis spirit CACHE STRING "" FORCE)
 haio_fetch(boost "${BOOST_DOWNLOAD}" "${BOOST_DIR}" CMakeLists.txt)
 add_subdirectory("${BOOST_DIR}" "${CMAKE_BINARY_DIR}/boost" EXCLUDE_FROM_ALL)
+
+# Boost.Redis asks for the system openssl and hands it to everything downstream, which
+# is one ssl library more than a binary should have: haio's is wolfssl, with the
+# openssl headers aimed at its shims, so the redis code was already calling wolfssl's
+# symbols and linking somebody else's library to find them. nothing was ever taken
+# from it -- --as-needed dropped it and ldd showed nothing -- so this surfaced only
+# once the link went static and ld refused to read a shared object at all.
+#
+# it cannot simply be hidden: Boost.Redis disables itself outright when openssl is not
+# found, so it is found, and then removed from what it passes on.
+if(TARGET boost_redis)
+    get_target_property(HAIO_REDIS_LINKS boost_redis INTERFACE_LINK_LIBRARIES)
+    list(REMOVE_ITEM HAIO_REDIS_LINKS OpenSSL::Crypto OpenSSL::SSL)
+    set_target_properties(boost_redis PROPERTIES INTERFACE_LINK_LIBRARIES "${HAIO_REDIS_LINKS}")
+endif()
 
 set(WOLFSSL_VERSION "v5.9.2-stable")
 set(WOLFSSL_DIR "${CMAKE_SOURCE_DIR}/vendor/wolfssl")
@@ -53,8 +113,11 @@ set(HAIO_TLS_DEFINITIONS
 
 add_executable(xxd "${CMAKE_CURRENT_LIST_DIR}/scripts/xxd.cpp")
 add_executable(replace "${CMAKE_CURRENT_LIST_DIR}/scripts/replace.cpp")
+# the grammar builds its format and colour names out of the enums, so the doc
+# generator needs reflection as much as the library does
 add_executable(convert_ebnf "${CMAKE_CURRENT_LIST_DIR}/scripts/convert_ebnf.cpp")
 target_include_directories(convert_ebnf PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
+target_compile_options(convert_ebnf PRIVATE ${HAIO_CXX_FLAGS})
 target_link_libraries(convert_ebnf PRIVATE Boost::spirit)
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_LIST_DIR}/docs/convert-ebnf.md"
@@ -80,25 +143,22 @@ set(HAIO_CODEC_LIBRARIES "")
 set(HAIO_CODECS_OFF "")
 set(HAIO_CODEC_DEPENDS "")
 
-# one directory per container, one file per capability: -DHAIO_CODEC_ZCIS=OFF drops
-# the whole format, and a codec's own cmake may add finer switches such as
-# -DHAIO_USE_SPNG=OFF, which drops png encoding and keeps detect and decode
+# one directory per container, one file per capability.
+#
+# there is no switch for a codec as such. a codec that needs nothing costs a
+# translation unit and answers for a format people have files of, so turning it off
+# buys nothing worth a flag; what is worth switching is a third party library, and
+# those have their own: -DHAIO_USE_SPNG=OFF drops png encoding and keeps detect and
+# decode, -DHAIO_USE_ETCPAK=OFF drops etc1 both ways. the codec's own cmake is where
+# each of those lives, and dropping a source file is how it says so.
 foreach(HAIO_CODEC_DIR IN LISTS HAIO_CONTAINER_DIRS)
     if(NOT IS_DIRECTORY "${HAIO_CODEC_DIR}")
         continue()
     endif()
     get_filename_component(name "${HAIO_CODEC_DIR}" NAME)
-    string(TOUPPER "${name}" upper)
-    option(HAIO_CODEC_${upper} "build the ${name} codec" ON)
 
     file(GLOB HAIO_CODEC_SOURCES_THIS CONFIGURE_DEPENDS "${HAIO_CODEC_DIR}/*.cpp")
     list(SORT HAIO_CODEC_SOURCES_THIS)
-
-    if(NOT HAIO_CODEC_${upper})
-        list(APPEND HAIO_CODECS_OFF "${name}")
-        list(REMOVE_ITEM HAIO_LIB_SOURCES ${HAIO_CODEC_SOURCES_THIS})
-        continue()
-    endif()
 
     if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/cmake/codec_${name}.cmake")
         include("${CMAKE_CURRENT_LIST_DIR}/cmake/codec_${name}.cmake")
@@ -150,7 +210,27 @@ target_include_directories(haio_core
     # has any use for a bucket fetcher
     PRIVATE "${CMAKE_CURRENT_LIST_DIR}/library/frontend/cdn"
 )
-target_link_libraries(haio_core PUBLIC ${HAIO_CODEC_LIBRARIES} wolfssl zlib Boost::url Boost::asio Boost::beast Boost::redis Boost::spirit Threads::Threads)
+
+# how haio_core is built, which is not the same list as what it is.
+#
+# a codec includes turbojpeg.h and the cdn includes beast, and both do it in their own
+# .cpp files: nothing that links haio_core has any business seeing those headers. they
+# were PUBLIC, though, so every test compiled with wolfssl, zlib and four boost
+# libraries on its include path to build a picture in memory. LINK_ONLY is the way to
+# say the rest of what PUBLIC meant -- a consumer still links the object code, because
+# a static library carries none of its own.
+set(HAIO_INTERNAL_LIBRARIES ${HAIO_CODEC_LIBRARIES} wolfssl zlib Boost::url Boost::beast Boost::redis)
+set(HAIO_INTERNAL_LINK "")
+foreach(library IN LISTS HAIO_INTERNAL_LIBRARIES)
+    list(APPEND HAIO_INTERNAL_LINK "$<LINK_ONLY:${library}>")
+endforeach()
+
+# and what it is: spirit is in the command line grammar and asio is in the cdn's
+# public headers, so those two come with the library whether a consumer wants them or not
+target_link_libraries(haio_core
+    PRIVATE ${HAIO_INTERNAL_LIBRARIES}
+    INTERFACE ${HAIO_INTERNAL_LINK}
+    PUBLIC Boost::asio Boost::spirit Threads::Threads)
 target_compile_options(haio_core PUBLIC ${HAIO_CXX_FLAGS})
 add_dependencies(haio_core haio_codecs)
 if(HAIO_CODEC_DEPENDS)
@@ -168,6 +248,13 @@ add_executable(${PROJECT_NAME} "${CMAKE_CURRENT_LIST_DIR}/source/main.cpp")
 add_dependencies(${PROJECT_NAME} haio_convert_docs)
 target_link_libraries(${PROJECT_NAME} PRIVATE haio_core)
 set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# only the binary. a test is run out of the build directory it was built in, where the
+# shared libraries it wants are the ones it was built against, and linking every one of
+# them static is a copy of libstdc++ per test for nothing.
+if(HAIO_STATIC)
+    target_link_options(${PROJECT_NAME} PRIVATE -static)
+endif()
 
 option(HAIO_TESTS "Unit Tests" OFF)
 if(HAIO_TESTS)
@@ -190,12 +277,23 @@ if(HAIO_TESTS)
         "test_cdn_s3"
         "test_palette"
         "test_png_channels"
+        "test_codec_tga"
+        "test_color_packed"
     )
     foreach(test_name IN LISTS tests)
-        # a test named after a codec has nothing to assert once that codec is off
+        # a test named after something that is switched off has nothing left to
+        # assert. what is switched off is written "png/encode" or "color/etc1", and a
+        # test is named after the thing rather than the capability, so the thing is
+        # what it is matched against: turning off one half of png skips the png tests
+        # whole, which is the safe way round to be wrong.
         set(skip_test OFF)
         foreach(disabled IN LISTS HAIO_CODECS_OFF)
-            if(test_name MATCHES "${disabled}")
+            string(REPLACE "/" ";" pieces "${disabled}")
+            list(GET pieces 0 thing)
+            if(thing STREQUAL "color")
+                list(GET pieces 1 thing)
+            endif()
+            if(test_name MATCHES "${thing}")
                 set(skip_test ON)
             endif()
         endforeach()
@@ -206,6 +304,10 @@ if(HAIO_TESTS)
 
         add_executable("${test_name}" "${CMAKE_SOURCE_DIR}/tests/${test_name}.cpp")
         target_link_libraries("${test_name}" PRIVATE haio_core)
+        # a release build defines NDEBUG, and half these tests say what they mean with
+        # assert. without this they compile to a main that returns zero and a suite
+        # that passes by having checked nothing
+        target_compile_options("${test_name}" PRIVATE -UNDEBUG)
         # the cdn keeps its headers beside its sources, and a couple of tests reach in
         target_include_directories("${test_name}" PRIVATE "${CMAKE_CURRENT_LIST_DIR}/library/frontend/cdn")
         if(test_name STREQUAL "test_image_convert_png_to_ppm")

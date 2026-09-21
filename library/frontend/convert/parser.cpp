@@ -29,7 +29,7 @@ std::string lower(std::string_view value) {
 
 bool isGeneratorPrefix(std::string_view prefix) {
     const auto key = lower(prefix);
-    return key == "xc" || key == "canvas" || key == "gradient" || key == "radial-gradient";
+    return std::ranges::find(Lexer::generatorKinds, key) != std::ranges::end(Lexer::generatorKinds);
 }
 
 std::optional<Format> knownFormat(std::string_view name) {
@@ -188,12 +188,20 @@ bool tokenizeSource(Command& command, std::string token, std::string pendingSize
     return tokenizeInput(command, std::move(token));
 }
 
-std::string requireOptionValue(Command& command, size_t& i, std::span<const std::string> args, std::string_view token, std::string_view option) {
-    const auto prefix = std::string(option) + '=';
-    if (token.starts_with(prefix)) return std::string(token.substr(prefix.size()));
+/**
+ * the words an option takes.
+ *
+ * the table counts them, so this is the same work whatever the option is: what
+ * followed the equals sign, or the next word along. -crop is the one that can do
+ * without, and it looks before it takes, so it never comes through here.
+ */
+std::optional<std::string> valueOf(Command& command, const Lexer::Word& word, size_t& i,
+                                   std::span<const std::string> args) {
+    if (word.hasValue) return std::string(word.value);
+    if (word.option->args == 0) return std::string{};
     if (i + 1 >= args.size()) {
-        setError(command, "missing convert option argument", std::string(option));
-        return {};
+        setError(command, "missing convert option argument", std::string(word.spelling));
+        return std::nullopt;
     }
     return args[++i];
 }
@@ -264,8 +272,175 @@ bool addFormat(Command& command, std::string value) {
     return addToken(command, Token{.type = TokenType::FilterFormat, .value = std::move(value), .format = *format});
 }
 
+/**
+ * the colour stored inside the output, which is not the same question as the
+ * container: a tga holds any of six and a ktx2 any of three, and until now the answer
+ * was whichever one the registry happened to try first.
+ */
+bool addPixelFormat(Command& command, std::string value) {
+    const auto color = colorNamed(value);
+    if (!color) {
+        setError(command, "unknown pixel format, which is a colour such as rgba8888, bgr888, rgb565 or yuv420", value);
+        return false;
+    }
+
+    command.outputColor = *color;
+    command.outputColorName = value;
+    return addToken(command, Token{.type = TokenType::FilterPixFmt, .value = std::move(value), .color = *color});
+}
+
 bool addFx(Command& command, std::string value) {
     return addToken(command, Token{.type = TokenType::FilterFx, .value = std::move(value)});
+}
+
+/**
+ * a setting: it waits for the operation that wants it, and is an error if none comes.
+ * this is what makes the order mean something rather than being decoration.
+ */
+bool addFilter(Command& command, std::string value, std::string option) {
+    if (!Haio::ditherNamed(value)) {
+        command.error = ParseError{"filter takes nearest, bayer, floyd or strict", value};
+        return false;
+    }
+    if (command.pendingFilter) {
+        command.error = ParseError{"this filter replaces one nothing has used yet",
+                                   command.pendingFilter->value};
+        return false;
+    }
+    command.pendingFilter = Command::Pending{std::move(option), std::move(value)};
+    return true;
+}
+
+/** another setting, and this one is optional rather than required */
+bool addLimit(Command& command, std::string value, std::string option) {
+    /**
+     * the strategy is written out, the same way the filter is.
+     *
+     * "sort:16" and "spread:16" give visibly different pictures of the same
+     * photograph: one spends the budget where there is the most area, the other where
+     * there is the most that is new. there is no answer that is right often enough to
+     * be assumed, and a bare "16" would be haio choosing what somebody's picture
+     * looks like.
+     */
+    const auto colon = std::string_view{value}.find(':');
+    if (colon == std::string_view::npos) {
+        command.error = ParseError{"limit needs to say which colours to keep, "
+                                   "as in -limit spread:16 or -limit sort:16", value};
+        return false;
+    }
+
+    const auto named = Haio::limitNamed(std::string_view{value}.substr(0, colon));
+    if (!named) {
+        command.error = ParseError{"limit takes sort or spread before its colon", value};
+        return false;
+    }
+
+    const auto most = countOf(std::string(std::string_view{value}.substr(colon + 1)));
+    if (!most) {
+        command.error = ParseError{"limit takes a number of colours, counted from one", value};
+        return false;
+    }
+    if (command.pendingLimit) {
+        command.error = ParseError{"this limit replaces one nothing has used yet",
+                                   command.pendingLimit->value};
+        return false;
+    }
+
+    command.pendingLimitHow = *named;
+    command.pendingLimit = Command::Pending{std::move(option), std::move(value)};
+    return true;
+}
+
+/** an operation: it takes the settings waiting for it, and needs a filter */
+bool addPalette(Command& command, std::string value) {
+    if (!command.pendingFilter) {
+        command.error = ParseError{"putting a picture into a palette needs a filter first, "
+                                   "as in -filter bayer before -palete", value};
+        return false;
+    }
+    const auto how = Haio::ditherNamed(command.pendingFilter->value);
+    command.pendingFilter.reset();
+
+    size_t most = 0;
+    auto limitHow = Haio::Limit::Spread;
+    if (command.pendingLimit) {
+        const auto spelled = std::string_view{command.pendingLimit->value};
+        most = *countOf(std::string(spelled.substr(spelled.find(':') + 1)));
+        limitHow = command.pendingLimitHow;
+        command.pendingLimit.reset();
+    }
+
+    return addToken(command, Token{.type = TokenType::FilterPalette, .value = std::move(value),
+                                   .format = Format::RAW, .dither = *how,
+                                   .limit = most, .limitHow = limitHow});
+}
+
+/**
+ * -crop is the only option that may be written with nothing after it, so it is the
+ * only one that has to look before it takes.
+ *
+ * what it looks for is a geometry, because the word after it is just as likely to be
+ * the output path: "convert in.png -crop out.ppm" is a crop of everything, and
+ * "convert in.png -crop 10x out.ppm" is a geometry somebody got wrong. the two are
+ * told apart by whether anything else follows.
+ */
+bool readCrop(Command& command, const Lexer::Word& word, size_t& i, std::span<const std::string> args) {
+    std::string value{word.value};
+
+    if (!word.hasValue && i + 1 < args.size() && !isOption(args[i + 1])) {
+        Rect ignored;
+        const std::string_view next = args[i + 1];
+        if (parseCropGeometryToken(next, ignored) || parseRectToken(next, ignored)) {
+            value = args[++i];
+        } else if (i + 2 < args.size()) {
+            setError(command, "invalid crop geometry", std::string(next));
+            return false;
+        }
+    }
+    return addCrop(command, std::move(value), false);
+}
+
+/**
+ * an option, read by the table and then handed to whoever knows what it means.
+ *
+ * everything above the switch is the same for all of them, which is the point of
+ * writing the count down: the parser no longer has to be told, once per option, that
+ * a value may arrive after a space or after an equals sign.
+ */
+bool readOption(Command& command, const Lexer::Word& word, size_t& i,
+                std::span<const std::string> args, std::string& pendingSize) {
+    /**
+     * -size was written for the generator that has to come next, so an option
+     * arriving first is the mistake -- not whatever that option then turns out to be
+     * wrong about, which is a confusing thing to be told instead.
+     */
+    if (!pendingSize.empty() && word.option->kind != Lexer::Opt::Size) {
+        setError(command, "-size is the size a generator is created at; use -resize to scale a picture",
+                 pendingSize);
+        return false;
+    }
+
+    if (word.option->kind == Lexer::Opt::Crop) return readCrop(command, word, i, args);
+
+    const auto value = valueOf(command, word, i, args);
+    if (!value) return false;
+
+    const auto option = std::string(word.spelling);
+    switch (word.option->kind) {
+        case Lexer::Opt::Size:     pendingSize = *value; return true;
+        case Lexer::Opt::CropRect: return addCrop(command, *value, true);
+        case Lexer::Opt::Resize:   return addResize(command, *value, option);
+        case Lexer::Opt::Radius:   return addRadius(command, *value);
+        case Lexer::Opt::Format:   return addFormat(command, *value);
+        case Lexer::Opt::PixFmt:   return addPixelFormat(command, *value);
+        case Lexer::Opt::Filter:   return addFilter(command, *value, option);
+        case Lexer::Opt::Limit:    return addLimit(command, *value, option);
+        case Lexer::Opt::Palette:  return addPalette(command, *value);
+        case Lexer::Opt::Fx:       return addFx(command, *value);
+        // taken before the value was read, because its value is optional
+        case Lexer::Opt::Crop:     break;
+    }
+    return true;
 }
 
 Command parseTokens(std::span<const std::string> args) {
@@ -281,157 +456,8 @@ Command parseTokens(std::span<const std::string> args) {
     for (size_t i = 1; i < args.size(); i++) {
         const std::string_view token = args[i];
 
-        if (token == "-size") {
-            pendingSize = requireOptionValue(command, i, args, token, "-size");
-            if (command.error) return command;
-            continue;
-        }
-
-        if (token == "-fx" || token.starts_with("-fx=")) {
-            auto value = requireOptionValue(command, i, args, token, "-fx");
-            if (command.error || !addFx(command, std::move(value))) return command;
-            continue;
-        }
-
-        if (token == "-crop") {
-            std::string value;
-            if (i + 1 < args.size() && !isOption(args[i + 1])) {
-                Rect ignored;
-                const std::string_view next = args[i + 1];
-                if (parseCropGeometryToken(next, ignored) || parseRectToken(next, ignored)) {
-                    value = args[++i];
-                } else if (i + 2 < args.size()) {
-                    setError(command, "invalid crop geometry", std::string(next));
-                    return command;
-                }
-            }
-
-            if (!addCrop(command, std::move(value), false)) return command;
-            continue;
-        }
-
-        if (token == "--crop" || token.starts_with("--crop=")) {
-            auto value = requireOptionValue(command, i, args, token, "--crop");
-            if (command.error || !addCrop(command, std::move(value), true)) return command;
-            continue;
-        }
-
-        if (token == "--resize" || token.starts_with("--resize=") || token == "-resize" || token.starts_with("-resize=")) {
-            const auto option = token.starts_with("--resize") ? "--resize" : "-resize";
-            auto value = requireOptionValue(command, i, args, token, option);
-            if (command.error || !addResize(command, std::move(value), option)) return command;
-            continue;
-        }
-
-        /**
-         * a setting: it waits for an operation that wants it, and is an error if none
-         * comes. this is what makes the order mean something rather than being
-         * decoration.
-         */
-        if (token == "--filter" || token.starts_with("--filter=") || token == "-filter" || token.starts_with("-filter=")) {
-            const auto option = token.starts_with("--filter") ? "--filter" : "-filter";
-            auto value = requireOptionValue(command, i, args, token, option);
-            if (command.error) return command;
-
-            if (!Haio::ditherNamed(value)) {
-                command.error = ParseError{"filter takes nearest, bayer, floyd or error", value};
-                return command;
-            }
-            if (command.pendingFilter) {
-                command.error = ParseError{"this filter replaces one nothing has used yet",
-                                           command.pendingFilter->value};
-                return command;
-            }
-            command.pendingFilter = Command::Pending{option, std::move(value)};
-            continue;
-        }
-
-        /** another setting, and this one is optional rather than required */
-        if (token == "--limit" || token.starts_with("--limit=") || token == "-limit" || token.starts_with("-limit=")) {
-            const auto option = token.starts_with("--limit") ? "--limit" : "-limit";
-            auto value = requireOptionValue(command, i, args, token, option);
-            if (command.error) return command;
-
-            /**
-             * the strategy is written out, the same way the filter is.
-             *
-             * "sort:16" and "spread:16" give visibly different pictures of the same
-             * photograph: one spends the budget where there is the most area, the
-             * other where there is the most that is new. there is no answer that is
-             * right often enough to be assumed, and a bare "16" would be haio
-             * choosing what somebody's picture looks like.
-             */
-            const auto colon = std::string_view{value}.find(':');
-            if (colon == std::string_view::npos) {
-                command.error = ParseError{"limit needs to say which colours to keep, "
-                                           "as in -limit spread:16 or -limit sort:16", value};
-                return command;
-            }
-
-            const auto named = Haio::limitNamed(std::string_view{value}.substr(0, colon));
-            if (!named) {
-                command.error = ParseError{"limit takes sort or spread before its colon", value};
-                return command;
-            }
-            command.pendingLimitHow = *named;
-
-            const auto most = countOf(std::string(std::string_view{value}.substr(colon + 1)));
-            if (!most) {
-                command.error = ParseError{"limit takes a number of colours, counted from one", value};
-                return command;
-            }
-            if (command.pendingLimit) {
-                command.error = ParseError{"this limit replaces one nothing has used yet",
-                                           command.pendingLimit->value};
-                return command;
-            }
-            command.pendingLimit = Command::Pending{option, std::move(value)};
-            continue;
-        }
-
-        /** an operation: it takes the filter waiting for it, and needs one */
-        if (token == "--palete" || token.starts_with("--palete=") || token == "-palete" || token.starts_with("-palete=")
-            || token == "--palette" || token.starts_with("--palette=") || token == "-palette" || token.starts_with("-palette=")) {
-            const auto option = token.starts_with("--pal") ? "--palete" : "-palete";
-            auto value = requireOptionValue(command, i, args, token, option);
-            if (command.error) return command;
-
-            if (!command.pendingFilter) {
-                command.error = ParseError{"putting a picture into a palette needs a filter first, "
-                                           "as in -filter bayer before -palete", value};
-                return command;
-            }
-            const auto how = Haio::ditherNamed(command.pendingFilter->value);
-            command.pendingFilter.reset();
-
-            size_t most = 0;
-            auto limitHow = Haio::Limit::Spread;
-            if (command.pendingLimit) {
-                const auto spelled = std::string_view{command.pendingLimit->value};
-                most = *countOf(std::string(spelled.substr(spelled.find(':') + 1)));
-                limitHow = command.pendingLimitHow;
-                command.pendingLimit.reset();
-            }
-
-            if (!addToken(command, Token{.type = TokenType::FilterPalette, .value = std::move(value),
-                                         .format = Format::RAW, .dither = *how,
-                                         .limit = most, .limitHow = limitHow})) {
-                return command;
-            }
-            continue;
-        }
-
-        if (token == "--radius" || token.starts_with("--radius=") || token == "-radius" || token.starts_with("-radius=")) {
-            const auto option = token.starts_with("--radius") ? "--radius" : "-radius";
-            auto value = requireOptionValue(command, i, args, token, option);
-            if (command.error || !addRadius(command, std::move(value))) return command;
-            continue;
-        }
-
-        if (token == "--format" || token.starts_with("--format=") || token == "-format" || token.starts_with("-format=")) {
-            const auto option = token.starts_with("--format") ? "--format" : "-format";
-            auto value = requireOptionValue(command, i, args, token, option);
-            if (command.error || !addFormat(command, std::move(value))) return command;
+        if (const auto word = Lexer::optionOf(token)) {
+            if (!readOption(command, *word, i, args, pendingSize)) return command;
             continue;
         }
 

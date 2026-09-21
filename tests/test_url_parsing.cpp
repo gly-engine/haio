@@ -18,9 +18,40 @@ int main() {
     assert(tokens[1].kind == Haio::TokenKind::Radius);
     assert(tokens[1].radius == 2);
 
+    // the colour inside the container, which a query names the way a command line does
+    {
+        const auto asked = Haio::parseQueryTokens("format=tga&pix_fmt=bgr888");
+        assert(asked.size() == 1);
+        assert(asked[0].kind == Haio::TokenKind::Encode);
+        assert(asked[0].format == Haio::Format::TGA);
+        assert(asked[0].color == Haio::Color::BGR888);
+    }
+    {
+        // a colour with no container is the pixels themselves, which is a request and
+        // not a mistake
+        const auto bare = Haio::parseQueryTokens("pix_fmt=yuv420p");
+        assert(bare.size() == 1);
+        assert(bare[0].format == Haio::Format::RAW);
+        assert(bare[0].color == Haio::Color::YUV420);
+    }
+    {
+        const auto plain = Haio::parseQueryTokens("format=png");
+        assert(plain.size() == 1);
+        assert(!plain[0].color);
+    }
+
     bool failed = false;
     try {
         (void)Haio::parseQueryMap("size=%zz");
+    } catch (const std::runtime_error&) {
+        failed = true;
+    }
+    assert(failed);
+
+    // a colour nobody has is worth stopping for rather than quietly becoming rgba8888
+    failed = false;
+    try {
+        (void)Haio::parseQueryTokens("pix_fmt=yuv444p");
     } catch (const std::runtime_error&) {
         failed = true;
     }

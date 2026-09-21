@@ -50,6 +50,10 @@ constexpr size_t strideOf(Color color) {
         case Color::RGBA8888: return 4;
         case Color::RGB888:   return 3;
         case Color::RGB565:   return 2;
+        case Color::RGB555:   return 2;
+        case Color::RGBA5551: return 2;
+        case Color::BGR888:   return 3;
+        case Color::BGRA8888: return 4;
         case Color::GRAY8:    return 1;
         // one byte per pixel, so a crop or a resize can index it like any other
         case Color::PALETTE:  return 1;
@@ -66,15 +70,22 @@ template <Color P> concept Addressable = strideOf(P) != 0;
 
 /**
  * which byte of a pixel holds its alpha, or a negative when the colour has none.
- * rgba8888 is the only one today; the rule is written as a rule so that the day a
- * second one arrives, rgba4444 in a ktx or a palette that keeps a transparent entry,
- * it is one line here rather than a second copy of the masking loop.
+ * the two eight bit colours answer the same, because where the alpha sits is all a
+ * masking loop ever wanted to know and neither of them moved it. written as a rule so
+ * that the day another arrives, rgba4444 in a ktx or a palette that keeps a
+ * transparent entry, it is one line here rather than a second copy of the loop.
  */
 constexpr int alphaOffsetOf(Color color) {
     switch (color) {
         case Color::RGBA8888: return 3;
+        case Color::BGRA8888: return 3;
         case Color::RGB888:   break;
         case Color::RGB565:   break;
+        case Color::BGR888:   break;
+        case Color::RGB555:   break;
+        // it has an alpha, but it is one bit sharing a byte with the blue, so there
+        // is nothing here to clear on its own
+        case Color::RGBA5551: break;
         case Color::GRAY8:    break;
         // tiled and planar, so no pixel has an address of its own
         case Color::CHR_NES:  break;
@@ -192,6 +203,12 @@ template <Color From, Color To> Result<void> Move(Bytes src, std::span<uint8_t> 
  * the hot loops, writing pixels into a buffer the caller already owns. this is where
  * the simd lives.
  */
+
+/**
+ * does this format name a colour of its own. a container that holds any of three has
+ * nothing to declare, so this is asked rather than assumed.
+ */
+template <Format F> concept HasDefaultColor = requires { DefaultColor<F>::value; };
 
 /**
  * @ingroup detect

@@ -127,5 +127,59 @@ int main() {
         assert(cmd.error.token == "-wat");
     }
 
+    /**
+     * the spellings come from one table now, which is the whole point of having one:
+     * "--size" was in the grammar and in the usage text and in neither branch of the
+     * parser, so it was documented and rejected at the same time.
+     */
+    {
+        auto cmd = parse({"convert", "input.png", "--size", "8x9", "out.png"});
+        assert(!cmd.error);
+        assert(cmd.tokens[1].type == FilterResize);
+        assert(cmd.tokens[1].size->width == 8);
+        assert(cmd.tokens[1].size->height == 9);
+    }
+
+    /**
+     * and a value stuck on with an equals sign belongs to whichever spelling it was
+     * stuck to. this used to be matched against the canonical one only, so
+     * "--palette=cga" found no value there and took the next word instead -- which was
+     * the output path.
+     */
+    {
+        auto cmd = parse({"convert", "input.png", "-filter=bayer", "--palette=cga", "out.png"});
+        assert(!cmd.error);
+        assert(cmd.tokens.size() == 3);
+        assert(cmd.tokens[1].type == FilterPalette);
+        assert(cmd.tokens[1].value == "cga");
+        assert(cmd.tokens[1].dither == Haio::Dither::Bayer);
+        assert(cmd.outputPath == "out.png");
+    }
+
+    // every spelling of an option is the same option, however many it has
+    for (const auto* spelling : {"-pix_fmt", "--pix_fmt", "-pix_format", "--pix_format"}) {
+        auto cmd = parse({"convert", "input.png", spelling, "bgr888", "out.tga"});
+        assert(!cmd.error);
+        assert(cmd.outputColor == Haio::Color::BGR888);
+        assert(cmd.outputFormat == Haio::Format::TGA);
+    }
+    {
+        auto cmd = parse({"convert", "input.png", "-pix_fmt=yuv420p", "out.tga"});
+        assert(!cmd.error);
+        assert(cmd.outputColor == Haio::Color::YUV420);
+    }
+    {
+        auto cmd = parse({"convert", "input.png", "-pix_fmt", "nonsense", "out.tga"});
+        assert(cmd.error);
+        assert(cmd.error.token == "nonsense");
+    }
+
+    // an option with nothing after it says which one, in the spelling it was given
+    {
+        auto cmd = parse({"convert", "input.png", "out.png", "--resize"});
+        assert(cmd.error);
+        assert(cmd.error.token == "--resize");
+    }
+
     return 0;
 }
