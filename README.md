@@ -10,10 +10,10 @@ use command `haio cdn config.toml` or paste intere config in enviroment `HAIO_CD
 port = 8080
 
 [bucket.assets]
-endpoint = "file://assets/"
+url = "file://assets/"
 
 [bucket.proxy]
-endpoint = "http://*"
+url = "http://*"
 ```
 
 ## Building on Windows
