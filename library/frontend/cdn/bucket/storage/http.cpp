@@ -119,10 +119,12 @@ asio::ssl::context& tlsContext() {
 }
 
 template <typename Stream>
-asio::awaitable<http::response<http::vector_body<uint8_t>>> exchange(Stream& stream, std::string_view hostHeader, std::string_view target) {
+asio::awaitable<http::response<http::vector_body<uint8_t>>> exchange(Stream& stream, std::string_view hostHeader, std::string_view target,
+                                                                    const Haio::Cdn::Bucket::Headers& headers) {
     http::request<http::empty_body> req{http::verb::get, target, 11};
     req.set(http::field::host, hostHeader);
     req.set(http::field::user_agent, "haio-cdn");
+    for (const auto& [name, value] : headers) req.set(name, value);
 
     co_await http::async_write(stream, req, asio::use_awaitable);
 
@@ -132,7 +134,7 @@ asio::awaitable<http::response<http::vector_body<uint8_t>>> exchange(Stream& str
     co_return res;
 }
 
-asio::awaitable<http::response<http::vector_body<uint8_t>>> request(const urls::url& url) {
+asio::awaitable<http::response<http::vector_body<uint8_t>>> request(const urls::url& url, const Haio::Cdn::Bucket::Headers& headers) {
     auto executor = co_await asio::this_coro::executor;
     tcp::resolver resolver(executor);
 
@@ -158,7 +160,7 @@ asio::awaitable<http::response<http::vector_body<uint8_t>>> request(const urls::
         co_await beast::get_lowest_layer(stream).async_connect(results, asio::use_awaitable);
         co_await stream.async_handshake(asio::ssl::stream_base::client, asio::use_awaitable);
 
-        res = co_await exchange(stream, hostHeader, target);
+        res = co_await exchange(stream, hostHeader, target, headers);
 
         // a truncated shutdown is the normal case for servers that just close
         co_await stream.async_shutdown(asio::redirect_error(asio::use_awaitable, ec));
@@ -167,7 +169,7 @@ asio::awaitable<http::response<http::vector_body<uint8_t>>> request(const urls::
         stream.expires_after(httpTimeout);
         co_await stream.async_connect(results, asio::use_awaitable);
 
-        res = co_await exchange(stream, hostHeader, target);
+        res = co_await exchange(stream, hostHeader, target, headers);
 
         stream.socket().shutdown(tcp::socket::shutdown_both, ec);
     }
@@ -193,9 +195,9 @@ urls::url redirectTarget(const urls::url& from, std::string_view location) {
     return next;
 }
 
-asio::awaitable<Haio::Blob> fetchUrl(urls::url url, std::string pathForFormat) {
+asio::awaitable<Haio::Blob> fetchUrl(urls::url url, std::string pathForFormat, Haio::Cdn::Bucket::Headers headers = {}) {
     for (int hop = 0;; hop++) {
-        auto res = co_await request(url);
+        auto res = co_await request(url, headers);
         const auto status = res.result_int();
 
         if (status >= 300 && status < 400) {
@@ -206,7 +208,11 @@ asio::awaitable<Haio::Blob> fetchUrl(urls::url url, std::string pathForFormat) {
             if (location.empty()) {
                 throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::Upstream, "upstream sent " + std::to_string(status) + " without a location header");
             }
-            url = redirectTarget(url, std::string_view(location.data(), location.size()));
+            // the signature was made for the url that redirected, and means nothing at
+        // the next one, so it is dropped rather than replayed somewhere it does not
+        // belong
+        headers.clear();
+        url = redirectTarget(url, std::string_view(location.data(), location.size()));
             continue;
         }
 
@@ -234,6 +240,15 @@ asio::awaitable<Haio::Blob> fetchUrl(urls::url url, std::string pathForFormat) {
 }
 
 namespace Haio::Cdn::Bucket {
+
+asio::awaitable<Blob> fetchUrlWith(std::string url, std::string pathForFormat, Headers headers) {
+    const auto parsed = urls::parse_uri(url);
+    if (!parsed) {
+        std::cerr << "invalid signed url: " << url << "\n";
+        throw Failure(Haio::ErrorCode::Internal, "this bucket is misconfigured");
+    }
+    co_return co_await fetchUrl(urls::url{*parsed}, std::move(pathForFormat), std::move(headers));
+}
 
 asio::awaitable<Blob> fetchHttp(const BucketConfig& bucket, std::string path) {
     if (bucket.open) {

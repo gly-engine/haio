@@ -20,7 +20,8 @@ asio::awaitable<Blob> fetchInsideZip(const BucketConfig& bucket, const ZipPath& 
     auto archive = archives.find(key);
     if (!archive) {
         auto blob = bucket.scheme == "file" ? fetchFile(bucket, path.archive)
-                                            : co_await fetchHttp(bucket, path.archive);
+                  : bucket.scheme == "s3"     ? co_await fetchS3(bucket, path.archive)
+                                              : co_await fetchHttp(bucket, path.archive);
 
         auto index = readZipIndex(blob.data);
         if (!index) throw Failure(index.error().code, index.error().message);

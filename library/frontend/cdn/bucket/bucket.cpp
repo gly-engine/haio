@@ -31,6 +31,7 @@ boost::asio::awaitable<Result<Blob>> fetchBucket(const Config& config, Bucket::Z
         }
 
         if (bucket.scheme == "file") co_return Bucket::fetchFile(bucket, std::move(path));
+        if (bucket.scheme == "s3") co_return co_await Bucket::fetchS3(bucket, std::move(path));
         co_return co_await Bucket::fetchHttp(bucket, std::move(path));
     } catch (const Bucket::Failure& err) {
         co_return std::unexpected(Error{err.code, err.what()});

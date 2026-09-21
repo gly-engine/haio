@@ -56,12 +56,38 @@
  * @code{.toml}
  * [bucket.upstream]
  * url = "https://host/prefix"   # everything under one prefix
- * url = "s3://host/bucket"      # the same, over https
+ * url = "s3://s3.eu-west-1.amazonaws.com/bucket"   # signed, region from the host
+ * url = "s3://minio.local:9000/bucket?region=us-east-1"   # or said outright
  * url = "https://*"             # open: the request names the host
  * @endcode
  *
  * redirects are followed, downgrades included. an open bucket fetches whatever host
  * the caller names, warns at startup, and is meant for testing.
+ *
+ * ## Bucket S3
+ *
+ * an `s3://` bucket is https with a signature. the region is settled while the config
+ * loads, from `?region=` if it says so, else from an amazon host, else from
+ * `AWS_DEFAULT_REGION`. a bucket whose region nobody can work out is refused at
+ * startup rather than at the first request.
+ *
+ * @code{.toml}
+ * [bucket.orders]
+ * url = "s3://bucket.s3.us-east-1.amazonaws.com/prefix"
+ * access_key = "AKIA..."
+ * secret_key = "..."
+ * session_token = "..."   # only for temporary credentials
+ * @endcode
+ *
+ * the keys may be left out, and then AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and
+ * AWS_SESSION_TOKEN are read instead. with neither the request goes out unsigned,
+ * which is what a public bucket wants.
+ *
+ * a config holding a secret is a file worth guarding, and haio says so at startup if
+ * anybody but its owner can read it.
+ *
+ * an s3 bucket cannot be open: a signature is made for one host, and there is nothing
+ * to sign for a host that arrives with the request.
  */
 
 /**
@@ -178,6 +204,17 @@ struct BucketConfig {
     std::string scheme;
     bool open = false;
     std::filesystem::path root;
+
+    /** s3 only: from ?region=, then the host, then AWS_DEFAULT_REGION */
+    std::string region;
+
+    /**
+     * s3 only, and the reason a config file deserves careful permissions. empty
+     * leaves the request unsigned, which is what a public bucket wants.
+     */
+    std::string accessKey;
+    std::string secretKey;
+    std::string sessionToken;
 };
 
 /**

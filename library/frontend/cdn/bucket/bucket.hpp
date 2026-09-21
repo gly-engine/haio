@@ -33,8 +33,31 @@ struct Failure : std::runtime_error {
 /** file:// buckets: a directory on this machine, and never a step above it */
 Blob fetchFile(const BucketConfig& bucket, std::string path);
 
-/** http, https and s3 buckets, open or with a fixed endpoint */
+/** headers a caller adds to the request, which is how s3 carries its signature */
+using Headers = std::map<std::string, std::string>;
+
+/** http and https buckets, open or with a fixed endpoint */
 boost::asio::awaitable<Blob> fetchHttp(const BucketConfig& bucket, std::string path);
+
+/** the same fetch, with headers somebody else worked out */
+boost::asio::awaitable<Blob> fetchUrlWith(std::string url, std::string pathForFormat, Headers headers);
+
+/**
+ * s3 buckets, which are https with a signature.
+ *
+ * the credentials come from the environment, the way every other aws tool reads them,
+ * so nothing secret is ever written in the config file.
+ */
+boost::asio::awaitable<Blob> fetchS3(const BucketConfig& bucket, std::string path);
+
+/**
+ * the signature part of sigv4, on its own so it can be checked against the vectors
+ * aws publishes. the key is derived over date, region and service and then used over
+ * the string to sign; getting the last step wrong yields something that looks like a
+ * signature and is refused exactly like a wrong secret.
+ */
+std::string awsSignatureV4(std::string_view secret, std::string_view date, std::string_view region,
+                           std::string_view service, std::string_view stringToSign);
 
 /** where one file sits inside an archive, as the zip's own directory records it */
 struct ZipEntry {

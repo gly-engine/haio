@@ -6,8 +6,10 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <chrono>
+#include <cstdlib>
 #include <initializer_list>
 #include <stdexcept>
 
@@ -53,6 +55,43 @@ std::filesystem::path fileRoot(const urls::url_view_base& url, const std::string
     return std::filesystem::path(host + path);
 }
 
+std::string hostRegion(const std::string& host);
+
+/**
+ * most explicit first: what the url says outright, then what an amazon host implies,
+ * then the environment every other aws tool reads.
+ *
+ * it is settled once, while the config loads, so a bucket whose region nobody can
+ * work out fails at startup. guessing it wrong would instead sign a request that
+ * comes back as a plain 403, which says nothing about the region being the problem.
+ */
+std::string regionOf(const urls::url_view_base& url) {
+    for (const auto param : url.params()) {
+        if (param.key == "region" && !param.value.empty()) return param.value;
+    }
+
+    if (const auto found = hostRegion(std::string(url.host())); !found.empty()) return found;
+
+    const char* fromEnv = std::getenv("AWS_DEFAULT_REGION");
+    return fromEnv ? fromEnv : std::string{};
+}
+
+/** s3.eu-west-1.amazonaws.com, and bucket.s3.eu-west-1.amazonaws.com, both name it */
+std::string hostRegion(const std::string& host) {
+    const auto marker = host.find(".s3.");
+    const auto from = marker != std::string::npos ? marker + 4
+                    : host.starts_with("s3.")     ? size_t{3}
+                                                  : std::string::npos;
+    if (from == std::string::npos) return {};
+
+    const auto rest = host.substr(from);
+    const auto dot = rest.find('.');
+    if (dot == std::string::npos) return {};
+
+    const auto candidate = rest.substr(0, dot);
+    return candidate == "amazonaws" ? std::string{} : candidate;
+}
+
 void applyUrl(Haio::Cdn::BucketConfig& bucket) {
     if (bucket.url.empty()) {
         throw std::runtime_error("bucket \"" + bucket.name + "\" has no url");
@@ -74,7 +113,20 @@ void applyUrl(Haio::Cdn::BucketConfig& bucket) {
         return;
     }
 
-    if (bucket.scheme == "http" || bucket.scheme == "https" || bucket.scheme == "s3") return;
+    if (bucket.scheme == "s3") {
+        // a signature is made for one host, so there is nothing sensible to sign for
+        // a bucket whose host arrives with the request
+        if (bucket.open) throw std::runtime_error("an s3 bucket cannot be open: " + bucket.url);
+
+        bucket.region = regionOf(*parsed);
+        if (bucket.region.empty()) {
+            throw std::runtime_error("cannot tell the region of s3 bucket \"" + bucket.name
+                                     + "\"; name it in the host, as in s3.eu-west-1.amazonaws.com, "
+                                       "or add ?region=<name> to its url, or set AWS_DEFAULT_REGION");
+        }
+        return;
+    }
+    if (bucket.scheme == "http" || bucket.scheme == "https") return;
 
     // "//\*" carries no scheme on purpose: the request supplies it
     if (bucket.scheme.empty()) {
@@ -220,7 +272,11 @@ Config parseConfig(std::string_view text) {
         if (scope != Scope::Bucket || !current) continue;
 
         if (key == "url") current->url = value;
-        else throw unknownKey("bucket \"" + current->name + "\"", key, {"url"});
+        else if (key == "access_key") current->accessKey = value;
+        else if (key == "secret_key") current->secretKey = value;
+        else if (key == "session_token") current->sessionToken = value;
+        else throw unknownKey("bucket \"" + current->name + "\"", key,
+                              {"url", "access_key", "secret_key", "session_token"});
     }
 
     for (auto& [name, bucket] : config.buckets) applyUrl(bucket);
@@ -230,6 +286,20 @@ Config parseConfig(std::string_view text) {
 Config loadConfig(const std::filesystem::path& path) {
     std::ifstream in(path);
     if (!in) throw std::runtime_error("cannot open config: " + path.string());
+
+    /**
+     * the file may hold an s3 secret, so anybody who can read it can sign as this
+     * server. the check is a warning rather than a refusal: whose machine this is, and
+     * who else is on it, is not haio's call to make.
+     */
+    if (std::error_code ec; true) {
+        using std::filesystem::perms;
+        const auto mode = std::filesystem::status(path, ec).permissions();
+        if (!ec && (mode & (perms::group_read | perms::others_read)) != perms::none) {
+            std::cerr << "warning: " << path.string() << " can be read by more than its owner, "
+                         "and a bucket's secret_key would be readable with it\n";
+        }
+    }
 
     std::ostringstream text;
     text << in.rdbuf();
