@@ -91,6 +91,12 @@ enum class Format {
      * @ext tga targa tpic
      */
     TGA,
+
+    /**
+     * @mime image/gif
+     * @ext gif
+     */
+    GIF,
 };
 
 /**

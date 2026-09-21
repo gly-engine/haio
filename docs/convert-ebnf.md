@@ -34,7 +34,7 @@ limit-setting    = ( "-limit" | "--limit" ) , limit-spec ;
 palette-filter   = ( "-palete" | "--palete" | "-palette" | "--palette" ) , palette-spec ;
 fx-filter        = "-fx" , expression ;
 format-name      = "raw" | "png" | "ppm" | "jpeg" | "ktx" | "ktx2" | "dds"
-                  | "pvr" | "zcis" | "ansi" | "utf8" | "rom" | "tga" ;
+                  | "pvr" | "zcis" | "ansi" | "utf8" | "rom" | "tga" | "gif" ;
 colour-name      = "rgba8888" | "rgb888" | "rgb565" | "rgb555" | "rgba5551"
                   | "bgr888" | "bgra8888" | "gray8" | "etc1" | "yuv420"
                   | "palette" | "chr_nes" | "rgb" | "rgba" | "rgb24" | "bgr24"
