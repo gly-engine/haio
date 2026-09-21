@@ -36,10 +36,11 @@ boost::asio::awaitable<Result<Blob>> fetchBucket(const Config& config, Bucket::Z
     } catch (const Bucket::Failure& err) {
         co_return std::unexpected(Error{err.code, err.what()});
     } catch (const boost::system::system_error& err) {
-        // beast reports its own deadline as a plain system error
         const bool timedOut = err.code() == beast::error::timeout;
-        co_return std::unexpected(Error{timedOut ? ErrorCode::Timeout : ErrorCode::Upstream,
-                                        timedOut ? "upstream timed out" : "upstream unreachable"});
+        if (timedOut) {
+            co_return std::unexpected(Error{ErrorCode::Timeout, "upstream timed out"});
+        }
+        co_return std::unexpected(Error{ErrorCode::Upstream, "upstream unreachable: " + std::string(err.code().message())});
     } catch (const std::exception& err) {
         co_return std::unexpected(Error{ErrorCode::Internal, err.what()});
     }
