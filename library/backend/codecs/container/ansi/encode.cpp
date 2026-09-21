@@ -39,15 +39,28 @@ Result<Blob> Encode<Format::ANSI, Color::RGB888>(Image<Color::RGB888> img) {
     out.reserve(static_cast<size_t>(img.width) * static_cast<size_t>(img.height) * 20);
 
     for (int y = 0; y < img.height; y++) {
+        // a terminal keeps the colour it was last told, and a run of one colour is
+        // the common case in the pictures anybody renders here
+        uint32_t last = 0;
+        bool anySoFar = false;
+
         for (int x = 0; x < img.width; x++) {
             const auto at = (static_cast<size_t>(y) * static_cast<size_t>(img.width) + static_cast<size_t>(x)) * 3;
-            out += "\x1b[48;2;";
-            appendNumber(out, img.data[at + 0]);
-            out += ';';
-            appendNumber(out, img.data[at + 1]);
-            out += ';';
-            appendNumber(out, img.data[at + 2]);
-            out += 'm';
+            const uint32_t colour = (static_cast<uint32_t>(img.data[at + 0]) << 16)
+                                  | (static_cast<uint32_t>(img.data[at + 1]) << 8)
+                                  | img.data[at + 2];
+
+            if (!anySoFar || colour != last) {
+                out += "\x1b[48;2;";
+                appendNumber(out, img.data[at + 0]);
+                out += ';';
+                appendNumber(out, img.data[at + 1]);
+                out += ';';
+                appendNumber(out, img.data[at + 2]);
+                out += 'm';
+                last = colour;
+                anySoFar = true;
+            }
             out += cell;
         }
         // reset at the end of every row, so a terminal that wraps does not paint the

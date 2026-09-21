@@ -68,6 +68,15 @@ enum class Format {
      * @ext utf8
      */
     UTF8,
+
+    /**
+     * a cartridge, which is a container like any other: it says where its pattern
+     * data begins and how much of it there is.
+     *
+     * @mime application/x-nes-rom
+     * @ext nes
+     */
+    ROM,
 };
 
 /**
@@ -81,6 +90,22 @@ enum class Color {
     GRAY8,
     ETC1,
     YUV420,
+
+    /**
+     * an index per pixel plus the colours it indexes, which is why this is the one
+     * colour whose Image carries something besides pixels.
+     */
+    PALETTE,
+
+    /**
+     * how a console keeps its indices, which is not one per byte.
+     *
+     * nes chr is two bits a pixel, in eight by eight tiles, with the two bits of a
+     * pixel living in separate planes eight bytes apart. that is a layout and not a
+     * container, the same way ETC1 is, so it is a colour: a .chr file is Format::RAW
+     * holding this, and converting to PALETTE is what unpacks it.
+     */
+    CHR_NES,
 };
 
 }

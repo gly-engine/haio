@@ -46,14 +46,66 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
                 ensureImage();
                 if (!failure) image = cropImage(image, token.rect);
                 break;
-            case TokenKind::Resize:
+            case TokenKind::Resize: {
                 ensureImage();
-                if (!failure) image = resizeImage(image, token.size);
+                if (failure) break;
+
+                // a share is worked out here and not at parsing, because this is the
+                // first moment anybody knows what it is a share of
+                auto wanted = token.size;
+                if (token.percent != 0) {
+                    wanted = Size{std::max(1, image.width * token.percent / 100),
+                                  std::max(1, image.height * token.percent / 100)};
+                }
+                image = resizeImage(image, wanted);
                 break;
+            }
             case TokenKind::Radius:
                 ensureImage();
                 if (!failure) image = roundImageCorners(image, token.radius);
                 break;
+
+            /**
+             * quantise, then expand back to full colour.
+             *
+             * the picture afterwards holds only the palette's colours, which is the
+             * point, but it stays rgba8888 so that everything downstream keeps
+             * working. a format that stores indices rather than colours would take
+             * the palette image itself, and that is a separate road.
+             */
+            case TokenKind::Palette: {
+                ensureImage();
+                if (failure) break;
+
+                auto colours = paletteNamed(token.palette, 0);
+                if (!colours) {
+                    failure = colours.error();
+                    break;
+                }
+                // cutting the palette down comes first, so the dither only ever sees
+                // the colours that survived and spreads error among those
+                if (token.limit != 0) {
+                    auto fewer = limitPalette(image, *std::move(colours), token.limit, token.limitHow);
+                    if (!fewer) {
+                        failure = fewer.error();
+                        break;
+                    }
+                    colours = *std::move(fewer);
+                }
+
+                auto indexed = toPalette(image, *std::move(colours), token.dither);
+                if (!indexed) {
+                    failure = indexed.error();
+                    break;
+                }
+                auto expanded = Codecs::Convert<Color::PALETTE, Color::RGBA8888>(*std::move(indexed));
+                if (!expanded) {
+                    failure = expanded.error();
+                    break;
+                }
+                image = *std::move(expanded);
+                break;
+            }
             case TokenKind::Encode:
                 outputFormat = token.format;
                 break;

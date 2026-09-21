@@ -158,7 +158,8 @@
  * @code{.toml}
  * [security]
  * timeout = 10                   # in seconds, one conversion
- * max_width_or_height = 4096     # in pixels, what a resize may ask for
+ * max_size_pixel = 4096          # in pixels, what a resize may ask for outright
+ * max_size_percent = 500         # in percent, what a resize may ask for as a share
  * max_cache_entries_by_ip = 30   # entries one address may create per ttl window
  * max_requests_by_ip = 10        # per second, as a leaky bucket
  * allow_unzip = false            # whether a path may reach inside a zip
@@ -175,7 +176,8 @@
  *
  * | key                       | answers                                          |
  * | ------------------------- | ------------------------------------------------ |
- * | `max_width_or_height`     | a url asking for an allocation                   |
+ * | `max_size_pixel`          | a url asking for an allocation                   |
+ * | `max_size_percent`        | the same, asked for as a share of the picture    |
  * | `timeout`                 | a url asking for work                            |
  * | `max_cache_entries_by_ip` | one caller evicting everyone else's entries      |
  * | `max_requests_by_ip`      | a flood                                          |
@@ -228,8 +230,17 @@ struct SecurityConfig {
     /** seconds one conversion may run before it is given up on */
     std::chrono::seconds timeout{10};
 
-    /** the largest width or height a resize may ask for */
-    int maxWidthOrHeight = 4096;
+    /** the largest width or height a resize may ask for outright */
+    int maxSizePixel = 4096;
+
+    /**
+     * the largest share a resize may ask for, as a percentage.
+     *
+     * it is a separate number because it bounds a different thing: a picture scaled
+     * by a share is bounded by what it was, so five hundred percent of a thumbnail is
+     * still small, while five hundred percent of something large is not.
+     */
+    int maxSizePercent = 500;
 
     /** entries one address may create per cache window; zero is no limit */
     size_t maxCacheEntriesByIp = 0;

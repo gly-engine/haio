@@ -51,6 +51,10 @@ constexpr size_t strideOf(Color color) {
         case Color::RGB888:   return 3;
         case Color::RGB565:   return 2;
         case Color::GRAY8:    return 1;
+        // one byte per pixel, so a crop or a resize can index it like any other
+        case Color::PALETTE:  return 1;
+        // tiled and planar, so no pixel has an address of its own
+        case Color::CHR_NES:  break;
         case Color::ETC1:     break;
         case Color::YUV420:   break;
     }
@@ -72,6 +76,8 @@ constexpr int alphaOffsetOf(Color color) {
         case Color::RGB888:   break;
         case Color::RGB565:   break;
         case Color::GRAY8:    break;
+        // tiled and planar, so no pixel has an address of its own
+        case Color::CHR_NES:  break;
         case Color::ETC1:     break;
         case Color::YUV420:   break;
     }
@@ -80,6 +86,26 @@ constexpr int alphaOffsetOf(Color color) {
 
 /** and these can have a corner rounded away, because there is an alpha to clear */
 template <Color P> concept Maskable = Addressable<P> && alphaOffsetOf(P) >= 0;
+
+/**
+ * the one colour that is not self describing: a byte per pixel means nothing without
+ * the colours it points at, so the palette travels with the picture.
+ *
+ * it is a specialisation rather than a member on every Image, because every other
+ * colour would carry an empty vector around for nothing. the cost is that Move, which
+ * moves spans of bytes, has no way to carry the entries: palette conversions go
+ * through Convert directly and never through convertVia.
+ */
+template <>
+struct Image<Color::PALETTE> {
+    static constexpr Color color = Color::PALETTE;
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> data;
+
+    /** 0xAARRGGBB, at most 256 of them, and an index past the end is an error */
+    std::vector<uint32_t> entries;
+};
 
 /** bytes of a file. it has a container and the colour it was found to hold */
 struct Blob {

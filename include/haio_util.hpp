@@ -49,6 +49,46 @@ Result<std::vector<uint8_t>> slice(Bytes data, size_t off, size_t len);
  * what the gpu containers need to agree on. these always spoke about colour rather
  * than about files; the old single enum just made it look otherwise.
  */
+/**
+ * ordered dithering, which is a threshold that depends on where a pixel is rather
+ * than on what its neighbours became.
+ *
+ * it lives here and not in the palette code because the matrix is not about colour
+ * at all: the same thresholds order a gradient, pick which pixels of a mask survive
+ * a downscale, or break up a banded sky. a caller that needs one of those should not
+ * have to reach into a quantiser to find it.
+ */
+namespace Dither {
+
+/**
+ * the threshold at x,y of a side by side matrix, from 0 to side*side-1.
+ *
+ * the matrix is defined by doubling: each step turns one cell into four, keeping the
+ * order top left, bottom right, top right, bottom left. that is why the side has to
+ * be a power of two, and why the same function answers for a four colour palette and
+ * a two hundred and fifty six colour one.
+ */
+constexpr int bayer(int side, int x, int y) {
+    if (side <= 1) return 0;
+
+    const auto half = side / 2;
+    // the order the quadrants are filled in, which is what makes the pattern spread
+    // rather than clump
+    constexpr int quadrant[4] = {0, 2, 3, 1};
+    const auto which = (y >= half ? 2 : 0) + (x >= half ? 1 : 0);
+
+    return 4 * bayer(half, x % half, y % half) + quadrant[which];
+}
+
+/** how wide a matrix has to be to hold that many levels, rounded up to a power of two */
+constexpr int bayerSideFor(int levels) {
+    int side = 2;
+    while (side * side < levels && side < 16) side *= 2;
+    return side;
+}
+
+}
+
 namespace GPU {
 
 inline constexpr uint32_t GL_UNSIGNED_BYTE = 0x1401;

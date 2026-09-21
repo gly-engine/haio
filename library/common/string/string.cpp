@@ -49,6 +49,21 @@ bool tryGetSize(std::string_view value, Size& out) {
     return true;
 }
 
+int getPercent(std::string_view value) {
+    auto number = value;
+    if (number.ends_with("%")) {
+        number.remove_suffix(1);
+    } else if (number.ends_with("pct") || number.ends_with("PCT")) {
+        number.remove_suffix(3);
+    } else {
+        return 0;
+    }
+
+    int share = 0;
+    if (!parseInt(number, share) || share <= 0) return 0;
+    return share;
+}
+
 Size getSize(std::string_view value) {
     Size out;
     if (!tryGetSize(value, out)) throw std::runtime_error("invalid size: " + std::string(value));

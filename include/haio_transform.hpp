@@ -12,6 +12,21 @@
  */
 namespace Haio {
 
+/**
+ * a transformed picture keeps everything about the original except its pixels.
+ *
+ * building a fresh Image would drop whatever else the colour carries, which for a
+ * palette is the palette: a cropped picture would come back as indices into nothing.
+ */
+template <Color P>
+Image<P> withPixels(const Image<P>& from, int width, int height, std::vector<uint8_t> pixels) {
+    Image<P> out = from;
+    out.width = width;
+    out.height = height;
+    out.data = std::move(pixels);
+    return out;
+}
+
 template <Color P>
     requires Addressable<P>
 Image<P> cropImage(const Image<P>& image, Rect rect) {
@@ -30,7 +45,7 @@ Image<P> cropImage(const Image<P>& image, Rect rect) {
         const auto dst = static_cast<size_t>(y) * static_cast<size_t>(width) * stride;
         std::copy_n(image.data.data() + src, static_cast<size_t>(width) * stride, out.data() + dst);
     }
-    return Image<P>{width, height, std::move(out)};
+    return withPixels(image, width, height, std::move(out));
 }
 
 /** nearest neighbour: one side may be left at zero and follows the other */
@@ -56,7 +71,7 @@ Image<P> resizeImage(const Image<P>& image, Size size) {
             std::copy_n(image.data.data() + src, stride, out.data() + dst);
         }
     }
-    return Image<P>{width, height, std::move(out)};
+    return withPixels(image, width, height, std::move(out));
 }
 
 /**

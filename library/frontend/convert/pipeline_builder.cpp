@@ -29,9 +29,19 @@ Pipeline buildPipeline(const Command& command) {
                 pipeline |= Tokens::Crop(*token.rect);
                 break;
             case TokenType::FilterResize:
+                // a share carries no size, and is not meant to: what it comes to is
+                // not known until there is a picture to take a share of
+                if (token.percent != 0) {
+                    pipeline |= Tokens::ResizeByPercent(token.percent);
+                    break;
+                }
                 if (!token.size) throw tokenError("invalid resize size", token.value);
                 pipeline |= Tokens::Resize(*token.size);
                 break;
+            case TokenType::FilterPalette:
+                pipeline |= Tokens::Palette(token.value, token.dither, token.limit, token.limitHow);
+                break;
+
             case TokenType::FilterRadius:
                 pipeline |= Tokens::Radius(token.radius);
                 break;

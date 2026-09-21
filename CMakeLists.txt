@@ -188,6 +188,8 @@ if(HAIO_TESTS)
         "test_cdn_cache"
         "test_cdn_zip"
         "test_cdn_s3"
+        "test_palette"
+        "test_png_channels"
     )
     foreach(test_name IN LISTS tests)
         # a test named after a codec has nothing to assert once that codec is off

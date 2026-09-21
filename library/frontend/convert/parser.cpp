@@ -165,6 +165,7 @@ bool tokenizeOutput(Command& command, std::string token) {
     }
 
     command.outputIsStdout = command.outputPath == "-";
+
     return addToken(command, Token{.type = TokenType::OutputFile, .value = command.outputPath, .arg = command.outputFormatName, .format = command.outputFormat});
 }
 
@@ -173,8 +174,14 @@ bool tokenizeSource(Command& command, std::string token, std::string pendingSize
         return tokenizeGenerator(command, *spec, std::move(pendingSize), std::move(token));
     }
 
+    /**
+     * -size belongs to a generator, the way imagemagick means it: it is the size
+     * something is created at, and a file already has one. scaling a file is -resize,
+     * which is a different question and says so.
+     */
     if (!pendingSize.empty()) {
-        setError(command, "-size must be followed by a generator source", pendingSize);
+        setError(command, "-size is the size a generator is created at; use -resize to scale a picture",
+                 pendingSize);
         return false;
     }
 
@@ -209,12 +216,30 @@ bool addCrop(Command& command, std::string value, bool required) {
 }
 
 bool addResize(Command& command, std::string value, std::string option) {
+    // a share first, since "30%" is not a size and never parses as one
+    if (const auto share = String::getPercent(value); share != 0) {
+        return addToken(command, Token{.type = TokenType::FilterResize, .value = std::move(value),
+                                       .format = Format::RAW, .percent = share});
+    }
+
     Size size;
     if (!parseSizeToken(value, size)) {
-        setError(command, "invalid resize size", value.empty() ? option : value);
+        setError(command, "invalid resize size, which is either WxH or a share such as 30% or 30pct",
+                 value.empty() ? option : value);
         return false;
     }
     return addToken(command, Token{.type = TokenType::FilterResize, .value = std::move(value), .format = Format::RAW, .size = size});
+}
+
+/** a count, which has to be a whole positive number and nothing else */
+std::optional<size_t> countOf(const std::string& value) {
+    try {
+        const auto number = String::getInt(value);
+        if (number <= 0) return std::nullopt;
+        return static_cast<size_t>(number);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
 }
 
 bool addRadius(Command& command, std::string value) {
@@ -263,21 +288,12 @@ Command parseTokens(std::span<const std::string> args) {
         }
 
         if (token == "-fx" || token.starts_with("-fx=")) {
-            if (!pendingSize.empty()) {
-                setError(command, "-size must be followed by a generator source", pendingSize);
-                return command;
-            }
             auto value = requireOptionValue(command, i, args, token, "-fx");
             if (command.error || !addFx(command, std::move(value))) return command;
             continue;
         }
 
         if (token == "-crop") {
-            if (!pendingSize.empty()) {
-                setError(command, "-size must be followed by a generator source", pendingSize);
-                return command;
-            }
-
             std::string value;
             if (i + 1 < args.size() && !isOption(args[i + 1])) {
                 Rect ignored;
@@ -300,10 +316,108 @@ Command parseTokens(std::span<const std::string> args) {
             continue;
         }
 
-        if (token == "--size" || token.starts_with("--size=") || token == "--resize" || token.starts_with("--resize=") || token == "-resize" || token.starts_with("-resize=")) {
-            const auto option = token.starts_with("--size") ? "--size" : token.starts_with("--resize") ? "--resize" : "-resize";
+        if (token == "--resize" || token.starts_with("--resize=") || token == "-resize" || token.starts_with("-resize=")) {
+            const auto option = token.starts_with("--resize") ? "--resize" : "-resize";
             auto value = requireOptionValue(command, i, args, token, option);
             if (command.error || !addResize(command, std::move(value), option)) return command;
+            continue;
+        }
+
+        /**
+         * a setting: it waits for an operation that wants it, and is an error if none
+         * comes. this is what makes the order mean something rather than being
+         * decoration.
+         */
+        if (token == "--filter" || token.starts_with("--filter=") || token == "-filter" || token.starts_with("-filter=")) {
+            const auto option = token.starts_with("--filter") ? "--filter" : "-filter";
+            auto value = requireOptionValue(command, i, args, token, option);
+            if (command.error) return command;
+
+            if (!Haio::ditherNamed(value)) {
+                command.error = ParseError{"filter takes nearest, bayer, floyd or error", value};
+                return command;
+            }
+            if (command.pendingFilter) {
+                command.error = ParseError{"this filter replaces one nothing has used yet",
+                                           command.pendingFilter->value};
+                return command;
+            }
+            command.pendingFilter = Command::Pending{option, std::move(value)};
+            continue;
+        }
+
+        /** another setting, and this one is optional rather than required */
+        if (token == "--limit" || token.starts_with("--limit=") || token == "-limit" || token.starts_with("-limit=")) {
+            const auto option = token.starts_with("--limit") ? "--limit" : "-limit";
+            auto value = requireOptionValue(command, i, args, token, option);
+            if (command.error) return command;
+
+            /**
+             * the strategy is written out, the same way the filter is.
+             *
+             * "sort:16" and "spread:16" give visibly different pictures of the same
+             * photograph: one spends the budget where there is the most area, the
+             * other where there is the most that is new. there is no answer that is
+             * right often enough to be assumed, and a bare "16" would be haio
+             * choosing what somebody's picture looks like.
+             */
+            const auto colon = std::string_view{value}.find(':');
+            if (colon == std::string_view::npos) {
+                command.error = ParseError{"limit needs to say which colours to keep, "
+                                           "as in -limit spread:16 or -limit sort:16", value};
+                return command;
+            }
+
+            const auto named = Haio::limitNamed(std::string_view{value}.substr(0, colon));
+            if (!named) {
+                command.error = ParseError{"limit takes sort or spread before its colon", value};
+                return command;
+            }
+            command.pendingLimitHow = *named;
+
+            const auto most = countOf(std::string(std::string_view{value}.substr(colon + 1)));
+            if (!most) {
+                command.error = ParseError{"limit takes a number of colours, counted from one", value};
+                return command;
+            }
+            if (command.pendingLimit) {
+                command.error = ParseError{"this limit replaces one nothing has used yet",
+                                           command.pendingLimit->value};
+                return command;
+            }
+            command.pendingLimit = Command::Pending{option, std::move(value)};
+            continue;
+        }
+
+        /** an operation: it takes the filter waiting for it, and needs one */
+        if (token == "--palete" || token.starts_with("--palete=") || token == "-palete" || token.starts_with("-palete=")
+            || token == "--palette" || token.starts_with("--palette=") || token == "-palette" || token.starts_with("-palette=")) {
+            const auto option = token.starts_with("--pal") ? "--palete" : "-palete";
+            auto value = requireOptionValue(command, i, args, token, option);
+            if (command.error) return command;
+
+            if (!command.pendingFilter) {
+                command.error = ParseError{"putting a picture into a palette needs a filter first, "
+                                           "as in -filter bayer before -palete", value};
+                return command;
+            }
+            const auto how = Haio::ditherNamed(command.pendingFilter->value);
+            command.pendingFilter.reset();
+
+            size_t most = 0;
+            auto limitHow = Haio::Limit::Spread;
+            if (command.pendingLimit) {
+                const auto spelled = std::string_view{command.pendingLimit->value};
+                most = *countOf(std::string(spelled.substr(spelled.find(':') + 1)));
+                limitHow = command.pendingLimitHow;
+                command.pendingLimit.reset();
+            }
+
+            if (!addToken(command, Token{.type = TokenType::FilterPalette, .value = std::move(value),
+                                         .format = Format::RAW, .dither = *how,
+                                         .limit = most, .limitHow = limitHow})) {
+                return command;
+            }
             continue;
         }
 
@@ -333,7 +447,8 @@ Command parseTokens(std::span<const std::string> args) {
         }
 
         if (!pendingSize.empty()) {
-            setError(command, "-size must be followed by a generator source", pendingSize);
+            setError(command, "-size is the size a generator is created at; use -resize to scale a picture",
+                     pendingSize);
             return command;
         }
 
@@ -346,8 +461,10 @@ Command parseTokens(std::span<const std::string> args) {
         hasOutput = true;
     }
 
+    // nothing followed it, so no generator was ever created at that size
     if (!pendingSize.empty()) {
-        setError(command, "-size must be followed by a generator source", pendingSize);
+        setError(command, "nothing used this -size; it has to come before a generator such as xc:",
+                 pendingSize);
         return command;
     }
 
@@ -404,7 +521,25 @@ Command parseArgs(int argc, char* argv[]) {
     for (int i = 0; i < argc; i++) {
         args.emplace_back(argv[i]);
     }
-    return parseTokens(args);
+
+    auto command = parseTokens(args);
+    if (command.error) return command;
+
+    /**
+     * the line is over and something is still waiting to be used.
+     *
+     * it is checked here rather than where it was written, because a setting is not
+     * wrong when it is read: it is wrong only once the line ends without anything
+     * having taken it, which is exactly what "-scale 200% -filter point" does.
+     */
+    for (const auto* waiting : {&command.pendingFilter, &command.pendingLimit}) {
+        if (!*waiting) continue;
+        command.error = ParseError{"nothing used this " + (*waiting)->option
+                                       + "; it has to come before what it applies to",
+                                   (*waiting)->value};
+        return command;
+    }
+    return command;
 }
 
 } // namespace Haio::Cli

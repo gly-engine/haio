@@ -26,6 +26,7 @@ enum class TokenType {
     FilterRadius,
     FilterFormat,
     FilterFx,
+    FilterPalette,
 };
 
 struct ParseError {
@@ -43,10 +44,32 @@ struct Token {
     std::optional<Rect> rect;
     std::optional<Size> size;
     int radius = 0;
+    int percent = 0;
+    Dither dither = Dither::Nearest;
+    size_t limit = 0;   /**< zero means the palette is used whole */
+    Limit limitHow = Limit::Spread;
 };
 
 struct Command {
     ParseError error;
+
+    /**
+     * an option that has been read and not yet used by anything.
+     *
+     * settings stack and operations take them, so "-filter bayer -palete cga" works
+     * and "-palete cga -filter bayer" does not: by the time the filter is written
+     * down the palette has already gone by, and nothing after it wants one. a setting
+     * still waiting when the line ends is a mistake worth stopping for, because it
+     * was written in the belief that it would do something.
+     */
+    struct Pending {
+        std::string option;
+        std::string value;
+    };
+    std::optional<Pending> pendingFilter;
+    std::optional<Pending> pendingLimit;
+    Limit pendingLimitHow = Limit::Spread;   /**< only meaningful when pendingLimit is set */
+
     bool hasInput = false;
     bool hasGenerator = false;
     bool outputIsStdout = false;

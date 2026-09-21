@@ -242,12 +242,13 @@ Config parseConfig(std::string_view text) {
         if (scope == Scope::Security) {
             config.declared.insert("security." + key);
             if (key == "timeout") config.security.timeout = std::chrono::seconds(parseCount(key, value));
-            else if (key == "max_width_or_height") config.security.maxWidthOrHeight = static_cast<int>(parseCount(key, value));
+            else if (key == "max_size_pixel") config.security.maxSizePixel = static_cast<int>(parseCount(key, value));
+            else if (key == "max_size_percent") config.security.maxSizePercent = static_cast<int>(parseCount(key, value));
             else if (key == "max_cache_entries_by_ip") config.security.maxCacheEntriesByIp = parseCount(key, value);
             else if (key == "max_requests_by_ip") config.security.maxRequestsByIp = parseCount(key, value);
             else if (key == "allow_unzip") config.security.allowUnzip = parseFlag(key, value);
             else if (key == "max_unzip") config.security.maxUnzip = parseCount(key, value) * 1024 * 1024;
-            else throw unknownKey("security", key, {"timeout", "max_width_or_height",
+            else throw unknownKey("security", key, {"timeout", "max_size_pixel", "max_size_percent",
                                                    "max_cache_entries_by_ip", "max_requests_by_ip",
                                                    "allow_unzip", "max_unzip"});
             continue;

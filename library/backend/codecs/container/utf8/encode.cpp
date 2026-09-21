@@ -40,27 +40,50 @@ Result<Blob> Encode<Format::UTF8, Color::RGB888>(Image<Color::RGB888> img) {
     std::string out;
     out.reserve(width * ((height + 1) / 2) * 40);
 
-    const auto appendColour = [&](std::string_view lead, size_t row, size_t x, bool present) {
-        out += lead;
-        if (!present) {
-            out += "0;0;0";
-            return;
-        }
+    const auto colourAt = [&](size_t row, size_t x, bool present) -> uint32_t {
+        if (!present) return 0;
         const auto at = (row * width + x) * 3;
-        appendNumber(out, img.data[at + 0]);
+        return (static_cast<uint32_t>(img.data[at + 0]) << 16)
+             | (static_cast<uint32_t>(img.data[at + 1]) << 8)
+             | img.data[at + 2];
+    };
+
+    const auto appendColour = [&](std::string_view lead, uint32_t colour) {
+        out += lead;
+        appendNumber(out, static_cast<int>((colour >> 16) & 0xFF));
         out += ';';
-        appendNumber(out, img.data[at + 1]);
+        appendNumber(out, static_cast<int>((colour >> 8) & 0xFF));
         out += ';';
-        appendNumber(out, img.data[at + 2]);
+        appendNumber(out, static_cast<int>(colour & 0xFF));
     };
 
     for (size_t y = 0; y < height; y += 2) {
+        /**
+         * a terminal keeps the colour it was last told, so saying it again is bytes
+         * nobody reads. a picture in few colours repeats itself constantly, and this
+         * is exactly the picture somebody renders in a terminal.
+         *
+         * the pair is tracked rather than each half, because a cell sets both at once.
+         */
+        uint32_t lastTop = 0;
+        uint32_t lastBottom = 0;
+        bool anySoFar = false;
+
         for (size_t x = 0; x < width; x++) {
-            appendColour("\x1b[38;2;", y, x, true);
-            appendColour(";48;2;", y + 1, x, y + 1 < height);
-            out += 'm';
+            const auto top = colourAt(y, x, true);
+            const auto bottom = colourAt(y + 1, x, y + 1 < height);
+
+            if (!anySoFar || top != lastTop || bottom != lastBottom) {
+                appendColour("\x1b[38;2;", top);
+                appendColour(";48;2;", bottom);
+                out += 'm';
+                lastTop = top;
+                lastBottom = bottom;
+                anySoFar = true;
+            }
             out += halfBlock;
         }
+        // the reset ends the row, so the next one starts with nothing assumed
         out += "\x1b[0m\n";
     }
 

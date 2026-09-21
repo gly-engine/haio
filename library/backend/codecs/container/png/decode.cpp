@@ -12,12 +12,19 @@
 
 namespace {
 
-/** the pixel format wuffs is asked for, and how many bytes that costs per pixel */
+/**
+ * the pixel format wuffs is asked for, and how many bytes that costs per pixel.
+ *
+ * wuffs offers both channel orders and its names say which is which, so the only way
+ * to get this wrong is to pick the wrong one: asking for BGR where Color::RGB888 is
+ * meant hands back a picture with red and blue swapped, and every stage after it
+ * copies three bytes faithfully without ever noticing.
+ */
 struct Target { uint32_t pixelFormat; size_t stride; };
 
 constexpr Target targetFor(Haio::Color colour) {
     return colour == Haio::Color::RGB888
-        ? Target{WUFFS_BASE__PIXEL_FORMAT__BGR, 3}
+        ? Target{WUFFS_BASE__PIXEL_FORMAT__RGB, 3}
         : Target{WUFFS_BASE__PIXEL_FORMAT__RGBA_NONPREMUL, 4};
 }
 

@@ -4,6 +4,7 @@
 #include "haio_common.hpp"
 #include "haio_formats.hpp"
 #include "haio_object.hpp"
+#include "haio_palette.hpp"
 #include "haio_transform.hpp"
 
 #include <chrono>
@@ -20,6 +21,7 @@ enum class TokenKind {
     Crop,
     Resize,
     Radius,
+    Palette,
     Encode
 };
 
@@ -30,7 +32,16 @@ struct Token {
     Format format = Format::RAW;
     Rect rect;
     Size size;
+
+    /** Resize only: a share of the incoming picture, when the size was written as one */
+    int percent = 0;
     int radius = 0;
+
+    /** Palette only: which colours, how to fit into them, and how many to keep */
+    std::string palette;
+    Dither dither = Dither::Nearest;
+    size_t limit = 0;
+    Limit limitHow = Limit::Spread;
 };
 
 /** a conversion described at runtime, which is what a url query builds */
@@ -49,7 +60,9 @@ Token DecodeAuto();
 Token Decode(Format format);
 Token Crop(Rect rect);
 Token Resize(Size size);
+Token ResizeByPercent(int percent);
 Token Radius(int radius);
+Token Palette(std::string palette, Dither dither, size_t limit, Limit limitHow);
 Token Encode(Format format);
 }
 

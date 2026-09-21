@@ -47,6 +47,23 @@ Token Resize(Size size) {
     return token;
 }
 
+Token ResizeByPercent(int percent) {
+    Token token;
+    token.kind = TokenKind::Resize;
+    token.percent = percent;
+    return token;
+}
+
+Token Palette(std::string palette, Dither dither, size_t limit, Limit limitHow) {
+    Token token;
+    token.kind = TokenKind::Palette;
+    token.palette = std::move(palette);
+    token.dither = dither;
+    token.limit = limit;
+    token.limitHow = limitHow;
+    return token;
+}
+
 Token Radius(int radius) {
     Token token{TokenKind::Radius};
     token.radius = radius;
@@ -84,8 +101,19 @@ std::vector<Token> parseQueryTokens(std::string_view query) {
     std::vector<Token> tokens;
 
     if (auto it = values.find("crop"); it != values.end()) tokens.push_back(Tokens::Crop(String::getRect(it->second)));
-    if (auto it = values.find("size"); it != values.end()) tokens.push_back(Tokens::Resize(String::getSize(it->second)));
-    if (auto it = values.find("resize"); it != values.end()) tokens.push_back(Tokens::Resize(String::getSize(it->second)));
+    /**
+     * a url cannot carry a percent sign: "%" opens an escape, so "?resize=30%" is a
+     * broken request rather than a small picture. "30pct" says the same thing and
+     * survives, and both spellings are read here so a query and a command line can
+     * be written the same way.
+     */
+    const auto resizeToken = [](const std::string& value) {
+        const auto share = String::getPercent(value);
+        return share != 0 ? Tokens::ResizeByPercent(share) : Tokens::Resize(String::getSize(value));
+    };
+
+    if (auto it = values.find("size"); it != values.end()) tokens.push_back(resizeToken(it->second));
+    if (auto it = values.find("resize"); it != values.end()) tokens.push_back(resizeToken(it->second));
     if (auto it = values.find("radius"); it != values.end()) tokens.push_back(Tokens::Radius(String::getInt(it->second)));
     if (auto it = values.find("format"); it != values.end()) tokens.push_back(Tokens::Encode(formatFromName(it->second)));
 

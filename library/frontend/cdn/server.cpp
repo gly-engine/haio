@@ -208,13 +208,25 @@ private:
  * cap is on each side rather than on the area, the way a gpu states a texture limit.
  */
 std::optional<Haio::Error> checkSize(const Haio::Cdn::Config& config, const std::vector<Haio::Token>& tokens) {
-    if (config.security.maxWidthOrHeight <= 0) return std::nullopt;
+    const auto& limits = config.security;
 
     for (const auto& token : tokens) {
         if (token.kind != Haio::TokenKind::Resize) continue;
-        if (token.size.width > config.security.maxWidthOrHeight || token.size.height > config.security.maxWidthOrHeight) {
+
+        // a share is checked as a share: the factor is known here even though what it
+        // comes to is not, and bounding the factor bounds the result
+        if (token.percent != 0) {
+            if (limits.maxSizePercent > 0 && token.percent > limits.maxSizePercent) {
+                return Haio::Error{Haio::ErrorCode::InvalidInput,
+                                   "resize is limited to " + std::to_string(limits.maxSizePercent) + " percent"};
+            }
+            continue;
+        }
+
+        if (limits.maxSizePixel > 0
+            && (token.size.width > limits.maxSizePixel || token.size.height > limits.maxSizePixel)) {
             return Haio::Error{Haio::ErrorCode::InvalidInput,
-                               "resize is limited to " + std::to_string(config.security.maxWidthOrHeight) + " on each side"};
+                               "resize is limited to " + std::to_string(limits.maxSizePixel) + " on each side"};
         }
     }
     return std::nullopt;
@@ -378,9 +390,13 @@ asio::awaitable<void> listener(Haio::Cdn::Config config) {
         std::cerr << "warning: security.timeout is not set, so a conversion is stopped after "
                   << config.security.timeout.count() << "s by default\n";
     }
-    if (missing("security.max_width_or_height")) {
-        std::cerr << "warning: security.max_width_or_height is not set, so a resize is capped at "
-                  << config.security.maxWidthOrHeight << " on each side by default\n";
+    if (missing("security.max_size_pixel")) {
+        std::cerr << "warning: security.max_size_pixel is not set, so a resize is capped at "
+                  << config.security.maxSizePixel << " on each side by default\n";
+    }
+    if (missing("security.max_size_percent")) {
+        std::cerr << "warning: security.max_size_percent is not set, so a resize is capped at "
+                  << config.security.maxSizePercent << " percent by default\n";
     }
     if (missing("security.max_requests_by_ip")) {
         // no default: a number picked blind would shut out a whole office behind one
