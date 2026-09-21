@@ -54,6 +54,20 @@ enum class Format {
      * @ext zcis
      */
     ZCIS,
+
+    /**
+     * not files but pictures drawn with escape codes, for looking at one without
+     * leaving the terminal. they only ever encode: nothing arrives as ansi.
+     *
+     * @mime text/x-ansi
+     * @ext ansi
+     */
+    ANSI,
+    /**
+     * @mime text/x-ansi-halfblock
+     * @ext utf8
+     */
+    UTF8,
 };
 
 /**
