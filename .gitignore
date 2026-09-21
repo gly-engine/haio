@@ -1,0 +1,11 @@
+build*/
+vendor/
+branchs/
+html/
+latex/
+.DS_Store
+*.db
+*.out
+*.exe
+*.bin
+*.toml
