@@ -1,7 +1,7 @@
 FROM debian:forky AS builder
 
 RUN apt update && apt install -y
-RUN apt install -y gcc-16 g++-16 cmake make ca-certificates
+RUN apt install -y gcc-16 g++-16 cmake make binutils ca-certificates
 RUN mkdir -p /app/docs
 
 COPY ./CMakeLists.txt /app/CMakeLists.txt

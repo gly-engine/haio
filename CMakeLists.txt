@@ -11,6 +11,7 @@ list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/fetch.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/cpp26.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/redis.cmake")
 
 # everything the binary needs is built into it.
 #
