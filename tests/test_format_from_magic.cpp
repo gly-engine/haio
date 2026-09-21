@@ -52,15 +52,25 @@ void testTruncatedInputIsNotAMatch() {
  * codec now, so the registry names it like any other, and a format with no detector
  * is simply not recognised rather than named by a second mechanism.
  */
-void testJpegIsRecognisedWithoutADecoder() {
+void testJpegIsACodecLikeAnyOther() {
     const auto found = Haio::Detect(std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xe0});
     assert(found);
     assert(found.format == Haio::Format::JPEG);
     assert(found.color == Haio::Color::YUV420);
 
-    // detected, and honest about not being able to open it
+    // a jpeg is yuv, and that is the only pair it has: asking for any other is a
+    // compile error rather than a silent conversion inside the codec
     static_assert(Haio::Codecs::Detectable<Haio::Format::JPEG, Haio::Color::YUV420>);
-    static_assert(!Haio::Codecs::Decodable<Haio::Format::JPEG, Haio::Color::YUV420>);
+    static_assert(Haio::Codecs::Decodable<Haio::Format::JPEG, Haio::Color::YUV420>);
+    static_assert(Haio::Codecs::Encodable<Haio::Format::JPEG, Haio::Color::YUV420>);
+    static_assert(!Haio::Codecs::Decodable<Haio::Format::JPEG, Haio::Color::RGBA8888>);
+    static_assert(!Haio::Codecs::Encodable<Haio::Format::JPEG, Haio::Color::RGBA8888>);
+
+    // and yuv reaches the rest of haio by converting, where anybody can see it happen
+    static_assert(Haio::Codecs::Convertible<Haio::Color::YUV420, Haio::Color::RGBA8888>);
+    static_assert(Haio::Codecs::Convertible<Haio::Color::RGBA8888, Haio::Color::YUV420>);
+
+    // four bytes of magic is a jpeg to Detect and nothing to a decoder
     assert(!Haio::Decode(Haio::Blob{Haio::Format::RAW, Haio::Color::RGBA8888, {}, {},
                                     {0xff, 0xd8, 0xff, 0xe0}}));
 
@@ -94,7 +104,7 @@ int main() {
     testEachDetectorMatchesOnlyItself();
     testDetectIsPerFormat();
     testTruncatedInputIsNotAMatch();
-    testJpegIsRecognisedWithoutADecoder();
+    testJpegIsACodecLikeAnyOther();
     testExtensionsResolveThroughTheirAliases();
     return 0;
 }

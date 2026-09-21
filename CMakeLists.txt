@@ -78,6 +78,7 @@ set(HAIO_CODEC_SOURCES "")
 set(HAIO_CODEC_SOURCES_EXTRA "")
 set(HAIO_CODEC_LIBRARIES "")
 set(HAIO_CODECS_OFF "")
+set(HAIO_CODEC_DEPENDS "")
 
 # one directory per container, one file per capability: -DHAIO_CODEC_ZCIS=OFF drops
 # the whole format, and a codec's own cmake may add finer switches such as
@@ -152,6 +153,9 @@ target_include_directories(haio_core
 target_link_libraries(haio_core PUBLIC ${HAIO_CODEC_LIBRARIES} wolfssl zlib Boost::url Boost::asio Boost::beast Boost::redis Boost::spirit Threads::Threads)
 target_compile_options(haio_core PUBLIC ${HAIO_CXX_FLAGS})
 add_dependencies(haio_core haio_codecs)
+if(HAIO_CODEC_DEPENDS)
+    add_dependencies(haio_core ${HAIO_CODEC_DEPENDS})
+endif()
 target_compile_definitions(haio_core PRIVATE ${HAIO_TLS_DEFINITIONS})
 target_include_directories(haio_core BEFORE PRIVATE "${WOLFSSL_DIR}/wolfssl")
 
