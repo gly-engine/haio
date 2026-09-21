@@ -1,4 +1,4 @@
-#include <haio_cdn.hpp>
+#include <bucket/bucket.hpp>
 
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/redirect_error.hpp>
@@ -11,7 +11,7 @@
 #include <boost/url/url.hpp>
 
 #include <chrono>
-#include <fstream>
+#include <iostream>
 #include <string_view>
 
 namespace asio = boost::asio;
@@ -22,47 +22,12 @@ using tcp = asio::ip::tcp;
 
 namespace {
 
-/** carries why it failed, so the http layer does not have to guess from the text */
-struct BucketError : std::runtime_error {
-    Haio::ErrorCode code;
-    BucketError(Haio::ErrorCode why, const std::string& what)
-        : std::runtime_error(what), code(why) {}
-};
-
 constexpr auto httpTimeout = std::chrono::seconds(15);
 constexpr int maxRedirects = 5;
-
-std::string toString(std::string_view value) {
-    return {value.begin(), value.end()};
-}
 
 std::string ensureSlash(std::string value) {
     if (value.empty() || value.front() != '/') value.insert(value.begin(), '/');
     return value;
-}
-
-std::filesystem::path safeJoin(const std::filesystem::path& root, std::string_view rawPath) {
-    std::filesystem::path rel(rawPath);
-    if (rel.is_absolute()) rel = rel.relative_path();
-
-    std::filesystem::path clean;
-    for (const auto& part : rel) {
-        if (part == "." || part.empty()) continue;
-        if (part == "..") throw BucketError(Haio::ErrorCode::InvalidInput, "path traversal is not allowed");
-        clean /= part;
-    }
-    return root / clean;
-}
-
-Haio::Blob readFileBlob(const Haio::Cdn::BucketConfig& bucket, std::string path) {
-    const auto fullPath = safeJoin(bucket.root, path);
-    std::ifstream in(fullPath, std::ios::binary);
-    if (!in) throw BucketError(Haio::ErrorCode::NotFound, "file not found: " + fullPath.string());
-
-    std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    const auto found = Haio::Detect(data);
-    const auto format = found ? found.format : Haio::formatFromExtension(fullPath.string());
-    return Haio::Blob{format, found.color, std::string(Haio::contentTypeFor(format)), fullPath.string(), std::move(data)};
 }
 
 std::string joinUrlPath(std::string_view prefix, std::string_view path) {
@@ -78,28 +43,31 @@ std::string joinUrlPath(std::string_view prefix, std::string_view path) {
 
 void requireHttpScheme(const urls::url_view_base& url) {
     if (url.scheme() != "http" && url.scheme() != "https") {
-        throw BucketError(Haio::ErrorCode::InvalidInput, "unsupported http bucket scheme: " + toString(url.scheme()));
+        throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::InvalidInput, "unsupported scheme");
     }
 }
 
 std::string servicePort(const urls::url_view_base& url) {
-    if (url.has_port()) return toString(url.port());
+    if (url.has_port()) return std::string(url.port());
     return url.scheme() == "https" ? "443" : "80";
 }
 
 std::string requestTarget(const urls::url_view_base& url) {
-    auto target = toString(url.encoded_path());
+    auto target = std::string(url.encoded_path());
     if (target.empty()) target = "/";
     if (url.has_query()) {
         target.push_back('?');
-        target += toString(url.encoded_query());
+        target += std::string(url.encoded_query());
     }
     return target;
 }
 
 urls::url parseEndpoint(std::string endpoint, std::string_view path) {
     const auto parsed = urls::parse_uri(endpoint);
-    if (!parsed) throw BucketError(Haio::ErrorCode::InvalidInput, "invalid bucket endpoint: " + endpoint);
+    if (!parsed) {
+        std::cerr << "invalid bucket endpoint: " << endpoint << "\n";
+        throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::InvalidInput, "this bucket is misconfigured");
+    }
 
     urls::url url(*parsed);
     // s3 is plain https until it learns to sign
@@ -122,21 +90,21 @@ urls::url openBucketTarget(const Haio::Cdn::BucketConfig& bucket, std::string_vi
     if (!bucket.scheme.empty()) {
         const auto scheme = bucket.scheme == "s3" ? std::string("https") : bucket.scheme;
         if (path.empty()) {
-            throw BucketError(Haio::ErrorCode::InvalidInput, "open bucket expects /cdn/" + bucket.name + "/<host>/<path>");
+            throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::InvalidInput, "open bucket expects /cdn/" + bucket.name + "/<host>/<path>");
         }
-        return parseEndpoint(scheme + "://" + toString(path), {});
+        return parseEndpoint(scheme + "://" + std::string(path), {});
     }
 
     const auto slash = path.find('/');
     if (slash == std::string_view::npos) {
-        throw BucketError(Haio::ErrorCode::InvalidInput, "open bucket expects /cdn/" + bucket.name + "/<scheme>/<host>/<path>");
+        throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::InvalidInput, "open bucket expects /cdn/" + bucket.name + "/<scheme>/<host>/<path>");
     }
 
     const auto scheme = path.substr(0, slash);
     if (scheme != "http" && scheme != "https") {
-        throw BucketError(Haio::ErrorCode::InvalidInput, "open bucket expects a http or https scheme, got: " + toString(scheme));
+        throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::InvalidInput, "open bucket expects a http or https scheme, got: " + std::string(scheme));
     }
-    return parseEndpoint(toString(scheme) + "://" + toString(path.substr(slash + 1)), {});
+    return parseEndpoint(std::string(scheme) + "://" + std::string(path.substr(slash + 1)), {});
 }
 
 /** shared across requests: building it reloads the whole ca store every time */
@@ -168,9 +136,9 @@ asio::awaitable<http::response<http::vector_body<uint8_t>>> request(const urls::
     auto executor = co_await asio::this_coro::executor;
     tcp::resolver resolver(executor);
 
-    const auto host = toString(url.host());
+    const auto host = std::string(url.host());
     const auto results = co_await resolver.async_resolve(host, servicePort(url), asio::use_awaitable);
-    const auto hostHeader = toString(url.encoded_host_and_port());
+    const auto hostHeader = std::string(url.encoded_host_and_port());
     const auto target = requestTarget(url);
 
     http::response<http::vector_body<uint8_t>> res;
@@ -179,7 +147,10 @@ asio::awaitable<http::response<http::vector_body<uint8_t>>> request(const urls::
     if (url.scheme() == "https") {
         beast::ssl_stream<beast::tcp_stream> stream(executor, tlsContext());
         if (!SSL_set_tlsext_host_name(stream.native_handle(), host.c_str())) {
-            throw BucketError(Haio::ErrorCode::Internal, "could not set sni for " + host);
+            // the host is the bucket's upstream, which the caller has no business
+            // learning from an error; it goes to the log instead
+            std::cerr << "could not set sni for " << host << "\n";
+            throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::Internal, "could not start a secure connection");
         }
         stream.set_verify_callback(asio::ssl::host_name_verification(host));
 
@@ -207,36 +178,40 @@ asio::awaitable<http::response<http::vector_body<uint8_t>>> request(const urls::
 /** a redirect may move between http and https in either direction */
 urls::url redirectTarget(const urls::url& from, std::string_view location) {
     auto ref = urls::parse_uri_reference(location);
-    if (!ref) throw BucketError(Haio::ErrorCode::Upstream, "upstream sent an invalid redirect: " + toString(location));
+    if (!ref) {
+        std::cerr << "upstream sent an invalid redirect: " << location << "\n";
+        throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::Upstream, "upstream sent an invalid redirect");
+    }
 
     urls::url next;
     if (const auto resolved = urls::resolve(from, *ref, next); !resolved) {
-        throw BucketError(Haio::ErrorCode::Upstream, "could not resolve redirect: " + toString(location));
+        std::cerr << "could not resolve redirect: " << location << "\n";
+        throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::Upstream, "upstream sent a redirect that goes nowhere");
     }
 
     requireHttpScheme(next);
     return next;
 }
 
-asio::awaitable<Haio::Blob> fetchHttp(urls::url url, std::string pathForFormat) {
+asio::awaitable<Haio::Blob> fetchUrl(urls::url url, std::string pathForFormat) {
     for (int hop = 0;; hop++) {
         auto res = co_await request(url);
         const auto status = res.result_int();
 
         if (status >= 300 && status < 400) {
             if (hop >= maxRedirects) {
-                throw BucketError(Haio::ErrorCode::Upstream, "upstream redirected more than " + std::to_string(maxRedirects) + " times");
+                throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::Upstream, "upstream redirected more than " + std::to_string(maxRedirects) + " times");
             }
             const auto location = res[http::field::location];
             if (location.empty()) {
-                throw BucketError(Haio::ErrorCode::Upstream, "upstream sent " + std::to_string(status) + " without a location header");
+                throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::Upstream, "upstream sent " + std::to_string(status) + " without a location header");
             }
             url = redirectTarget(url, std::string_view(location.data(), location.size()));
             continue;
         }
 
         if (status < 200 || status >= 300) {
-            throw BucketError(Haio::ErrorCode::Upstream, "http bucket returned status " + std::to_string(status));
+            throw Haio::Cdn::Bucket::Failure(Haio::ErrorCode::Upstream, "http bucket returned status " + std::to_string(status));
         }
 
         const auto contentType = res[http::field::content_type];
@@ -256,54 +231,17 @@ asio::awaitable<Haio::Blob> fetchHttp(urls::url url, std::string pathForFormat) 
     }
 }
 
-asio::awaitable<Haio::Blob> fetchOrThrow(const Haio::Cdn::Config&, std::string, std::string);
-
 }
 
-namespace Haio::Cdn {
+namespace Haio::Cdn::Bucket {
 
-asio::awaitable<Result<Blob>> fetchBucket(const Config& config, std::string bucketName, std::string path) {
-    try {
-        co_return co_await fetchOrThrow(config, std::move(bucketName), std::move(path));
-    } catch (const BucketError& err) {
-        co_return std::unexpected(Error{err.code, err.what()});
-    } catch (const boost::system::system_error& err) {
-        // beast reports its own deadline as a plain system error
-        const bool timedOut = err.code() == beast::error::timeout;
-        co_return std::unexpected(Error{timedOut ? ErrorCode::Timeout : ErrorCode::Upstream,
-                                        timedOut ? "upstream timed out" : "upstream unreachable"});
-    } catch (const std::exception& err) {
-        co_return std::unexpected(Error{ErrorCode::Internal, err.what()});
-    }
-}
-
-}
-
-namespace {
-
-asio::awaitable<Haio::Blob> fetchOrThrow(const Haio::Cdn::Config& config, std::string bucketName, std::string path) {
-    const auto it = config.buckets.find(bucketName);
-    if (it == config.buckets.end()) throw BucketError(Haio::ErrorCode::NotFound, "unknown bucket: " + bucketName);
-
-    const auto& bucket = it->second;
-    if (bucket.scheme == "file") {
-        co_return readFileBlob(bucket, std::move(path));
-    }
-
-    /**
-     * @todo every request fetches the upstream again: there is no cache. the epic asks
-     * for one keyed on (url, format), with a ttl from the environment and with
-     * concurrent requests for the same key sharing one fetch rather than racing. it
-     * also needs a ceiling, because a cache with no bound on an open bucket is a way
-     * for a caller to spend all the memory on the box.
-     */
+asio::awaitable<Blob> fetchHttp(const BucketConfig& bucket, std::string path) {
     if (bucket.open) {
         auto url = openBucketTarget(bucket, path);
         auto forFormat = requestTarget(url);
-        co_return co_await fetchHttp(std::move(url), std::move(forFormat));
+        co_return co_await fetchUrl(std::move(url), std::move(forFormat));
     }
-
-    co_return co_await fetchHttp(parseEndpoint(bucket.endpoint, path), std::move(path));
+    co_return co_await fetchUrl(parseEndpoint(bucket.url, path), std::move(path));
 }
 
 }

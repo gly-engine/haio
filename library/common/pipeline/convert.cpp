@@ -12,7 +12,8 @@ namespace Haio {
  * decompresses a gpu payload and recompresses it. the typed pipe in haio_pipe.hpp
  * keeps the colour; only this runtime path flattens it.
  */
-Result<Blob> runPipeline(Blob input, const Pipeline& pipeline) {
+Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
+                         std::optional<std::chrono::steady_clock::time_point> deadline) {
     bool hasImage = false;
     Image<Color::RGBA8888> image;
     Format outputFormat = Format::RAW;
@@ -30,6 +31,10 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline) {
     };
 
     for (const auto& token : pipeline.tokens()) {
+        if (deadline && std::chrono::steady_clock::now() >= *deadline) {
+            return std::unexpected(Error{ErrorCode::Timeout, "the conversion took too long and was stopped"});
+        }
+
         switch (token.kind) {
             case TokenKind::Source:
                 break;

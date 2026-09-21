@@ -92,8 +92,10 @@ void printHelp() {
               << "  host = \"0.0.0.0\"\n"
               << "  port = 8080\n"
               << "\n"
+              << "  cache = \"mem://?ttl=1h&max=5mb\"   also file://dir and redis://host\n"
+              << "\n"
               << "  [bucket.assets]\n"
-              << "  endpoint = \"file://assets\"\n";
+              << "  url = \"file://assets\"\n";
 }
 
 }

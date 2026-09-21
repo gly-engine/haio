@@ -6,8 +6,19 @@ project("haio" LANGUAGES C CXX)
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
+# ours comes first, so FindZLIB here wins over the one that searches the system
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/fetch.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/cpp26.cmake")
+
+# everything the binary needs is built into it.
+#
+# wolfssl declares BUILD_SHARED_LIBS as an option defaulting to ON, and an option only
+# takes effect when nobody has set the cache entry already. Left alone it therefore
+# turned boost, wolfssl and zlib-ng into .so files the binary had to find at run time,
+# which is nobody's decision, just whoever was asked first.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 find_package(Threads REQUIRED)
 
@@ -17,7 +28,7 @@ file(GLOB_RECURSE HAIO_LIB_SOURCES "${CMAKE_CURRENT_LIST_DIR}/library/*.cpp")
 set(BOOST_VERSION "1.91.0-1")
 set(BOOST_DIR "${CMAKE_SOURCE_DIR}/vendor/boost")
 set(BOOST_DOWNLOAD "https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-cmake.tar.xz")
-set(BOOST_INCLUDE_LIBRARIES url asio beast spirit CACHE STRING "" FORCE)
+set(BOOST_INCLUDE_LIBRARIES url asio beast redis spirit CACHE STRING "" FORCE)
 haio_fetch(boost "${BOOST_DOWNLOAD}" "${BOOST_DIR}" CMakeLists.txt)
 add_subdirectory("${BOOST_DIR}" "${CMAKE_BINARY_DIR}/boost" EXCLUDE_FROM_ALL)
 
@@ -30,6 +41,8 @@ set(WOLFSSL_CRYPT_TESTS no CACHE STRING "" FORCE)
 set(WOLFSSL_INSTALL no CACHE STRING "" FORCE)
 haio_fetch(wolfssl "${WOLFSSL_DOWNLOAD}" "${WOLFSSL_DIR}" CMakeLists.txt)
 add_subdirectory("${WOLFSSL_DIR}" "${CMAKE_BINARY_DIR}/wolfssl" EXCLUDE_FROM_ALL)
+
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/zlib-ng.cmake")
 
 # wolfssl keeps WOLFSSL_ASIO's defines PRIVATE and exports only its own root, so a
 # consumer has to repeat them and aim <openssl/*.h> at the shims, or the system
@@ -132,8 +145,11 @@ add_library(haio_core STATIC ${HAIO_LIB_SOURCES} ${HAIO_CODEC_SOURCES_EXTRA})
 target_include_directories(haio_core
     PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include"
            "${CMAKE_BINARY_DIR}/include"
+    # the cdn keeps its own headers beside its sources, since nothing outside it
+    # has any use for a bucket fetcher
+    PRIVATE "${CMAKE_CURRENT_LIST_DIR}/library/frontend/cdn"
 )
-target_link_libraries(haio_core PUBLIC ${HAIO_CODEC_LIBRARIES} wolfssl Boost::url Boost::asio Boost::beast Boost::spirit Threads::Threads)
+target_link_libraries(haio_core PUBLIC ${HAIO_CODEC_LIBRARIES} wolfssl zlib Boost::url Boost::asio Boost::beast Boost::redis Boost::spirit Threads::Threads)
 target_compile_options(haio_core PUBLIC ${HAIO_CXX_FLAGS})
 add_dependencies(haio_core haio_codecs)
 target_compile_definitions(haio_core PRIVATE ${HAIO_TLS_DEFINITIONS})
@@ -165,6 +181,8 @@ if(HAIO_TESTS)
         "test_decode_netpbm"
         "test_format_mime"
         "test_transform_concepts"
+        "test_cdn_cache"
+        "test_cdn_zip"
     )
     foreach(test_name IN LISTS tests)
         # a test named after a codec has nothing to assert once that codec is off
@@ -181,6 +199,8 @@ if(HAIO_TESTS)
 
         add_executable("${test_name}" "${CMAKE_SOURCE_DIR}/tests/${test_name}.cpp")
         target_link_libraries("${test_name}" PRIVATE haio_core)
+        # the cdn keeps its headers beside its sources, and a couple of tests reach in
+        target_include_directories("${test_name}" PRIVATE "${CMAKE_CURRENT_LIST_DIR}/library/frontend/cdn")
         if(test_name STREQUAL "test_image_convert_png_to_ppm")
             add_test(NAME "${test_name}" COMMAND "${test_name}" "${CMAKE_SOURCE_DIR}/assets/logo8x8.png" "${CMAKE_BINARY_DIR}/logo8x8_direct.ppm")
         elseif(test_name STREQUAL "test_image_convert_png_to_etc1_ppm")
