@@ -34,6 +34,7 @@ if(HAIO_USE_JPEGTURBO)
             -DENABLE_SHARED=OFF
             -DENABLE_STATIC=ON
             -DWITH_TURBOJPEG=ON
+            -DREQUIRE_SIMD=ON
         UPDATE_COMMAND ""
         BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target turbojpeg-static
         INSTALL_COMMAND
