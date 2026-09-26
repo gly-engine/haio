@@ -41,8 +41,7 @@ Result<Blob> Encode<Format::JPEG, Color::YUV420>(Image<Color::YUV420> img) {
     const size_t capacity = tj3JPEGBufSize(img.width, img.height, TJSAMP_420);
     if (capacity == 0) HAIO_FAIL(Internal, "cannot size the jpeg buffer");
 
-    std::vector<uint8_t> buffer;
-    buffer.reserve(capacity);
+    std::vector<uint8_t> buffer(capacity);
 
     uint8_t* dst = buffer.data();
     size_t written = capacity;
