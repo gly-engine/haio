@@ -8,8 +8,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CheckCXXSourceCompiles)
 
-# the flag alone is not enough to test: gcc rejects -freflection outside c++26, and
-# check_cxx_compiler_flag runs at the default standard
 set(CMAKE_REQUIRED_FLAGS "-std=c++26 -freflection")
 check_cxx_source_compiles("
 #include <meta>
@@ -26,4 +24,4 @@ if(NOT HAIO_HAS_REFLECTION)
     message(FATAL_ERROR "haio needs a compiler with working c++26 reflection (gcc 16+ with -freflection)")
 endif()
 
-set(HAIO_CXX_FLAGS "-freflection")
+target_compile_options(${PROJECT_NAME} PRIVATE -std=c++26 -freflection)

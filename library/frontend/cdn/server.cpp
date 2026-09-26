@@ -1,6 +1,6 @@
 #include <haio_cdn.hpp>
 
-#include <bucket/bucket.hpp>
+#include <internal/bucket.hpp>
 
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>

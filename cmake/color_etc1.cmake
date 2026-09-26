@@ -44,6 +44,6 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64|i[3-6]86)$")
     endif()
 endif()
 
-# only the two etc1 files see etcpak's headers
 set_source_files_properties(${HAIO_ETC1_SOURCES} PROPERTIES INCLUDE_DIRECTORIES "${ETCPAK_DIR}")
-list(APPEND HAIO_CODEC_SOURCES_EXTRA ${ETCPAK_SOURCES})
+add_library(etc1 "${ETCPAK_SOURCES}")
+target_link_libraries(${PROJECT_NAME} PRIVATE etc1)

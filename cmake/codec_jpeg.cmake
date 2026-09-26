@@ -49,10 +49,11 @@ if(HAIO_USE_JPEGTURBO)
         INTERFACE_INCLUDE_DIRECTORIES "${JPEGTURBO_BIN}/include"
     )
 
-    list(APPEND HAIO_CODEC_LIBRARIES turbojpeg)
-    # an imported library carries no build order of its own, so whoever links it has
-    # to be told to wait for the project that produces the file
-    list(APPEND HAIO_CODEC_DEPENDS libjpeg_turbo_proj)
+    target_include_directories(${PROJECT_NAME} PRIVATE "${JPEGTURBO_BIN}/include")
+
+    add_dependencies(turbojpeg libjpeg_turbo_proj)
+    add_dependencies(${PROJECT_NAME} libjpeg_turbo_proj)
+    target_link_libraries(${PROJECT_NAME} PRIVATE turbojpeg)
 else()
     list(REMOVE_ITEM HAIO_CODEC_SOURCES_THIS "${HAIO_CODEC_DIR}/decode.cpp")
     list(REMOVE_ITEM HAIO_CODEC_SOURCES_THIS "${HAIO_CODEC_DIR}/encode.cpp")
