@@ -4,17 +4,14 @@
 
 #include <turbojpeg.h>
 
+#include <cstddef>
+#include <vector>
+
 namespace {
 
 struct Handle {
     tjhandle raw = nullptr;
     ~Handle() { if (raw) tj3Destroy(raw); }
-};
-
-/** what turbojpeg allocates is freed by turbojpeg, whatever happens in between */
-struct Owned {
-    uint8_t* raw = nullptr;
-    ~Owned() { if (raw) tj3Free(raw); }
 };
 
 }
@@ -34,20 +31,34 @@ Result<Blob> Encode<Format::JPEG, Color::YUV420>(Image<Color::YUV420> img) {
     HAIO_TRY(expected, sizeOf(Color::YUV420, size));
     if (img.data.size() != expected) HAIO_FAIL(InvalidInput, "invalid yuv420 image for jpeg encode");
 
-    Handle handle{tj3Init(TJINIT_COMPRESS)};
+    thread_local Handle handle{tj3Init(TJINIT_COMPRESS)};
     if (!handle.raw) HAIO_FAIL(Internal, "cannot start the jpeg encoder");
 
     tj3Set(handle.raw, TJPARAM_SUBSAMP, TJSAMP_420);
     tj3Set(handle.raw, TJPARAM_QUALITY, 90);
+    tj3Set(handle.raw, TJPARAM_NOREALLOC, 1);
 
-    Owned out;
-    size_t written = 0;
-    if (tj3CompressFromYUV8(handle.raw, img.data.data(), img.width, 1, img.height, &out.raw, &written) != 0) {
+    const size_t capacity = tj3JPEGBufSize(img.width, img.height, TJSAMP_420);
+    if (capacity == 0) HAIO_FAIL(Internal, "cannot size the jpeg buffer");
+
+    std::vector<uint8_t> buffer;
+    buffer.reserve(capacity);
+
+    uint8_t* dst = buffer.data();
+    size_t written = capacity;
+
+    if (tj3CompressFromYUV8(handle.raw, img.data.data(), img.width, 1, img.height, &dst, &written) != 0) {
         HAIO_FAIL(Internal, "the jpeg could not be encoded");
     }
 
-    return Blob{Format::JPEG, Color::YUV420, "image/jpeg", {},
-                std::vector<uint8_t>(out.raw, out.raw + written)};
+
+    if (dst != buffer.data()) {
+        HAIO_FAIL(Internal, "jpeg encoder ignored the buffer we gave it");
+    }
+
+    buffer.resize(written);
+
+    return Blob{Format::JPEG, Color::YUV420, "image/jpeg", {}, std::move(buffer)};
 }
 
 }
