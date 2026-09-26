@@ -8,13 +8,16 @@ namespace Haio {
  * a conversion described at runtime, which is what a url query builds. it decodes
  * once, applies whatever transforms were asked for, and encodes at the end.
  *
- * @todo everything travels as rgba8888 here, so a pipeline with no transforms still
- * decompresses a gpu payload and recompresses it. the typed pipe in haio_pipe.hpp
- * keeps the colour; only this runtime path flattens it.
+ * the picture stays in the colour it was stored in until a transform needs it in
+ * rgba8888, which is the only colour the transforms are written against. a pipeline
+ * with none of them goes from the decoded colour to the encoded one directly: a png
+ * of rgb becomes a jpeg without an alpha plane in between, and a jpeg re-encoded as a
+ * jpeg never leaves yuv.
  */
 Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
                          std::optional<std::chrono::steady_clock::time_point> deadline) {
     bool hasImage = false;
+    std::optional<AnyImage> native;
     Image<Color::RGBA8888> image;
     Format outputFormat = Format::RAW;
     std::optional<Color> outputColor;
@@ -34,13 +37,32 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
 
     auto ensureImage = [&] {
         if (hasImage || failure) return;
-        auto decoded = Decode(input);
+        auto decoded = DecodeNative(input);
         if (!decoded) {
             failure = decoded.error();
             return;
         }
-        image = *std::move(decoded);
+        native = *std::move(decoded);
         hasImage = true;
+    };
+
+    /** what every transform starts with: the picture in rgba8888, from here on for good */
+    auto ensureRgba = [&] {
+        ensureImage();
+        if (failure || !native) return;
+        auto converted = Convert(*std::move(native), Color::RGBA8888);
+        native.reset();
+        if (!converted) {
+            failure = converted.error();
+            return;
+        }
+        image = Image<Color::RGBA8888>{converted->width, converted->height, std::move(converted->data)};
+    };
+
+    /** whichever of the two is holding the picture, handed over to the encode */
+    auto current = [&] {
+        return native ? *std::move(native)
+                      : AnyImage{Color::RGBA8888, image.width, image.height, std::move(image.data)};
     };
 
     for (const auto& token : pipeline.tokens()) {
@@ -56,7 +78,7 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
                 ensureImage();
                 break;
             case TokenKind::Crop:
-                ensureImage();
+                ensureRgba();
                 if (failure) break;
                 image = cropImage(image, token.rect);
                 // the same rectangle of the same picture: indices are addressable, so
@@ -64,7 +86,7 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
                 if (indexed) indexed = cropImage(*indexed, token.rect);
                 break;
             case TokenKind::Resize: {
-                ensureImage();
+                ensureRgba();
                 if (failure) break;
 
                 // a share is worked out here and not at parsing, because this is the
@@ -79,7 +101,7 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
                 break;
             }
             case TokenKind::Radius:
-                ensureImage();
+                ensureRgba();
                 if (failure) break;
                 image = roundImageCorners(image, token.radius);
                 // rounding a corner away is done by clearing an alpha, and a palette
@@ -97,7 +119,7 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
              * simply a longer way of saying the same picture.
              */
             case TokenKind::Palette: {
-                ensureImage();
+                ensureRgba();
                 if (failure) break;
 
                 auto colours = paletteNamed(token.palette, 0);
@@ -151,12 +173,12 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
         ensureImage();
         if (failure) return std::unexpected(*failure);
 
-        auto pixels = outputColor ? Convert(image, *outputColor)
-                                  : Result<std::vector<uint8_t>>{std::move(image.data)};
+        const auto to = outputColor.value_or(Color::RGBA8888);
+        auto pixels = Convert(current(), to);
         if (!pixels) return std::unexpected(pixels.error());
 
-        return Blob{Format::RAW, outputColor.value_or(Color::RGBA8888),
-                    std::string(contentTypeFor(Format::RAW)), input.path, *std::move(pixels)};
+        return Blob{Format::RAW, to, std::string(contentTypeFor(Format::RAW)), input.path,
+                    std::move(pixels->data)};
     }
 
     ensureImage();
@@ -178,7 +200,7 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
     }
 
     auto encoded = asIndices ? Encode(*std::move(indexed), outputFormat)
-                             : Encode(std::move(image), outputFormat, outputColor);
+                             : Encode(current(), outputFormat, outputColor);
     if (encoded) encoded->path = input.path;
     return encoded;
 }
