@@ -20,6 +20,7 @@ set_target_properties(${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMA
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/fetch.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/boost.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/cpp26.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/gperf.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/redis.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/static.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/wolfssl.cmake")

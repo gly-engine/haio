@@ -11,6 +11,10 @@
 #include <fstream>
 #include <iostream>
 
+#ifdef HAIO_USE_PROFILER
+#include <gperftools/profiler.h>
+#endif
+
 namespace {
 
 int cdnCommand(int argc, char* argv[]) {
@@ -101,6 +105,9 @@ void printHelp() {
 }
 
 auto main(int argc, char* argv[]) -> int {
+#ifdef HAIO_USE_PROFILER
+    ProfilerStart("haio.prof");
+#endif
     try {
         if (argc < 2) {
             printHelp();
@@ -123,4 +130,7 @@ auto main(int argc, char* argv[]) -> int {
         std::cerr << "error: " << err.what() << "\n";
         return 1;
     }
+#ifdef HAIO_USE_PROFILER
+    ProfilerStop();
+#endif
 }
