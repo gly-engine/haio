@@ -44,6 +44,10 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
         }
         native = *std::move(decoded);
         hasImage = true;
+
+        // the file has become pixels and nothing reads it again, so it goes now
+        // rather than sitting beside every buffer the rest of the pipeline allocates
+        input.data = {};
     };
 
     /** what every transform starts with: the picture in rgba8888, from here on for good */

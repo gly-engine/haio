@@ -55,10 +55,24 @@ std::vector<uint8_t> readStream(std::istream& in) {
     return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
+/**
+ * a file says how big it is, so it is read in one go into a buffer of that size.
+ * going through readStream instead walks it a byte at a time into a vector that has
+ * to guess, and a 32mb png was copied again on every one of the doublings it took.
+ */
 std::vector<uint8_t> readFile(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) throw std::runtime_error("could not open input: " + path.string());
-    return readStream(in);
+
+    std::error_code error;
+    const auto size = std::filesystem::file_size(path, error);
+    if (error) return readStream(in);
+
+    std::vector<uint8_t> data(size);
+    if (!in.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size))) {
+        throw std::runtime_error("could not read input: " + path.string());
+    }
+    return data;
 }
 
 Blob readInputBlob(Command& command) {
