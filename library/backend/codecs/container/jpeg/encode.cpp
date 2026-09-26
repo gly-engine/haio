@@ -5,6 +5,7 @@
 #include <turbojpeg.h>
 
 #include <cstddef>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -41,23 +42,19 @@ Result<Blob> Encode<Format::JPEG, Color::YUV420>(Image<Color::YUV420> img) {
     const size_t capacity = tj3JPEGBufSize(img.width, img.height, TJSAMP_420);
     if (capacity == 0) HAIO_FAIL(Internal, "cannot size the jpeg buffer");
 
-    std::vector<uint8_t> buffer(capacity);
-
-    uint8_t* dst = buffer.data();
+    const auto buffer = std::make_unique_for_overwrite<uint8_t[]>(capacity);
+    uint8_t* dst = buffer.get();
     size_t written = capacity;
 
     if (tj3CompressFromYUV8(handle.raw, img.data.data(), img.width, 1, img.height, &dst, &written) != 0) {
         HAIO_FAIL(Internal, "the jpeg could not be encoded");
     }
 
-
-    if (dst != buffer.data()) {
+    if (dst != buffer.get()) {
         HAIO_FAIL(Internal, "jpeg encoder ignored the buffer we gave it");
     }
 
-    buffer.resize(written);
-
-    return Blob{Format::JPEG, Color::YUV420, "image/jpeg", {}, std::move(buffer)};
+    return Blob{Format::JPEG, Color::YUV420, "image/jpeg", {}, std::vector<uint8_t>(dst, dst + written)};
 }
 
 }
