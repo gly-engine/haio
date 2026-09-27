@@ -11,9 +11,13 @@
 #include <boost/beast/http.hpp>
 #include <boost/url/parse.hpp>
 
+#include <zlib.h>
+
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <algorithm>
 #include <map>
 #include <memory>
@@ -147,6 +151,98 @@ constexpr http::status statusFor(Haio::ErrorCode code) {
 
 http::response<http::vector_body<uint8_t>> makeError(const Haio::Error& error) {
     return makeText(statusFor(error.code), error.message + "\n");
+}
+
+enum class Encoding { Identity, Gzip, Deflate };
+
+/**
+ * the encoding the client prefers among the ones haio writes, read off accept-encoding
+ * with its q values honoured.
+ *
+ * a tie goes to gzip, because every client that says deflate also says gzip and the
+ * reverse is not true of old ones. "*" stands for gzip when gzip was not named on its
+ * own, and a q of zero is a refusal, which is the one part of the header that is
+ * easy to get backwards.
+ */
+Encoding negotiateEncoding(std::string_view header) {
+    double gzip = -1;
+    double deflate = -1;
+    double any = -1;
+
+    const auto trim = [](std::string_view text) {
+        while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) text.remove_prefix(1);
+        while (!text.empty() && (text.back() == ' ' || text.back() == '\t')) text.remove_suffix(1);
+        return text;
+    };
+    const auto named = [](std::string_view text, std::string_view name) {
+        return std::ranges::equal(text, name, [](char a, char b) {
+            return std::tolower(static_cast<unsigned char>(a)) == b;
+        });
+    };
+
+    while (!header.empty()) {
+        const auto comma = header.find(',');
+        auto item = header.substr(0, comma);
+        header = comma == std::string_view::npos ? std::string_view{} : header.substr(comma + 1);
+
+        double q = 1;
+        if (const auto semicolon = item.find(';'); semicolon != std::string_view::npos) {
+            const auto param = trim(item.substr(semicolon + 1));
+            if (param.size() > 2 && (param[0] == 'q' || param[0] == 'Q') && param[1] == '=') {
+                q = std::strtod(std::string(param.substr(2)).c_str(), nullptr);
+            }
+            item = item.substr(0, semicolon);
+        }
+        item = trim(item);
+
+        if (named(item, "gzip") || named(item, "x-gzip")) gzip = q;
+        else if (named(item, "deflate")) deflate = q;
+        else if (item == "*") any = q;
+    }
+
+    if (gzip < 0) gzip = any;
+    if (deflate < 0) deflate = any;
+    if (gzip <= 0 && deflate <= 0) return Encoding::Identity;
+    return gzip >= deflate ? Encoding::Gzip : Encoding::Deflate;
+}
+
+/**
+ * a png, a jpeg and a gif are compressed already, and deflating them again spends the
+ * cpu to hand back a body a few bytes larger. everything else haio writes is pixels
+ * laid out plainly, and a ppm or a tga shrinks the way any bitmap does.
+ */
+bool worthCompressing(std::string_view contentType) {
+    return contentType != "image/png" && contentType != "image/jpeg" && contentType != "image/gif";
+}
+
+/**
+ * the body in the encoding negotiated, in one deflate call over a buffer sized for the
+ * worst case. "deflate" in http is the zlib format and not raw deflate, whatever the
+ * name suggests, and gzip is the same stream with a different header on it.
+ */
+Haio::Result<std::vector<uint8_t>> compressBody(const std::vector<uint8_t>& body, Encoding encoding) {
+    z_stream stream{};
+    const int window = encoding == Encoding::Gzip ? 15 + 16 : 15;
+    if (deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, window, 8, Z_DEFAULT_STRATEGY) != Z_OK) {
+        HAIO_FAIL(Internal, "cannot start the compressor");
+    }
+
+    // left uninitialised: the bound is larger than the input and only the front of it
+    // is ever written, so zeroing it would be the most expensive part of a small body
+    const auto capacity = deflateBound(&stream, static_cast<uLong>(body.size()));
+    const auto out = std::make_unique_for_overwrite<uint8_t[]>(capacity);
+
+    stream.next_in = const_cast<Bytef*>(body.data());
+    stream.avail_in = static_cast<uInt>(body.size());
+    stream.next_out = out.get();
+    stream.avail_out = static_cast<uInt>(capacity);
+
+    const int result = deflate(&stream, Z_FINISH);
+    const auto written = stream.total_out;
+    deflateEnd(&stream);
+    if (result != Z_STREAM_END) HAIO_FAIL(Internal, "the response could not be compressed");
+
+    return std::vector<uint8_t>(out.get(), out.get() + written);
 }
 
 /**
@@ -303,8 +399,28 @@ asio::awaitable<http::response<http::vector_body<uint8_t>>> handleRequest(const 
         });
         if (!entry) co_return makeError(entry.error());
 
-        auto res = makeResponse(http::status::ok, entry->contentType, std::move(entry->data));
+        /**
+         * compressed after the cache and not before it, so one entry answers every
+         * client whatever it accepts. vary goes on everything that could have been
+         * compressed, including what was not, or a proxy in between would hand the
+         * gzip it stored for one client to another that never asked for it.
+         */
+        auto body = std::move(entry->data);
+        const bool compressible = worthCompressing(entry->contentType)
+                               && !body.empty() && body.size() <= std::numeric_limits<uInt>::max();
+        const auto encoding = compressible ? negotiateEncoding(req[http::field::accept_encoding]) : Encoding::Identity;
+
+        if (encoding != Encoding::Identity) {
+            auto compressed = compressBody(body, encoding);
+            if (!compressed) co_return makeError(compressed.error());
+            body = *std::move(compressed);
+        }
+
+        auto res = makeResponse(http::status::ok, entry->contentType, std::move(body));
         res.set(http::field::content_disposition, "inline; filename=\"" + entry->filename + "\"");
+        if (compressible) res.set(http::field::vary, "Accept-Encoding");
+        if (encoding == Encoding::Gzip) res.set(http::field::content_encoding, "gzip");
+        if (encoding == Encoding::Deflate) res.set(http::field::content_encoding, "deflate");
         co_return res;
     } catch (const std::exception& err) {
         // only the request parsing above can land here now, and its messages are ours
