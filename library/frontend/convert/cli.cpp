@@ -2,6 +2,7 @@
 #include <haio_cli_grammar.hpp>
 #include <haio_platform.hpp>
 #include <haio_source.hpp>
+#include <haio_url.hpp>
 
 #include <algorithm>
 
@@ -22,6 +23,7 @@ void printUsage() {
               << "  haio convert input.png [filters] output.ppm\n"
               << "  haio convert png:- [filters] ppm:-\n"
               << "  haio convert https://host/input.png [filters] output.ppm\n"
+              << "  haio convert foo.ipk/data.tar.gz/assets/icon.png [filters] output.ppm\n"
               << "\nfilters:\n";
 
     const auto spelled = [](const Lexer::Option& option) {
@@ -67,6 +69,53 @@ Blob fetchInput(const std::string& uri) {
     return *std::move(fetched);
 }
 
+/**
+ * no allow switch here, unlike the cdn: the archive is the caller's own. the limit on
+ * one extracted file is generous for the same reason, and the ratio a zip bomb needs
+ * is refused either way.
+ */
+Source::ArchiveOptions archiveOptions() {
+    return Source::ArchiveOptions{.maxEntry = size_t{1} << 30};
+}
+
+Blob unwrap(Result<Blob> found, const std::string& path) {
+    if (!found) throw std::runtime_error(found.error().message + ": " + path);
+    return *std::move(found);
+}
+
+/**
+ * "https://host/foo.ipk/data.tar.gz/assets/icon.png" fetches foo.ipk, query and all,
+ * and digs the rest out of it. the split is on the path the url spells, so an escaped
+ * slash inside a name stays part of that name.
+ */
+Blob readRemote(const std::string& uri) {
+    auto url = Url::parse(uri);
+    const auto inside = url ? Source::splitArchivePath(url->path) : std::nullopt;
+    if (!inside) return fetchInput(uri);
+
+    url->path = inside->archive;
+    auto archive = fetchInput(url->str());
+    return unwrap(Source::readInsideArchive(std::move(archive.data), Percent::decode(inside->archive),
+                                            Percent::decode(inside->inside), archiveOptions()),
+                  uri);
+}
+
+/**
+ * a file that is there is read as it is, so a directory that happens to be called
+ * something.zip still works; only a path that names nothing on the disk is tried as
+ * an archive and a name inside it.
+ */
+Blob readLocal(const std::string& path) {
+    if (auto data = Source::readFile(path)) return Source::blobFrom(*std::move(data), path);
+
+    if (const auto inside = Source::splitArchivePath(path)) {
+        auto archive = Source::readFile(inside->archive);
+        if (!archive) throw std::runtime_error("could not read input: " + inside->archive);
+        return unwrap(Source::readInsideArchive(*std::move(archive), inside->archive, inside->inside, archiveOptions()), path);
+    }
+    throw std::runtime_error("could not read input: " + path);
+}
+
 Blob readInput(const std::string& path) {
     if (path == "-") return Source::blobFrom(readStream(std::cin), path);
     if (path.starts_with("s3://")) {
@@ -74,11 +123,7 @@ Blob readInput(const std::string& path) {
         // cdn's config has one; a presigned https url reads fine from here
         throw std::runtime_error("s3 urls are read by the cdn only; use a presigned https url instead: " + path);
     }
-    if (Source::isRemoteUri(path)) return fetchInput(path);
-
-    auto data = Source::readFile(path);
-    if (!data) throw std::runtime_error("could not read input: " + path);
-    return Source::blobFrom(*std::move(data), path);
+    return Source::isRemoteUri(path) ? readRemote(path) : readLocal(path);
 }
 
 /**

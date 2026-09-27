@@ -28,6 +28,10 @@ Haio::Result<std::filesystem::path> safeJoin(const std::filesystem::path& root, 
 namespace Haio::Source {
 
 std::optional<std::vector<uint8_t>> readFile(const std::filesystem::path& path) {
+    // a directory opens as a stream on linux and reads as nothing, which is not a file
+    std::error_code kind;
+    if (std::filesystem::is_directory(path, kind)) return std::nullopt;
+
     std::ifstream in(path, std::ios::binary);
     if (!in) return std::nullopt;
 

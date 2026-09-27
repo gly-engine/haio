@@ -90,22 +90,38 @@ bool isRemoteUri(std::string_view text);
 Task<Result<Blob>> fetchUri(std::string uri);
 
 /**
- * the archives read out of an origin, kept so a second picture out of the same zip
- * costs an inflate and no fetch. bounded by what they hold altogether.
+ * "foo.ipk/data.tar.gz/assets/icon.png" split where the file ends and the archive
+ * begins: the first segment named like an archive (.zip, .ipk, .deb, .tar, .tgz,
+ * .gz) is the file, and the rest is read out of it, opening whatever archives it
+ * holds on the way.
  */
-class ZipArchives;
-std::shared_ptr<ZipArchives> makeZipArchives(size_t maxUsage);
+struct ArchivePath {
+    std::string archive;
+    std::string inside;
+};
+std::optional<ArchivePath> splitArchivePath(std::string_view path);
 
-struct ZipOptions {
-    /** the largest one extracted file may be */
+/**
+ * the archives read out of an origin, kept so a second picture out of the same one
+ * costs no fetch and no inflate. bounded by what they hold altogether.
+ */
+class Archives;
+std::shared_ptr<Archives> makeArchives(size_t maxUsage);
+
+struct ArchiveOptions {
+    /** the largest one extracted file may be, and one undone gzip */
     size_t maxEntry = 64u << 20;
-    ZipArchives* archives = nullptr;
+    Archives* archives = nullptr;
 };
 
-/** whether a path such as "pack.zip/logo.png" names a file inside an archive */
-bool namesZipEntry(std::string_view path);
+/** one file out of an archive the origin holds */
+Task<Result<Blob>> fetchInsideArchive(const Origin& origin, ArchivePath path, ArchiveOptions options);
 
-/** one file out of an archive the origin holds; the path is one namesZipEntry took */
-Task<Result<Blob>> fetchInsideZip(const Origin& origin, std::string path, ZipOptions options);
+/**
+ * the same, out of an archive already in hand, which is how the command line reads
+ * one it found on a disk or behind a url. nothing is kept unless options says where.
+ */
+Result<Blob> readInsideArchive(std::vector<uint8_t> archive, std::string archiveName, std::string_view inside,
+                               const ArchiveOptions& options);
 
 }

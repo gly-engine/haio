@@ -83,6 +83,7 @@ int probeCommand(int argc, char* argv[]) {
 void printHelp() {
     std::cout << "usage:\n"
               << "  haio convert <input> [filters] <output>   input may be an http url\n"
+              << "                                            or a file inside an archive: foo.ipk/data.tar.gz/icon.png\n"
               << "  haio cdn [config.toml]        without a file, reads HAIO_CDN_TOML\n"
               << "  haio probe <file>...          report what the bytes actually are\n"
               << "\nconfig.toml:\n"

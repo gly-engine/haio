@@ -40,15 +40,28 @@
  *
  * ".." and a segment starting with "~" are refused.
  *
- * ## Bucket Zip
+ * ## Bucket Archive
  *
- * a path may name a file inside an archive, as in `/cdn/assets/pack.zip/logo.png`,
- * when `allow_unzip` is on. the archive is read once and kept in memory, so asking
- * for a second picture out of it costs no fetch.
+ * a path may name a file inside an archive when `allow_unzip` is on, and a file
+ * inside an archive inside that one:
  *
- * an entry larger than `max_unzip`, or one that expands more than two hundred times,
- * is refused: real image data barely compresses, so anything near that is an attempt
- * to spend memory rather than an archive.
+ * @code
+ * /cdn/assets/pack.zip/logo.png
+ * /cdn/assets/foo.ipk/data.tar.gz/assets/icon80x80.png
+ * @endcode
+ *
+ * the first segment named like an archive (`.zip`, `.ipk`, `.deb`, `.tar`, `.tgz`,
+ * `.gz`) is the file the bucket holds. what it is, though, is read from its bytes:
+ * zip, ar (which is what an ipk and a deb are), tar, or any of them under gzip. inside
+ * it the path is walked a segment at a time, and every entry on the way that is an
+ * archive itself is opened in turn.
+ *
+ * every archive opened is kept in memory, each level on its own, so a second icon out
+ * of the same `data.tar.gz` costs neither the fetch nor the gunzip.
+ *
+ * a file larger than `max_unzip`, or one that expands more than two hundred times, is
+ * refused, and a gzip is held to the same: real image data barely compresses, so
+ * anything near that is an attempt to spend memory rather than an archive.
  *
  * ## Bucket Http
  *
@@ -166,7 +179,7 @@
  * max_size_percent = 500         # in percent, what a resize may ask for as a share
  * max_cache_entries_by_ip = 30   # entries one address may create per ttl window
  * max_requests_by_ip = 10        # per second, as a leaky bucket
- * allow_unzip = false            # whether a path may reach inside a zip
+ * allow_unzip = false            # whether a path may reach inside an archive
  * max_unzip = 64                 # in mb, one extracted file and the archives kept
  * @endcode
  *
@@ -186,7 +199,7 @@
  * | `max_cache_entries_by_ip` | one caller evicting everyone else's entries      |
  * | `max_requests_by_ip`      | a flood                                          |
  * | `allow_unzip`             | work on behalf of whoever wrote the file         |
- * | `max_unzip`               | a small zip that expands into a large one        |
+ * | `max_unzip`               | a small archive that expands into a large one    |
  *
  * over the cache quota the answer is still produced and still correct, it is simply
  * not stored: the limit is on eviction, not on access.
@@ -229,11 +242,11 @@ struct SecurityConfig {
     /** requests one address may make per second; zero is no limit */
     size_t maxRequestsByIp = 0;
 
-    /** whether a path may reach inside a zip; off unless asked for */
+    /** whether a path may reach inside an archive; off unless asked for */
     bool allowUnzip = false;
 
     /**
-     * bytes one file out of a zip may take, and what the archives kept in memory may
+     * bytes one file out of an archive may take, and what the archives kept in memory may
      * take altogether. megabytes in the config.
      */
     size_t maxUnzip = 64u << 20;
@@ -259,7 +272,7 @@ struct Config {
 
 Config parseConfig(std::string_view text);
 Config loadConfig(const std::filesystem::path& path);
-Task<Result<Blob>> fetchBucket(const Config& config, Source::ZipArchives& archives, std::string bucket, std::string path);
+Task<Result<Blob>> fetchBucket(const Config& config, Source::Archives& archives, std::string bucket, std::string path);
 
 /** listens until the platform's loop is stopped, and throws if it cannot listen at all */
 Task<void> runServer(Config config);

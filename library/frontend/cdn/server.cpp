@@ -305,7 +305,7 @@ std::optional<Haio::Error> checkSize(const Haio::Cdn::Config& config, const std:
 }
 
 /** the fetch and the conversion behind it, which is exactly what an entry saves */
-Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config& config, Haio::Source::ZipArchives& archives, Route route) {
+Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config& config, Haio::Source::Archives& archives, Route route) {
     auto fetched = co_await Haio::Cdn::fetchBucket(config, archives, route.bucket, route.path);
     if (!fetched) co_return std::unexpected(fetched.error());
     auto blob = *std::move(fetched);
@@ -357,7 +357,7 @@ struct Shared {
     // one limiter, because a limit counted per connection is no limit
     RateLimiter limiter;
     // one set of archives: one read for one request is there for the next one
-    std::shared_ptr<Haio::Source::ZipArchives> archives;
+    std::shared_ptr<Haio::Source::Archives> archives;
 };
 
 Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, HttpServerRequest req) {
@@ -464,7 +464,7 @@ Task<void> runServer(Config config) {
         config,
         Cache{config.cache, config.security.maxCacheEntriesByIp},
         RateLimiter{config.security.maxRequestsByIp},
-        Source::makeZipArchives(config.security.maxUnzip),
+        Source::makeArchives(config.security.maxUnzip),
     });
 
     if (shared->cache.enabled()) {

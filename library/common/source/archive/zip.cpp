@@ -1,4 +1,4 @@
-#include <haio/internal/source/zip.hpp>
+#include <haio/internal/source/archive.hpp>
 #include <haio_util.hpp>
 
 #include <zlib.h>
@@ -16,13 +16,6 @@ constexpr uint32_t localHeader    = 0x04034b50;
 
 constexpr uint16_t methodStored  = 0;
 constexpr uint16_t methodDeflate = 8;
-
-/**
- * a zip whose entries expand far more than this is not a picture archive, it is an
- * attempt to spend the server's memory. real image data barely compresses at all, so
- * even a generous ratio is orders of magnitude away from anything legitimate.
- */
-constexpr uint64_t maxExpansionRatio = 200;
 
 uint16_t readU16LE(Bytes data, size_t off) {
     return static_cast<uint16_t>(data[off] | (data[off + 1] << 8));
@@ -54,7 +47,7 @@ namespace Haio::Source {
  * @todo zip64 is not handled, so an archive over four gigabytes, or with more than
  * 65535 entries, is refused rather than misread.
  */
-Result<ZipIndex> readZipIndex(Bytes data) {
+Result<ArchiveIndex> readZipIndex(Bytes data) {
     const auto end = findEndOfDirectory(data);
     if (!end) return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, "not a zip, or its directory is missing"});
 
@@ -69,7 +62,7 @@ Result<ZipIndex> readZipIndex(Bytes data) {
         return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, "the zip directory points outside the file"});
     }
 
-    ZipIndex index;
+    ArchiveIndex index;
     size_t at = directoryAt;
 
     for (uint16_t entry = 0; entry < count; entry++) {
@@ -77,7 +70,8 @@ Result<ZipIndex> readZipIndex(Bytes data) {
             return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, "the zip directory is truncated"});
         }
 
-        ZipEntry found;
+        ArchiveEntry found;
+        found.zip = true;
         found.method = readU16LE(data, at + 10);
         found.compressed = Util::readU32LE(data, at + 20);
         found.uncompressed = Util::readU32LE(data, at + 24);
@@ -103,10 +97,10 @@ Result<ZipIndex> readZipIndex(Bytes data) {
 }
 
 /** inflates one entry, refusing anything that expands further than it should */
-Result<std::vector<uint8_t>> readZipEntry(Bytes data, const ZipEntry& entry, size_t maxSize) {
+Result<std::vector<uint8_t>> readZipEntry(Bytes data, const ArchiveEntry& entry, size_t maxSize) {
     if (entry.uncompressed > maxSize) {
         return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput,
-                                     "the file inside the zip is larger than max_unzip allows"});
+                                     "the file inside the zip is larger than one extracted file may be"});
     }
     if (entry.compressed > 0 && entry.uncompressed / entry.compressed > maxExpansionRatio) {
         return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, "the file inside the zip expands too far"});
@@ -120,7 +114,7 @@ Result<std::vector<uint8_t>> readZipEntry(Bytes data, const ZipEntry& entry, siz
     // own lengths are the ones that count rather than the directory's
     const auto nameSize = readU16LE(data, entry.at + 26);
     const auto extraSize = readU16LE(data, entry.at + 28);
-    const auto from = static_cast<size_t>(entry.at) + 30 + nameSize + extraSize;
+    const auto from = static_cast<size_t>(entry.at + 30 + nameSize + extraSize);
     if (from + entry.compressed > data.size()) {
         return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, "a zip entry runs past the end of the file"});
     }
