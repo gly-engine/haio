@@ -9,7 +9,7 @@ namespace Haio {
  * what a file is: the container that holds pixels. RAW means no container at all,
  * just the bytes of a colour format, which is why it needs its size supplied.
  *
- * the \@mime and \@ext tags are read by scripts/gen_codecs.cpp, which builds the lookups both ways
+ * the \@mime and \@ext tags are read by scripts/gen_scaffold.cpp, which builds the lookups both ways
  * from them. the first one is what haio writes, the rest are only accepted. this is what
  * a c++26 enum annotation will carry once the compiler parses them, and until then a
  * tag keeps them on the enumerator instead of in a table somewhere else.
@@ -97,6 +97,13 @@ enum class Format {
      * @ext gif
      */
     GIF,
+
+    /**
+     * not a file but a canvas of one colour, "xc:white", which is what imagemagick
+     * calls a generator and treats as a coder like any other. it has no bytes to
+     * recognise and nothing to write, only a decode that draws.
+     */
+    XC,
 };
 
 /**

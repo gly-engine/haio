@@ -28,9 +28,10 @@ Token DecodeAuto() {
     return Token{TokenKind::DecodeAuto};
 }
 
-Token Decode(Format format) {
+Token Decode(Format format, Settings settings) {
     Token token{TokenKind::Decode};
     token.format = format;
+    token.settings = std::move(settings);
     return token;
 }
 
@@ -40,16 +41,18 @@ Token Crop(Rect rect) {
     return token;
 }
 
-Token Resize(Size size) {
+Token Resize(Size size, ResizeFilter filter) {
     Token token{TokenKind::Resize};
     token.size = size;
+    token.filter = filter;
     return token;
 }
 
-Token ResizeByPercent(int percent) {
+Token ResizeByPercent(int percent, ResizeFilter filter) {
     Token token;
     token.kind = TokenKind::Resize;
     token.percent = percent;
+    token.filter = filter;
     return token;
 }
 
@@ -63,16 +66,39 @@ Token Palette(std::string palette, Dither dither, size_t limit, Limit limitHow) 
     return token;
 }
 
+Token Composite(Gravity gravity, int x, int y) {
+    Token token{TokenKind::Composite};
+    token.gravity = gravity;
+    token.rect.x = x;
+    token.rect.y = y;
+    return token;
+}
+
+Token Fx(std::string expression) {
+    Token token{TokenKind::Fx};
+    token.expression = std::move(expression);
+    return token;
+}
+
+Token Open() {
+    return Token{TokenKind::Open};
+}
+
+Token Close() {
+    return Token{TokenKind::Close};
+}
+
 Token Radius(int radius) {
     Token token{TokenKind::Radius};
     token.radius = radius;
     return token;
 }
 
-Token Encode(Format format, std::optional<Color> color) {
+Token Encode(Format format, std::optional<Color> color, Settings settings) {
     Token token{TokenKind::Encode};
     token.format = format;
     token.color = color;
+    token.settings = std::move(settings);
     return token;
 }
 }

@@ -1,7 +1,7 @@
 #include <haio/internal/codecs/tga.hpp>
 
 #include <haio_codec.hpp>
-#include <haio_codecs.hpp>
+#include <haio/generated/codec.hpp>
 #include <haio_convert.hpp>
 
 #include <algorithm>

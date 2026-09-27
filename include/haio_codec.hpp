@@ -3,7 +3,9 @@
 #include "haio_common.hpp"
 #include "haio_formats.hpp"
 #include "haio_object.hpp"
+#include "haio/stage.hpp"
 
+#include <charconv>
 #include <expected>
 #include <meta>
 #include <optional>
@@ -30,6 +32,34 @@ struct Error {
 
 template <typename T>
 using Result = std::expected<T, Error>;
+
+/** a setting a codec reads, by the name it declared, with the value still as written */
+struct Setting {
+    std::string name;
+    std::string value;
+};
+
+using Settings = std::vector<Setting>;
+
+inline const Setting* settingNamed(const Settings& settings, std::string_view name) {
+    for (const auto& setting : settings) {
+        if (setting.name == name) return &setting;
+    }
+    return nullptr;
+}
+
+/**
+ * a whole number, read by the declaration that asked for it: its name, its bounds and
+ * what it is when nobody says all come from the one Option, so a codec cannot
+ * disagree with its own help text. the command line already checked it; this checks
+ * again for whatever else hands settings in.
+ */
+inline Result<int> settingInt(const Settings& settings, const Stages::Option& option) {
+    const auto* setting = settingNamed(settings, option.name());
+    const std::string_view text = setting ? std::string_view{setting->value} : option.fallback;
+    if (const auto why = Stages::refusal(option, text)) return std::unexpected(Error{ErrorCode::InvalidInput, *why});
+    return *Stages::Detail::wholeNumber(text);
+}
 
 /** pixels in memory. it has a colour and no container, because it is not a file yet */
 template <Color P>
@@ -125,6 +155,9 @@ struct Blob {
     std::string contentType = "application/octet-stream";
     std::string path;
     std::vector<uint8_t> data;
+
+    /** RAW only: how big the pixels are, since bare pixels have nowhere to say */
+    Size size;
 };
 
 /**
@@ -151,6 +184,14 @@ template <Format F> struct DefaultColor;
 template <Format F, Color P = DefaultColor<F>::value> bool             Detect(Bytes)       = delete;
 template <Format F, Color P = DefaultColor<F>::value> Result<Image<P>> Decode(const Blob&) = delete;
 template <Format F, Color P>                          Result<Blob>     Encode(Image<P>)    = delete;
+
+/**
+ * the same two, for a codec that reads settings: the jpeg quality, the png
+ * compression level, the size of a canvas. a codec defines one form or the other for
+ * a pair, never both, and the concepts below accept either.
+ */
+template <Format F, Color P> Result<Image<P>> Decode(const Blob&, const Settings&) = delete;
+template <Format F, Color P> Result<Blob>     Encode(Image<P>, const Settings&)    = delete;
 
 /**
  * @name Convert
@@ -219,12 +260,16 @@ template <Format F, Color P> concept Detectable = requires (Bytes d)      { { De
  * @ingroup decode
  * can this pair be read into pixels, asked of the pair rather than answered by hand.
  */
-template <Format F, Color P> concept Decodable  = requires (const Blob& b) { { Decode<F, P>(b) } -> std::same_as<Result<Image<P>>>; };
+template <Format F, Color P> concept DecodesPlain    = requires (const Blob& b) { { Decode<F, P>(b) } -> std::same_as<Result<Image<P>>>; };
+template <Format F, Color P> concept DecodesSettings = requires (const Blob& b, const Settings& s) { { Decode<F, P>(b, s) } -> std::same_as<Result<Image<P>>>; };
+template <Format F, Color P> concept Decodable  = DecodesPlain<F, P> || DecodesSettings<F, P>;
 /**
  * @ingroup encode
  * can an image of this colour be written into this container, asked of the pair rather than answered by hand.
  */
-template <Format F, Color P> concept Encodable  = requires (Image<P> i)    { { Encode<F, P>(std::move(i)) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept EncodesPlain    = requires (Image<P> i) { { Encode<F, P>(std::move(i)) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept EncodesSettings = requires (Image<P> i, const Settings& s) { { Encode<F, P>(std::move(i), s) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P>;
 /**
  * @ingroup move
  * is there a loop from one colour to the other, asked of the pair rather than answered by hand.
@@ -235,6 +280,44 @@ template <Color From, Color To> concept Movable = requires (Bytes s, std::span<u
  * is there a whole image conversion from one colour to the other, asked of the pair rather than answered by hand.
  */
 template <Color From, Color To> concept Convertible = requires (Image<From> i) { { Convert<From, To>(std::move(i)) } -> std::same_as<Result<Image<To>>>; };
+
+/**
+ * a decode or an encode with settings in hand, whichever form the codec wrote. one
+ * that reads none is handed none: the command line has already refused any setting a
+ * codec did not declare, so there is nothing here to drop on the floor.
+ */
+template <Format F, Color P>
+    requires Decodable<F, P>
+Result<Image<P>> decode(const Blob& blob, const Settings& settings) {
+    if constexpr (DecodesSettings<F, P>) return Decode<F, P>(blob, settings);
+    else return Decode<F, P>(blob);
+}
+
+template <Format F, Color P>
+    requires Encodable<F, P>
+Result<Blob> encode(Image<P> image, const Settings& settings) {
+    if constexpr (EncodesSettings<F, P>) return Encode<F, P>(std::move(image), settings);
+    else return Encode<F, P>(std::move(image));
+}
+
+/**
+ * what a codec reads off the command line, declared in `include/haio/codecs/NAME.hpp`
+ * beside nothing else. an option whose name has a colon in it, as png's
+ * "png:compression-level" does, is reached through -define the way imagemagick does.
+ */
+struct Reads {
+    std::span<const Stages::Option> decode = {};
+    std::span<const Stages::Option> encode = {};
+
+    /**
+     * the value after the prefix is what to draw, not a file to read: "xc:white" is a
+     * canvas, the way imagemagick's generators are coders like any other.
+     */
+    bool draws = false;
+};
+
+// "= Reads{}" rather than "{}": gcc 16 crashes on the braces alone
+template <Format F> inline constexpr Reads reads = Reads{};
 
 }
 

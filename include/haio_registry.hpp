@@ -3,7 +3,7 @@
 // the generated list comes first on purpose. everything below asks the codecs what
 // they can do, and a concept evaluated before they are declared caches the answer
 // "no" for the rest of the build, silently.
-#include "haio_codecs.hpp"
+#include <haio/generated/codec.hpp>
 
 #include "haio_codec.hpp"
 #include "haio_convert.hpp"
@@ -70,6 +70,15 @@ constexpr std::optional<Color> colorNamed(std::string_view name) {
 constexpr Color colorFromName(std::string_view name) {
     const auto color = colorNamed(name);
     return color ? *color : Color::RGBA8888;
+}
+
+/** what a codec reads off the command line, for a format named at runtime */
+constexpr const Codecs::Reads& readsOf(Format wanted) {
+    HAIO_FOR_EACH_FORMAT(e) {
+        constexpr Format format = std::meta::extract<Format>(e);
+        if (format == wanted) return Codecs::reads<format>;
+    }
+    return Codecs::reads<Format::RAW>;
 }
 
 /** what a file turned out to be: the container and the colour it holds */
@@ -207,7 +216,7 @@ inline Result<AnyImage> Convert(AnyImage image, Color to) {
  * the runtime way in: reads the bytes and routes to the pair that matched, keeping
  * the colour the file was stored in so that whatever comes next can start from it.
  */
-inline Result<AnyImage> DecodeNative(const Blob& blob) {
+inline Result<AnyImage> DecodeNative(const Blob& blob, const Settings& settings = {}) {
     const auto found = blob.format != Format::RAW ? Found{blob.format, blob.color} : Detect(blob.data);
     if (!found) {
         return std::unexpected(Error{ErrorCode::UnsupportedFormat, "unrecognised input"});
@@ -225,7 +234,7 @@ inline Result<AnyImage> DecodeNative(const Blob& blob) {
             if constexpr (Codecs::Decodable<format, color>) {
                 if (format != found.format || color != found.color) continue;
 
-                auto decoded = Codecs::Decode<format, color>(blob);
+                auto decoded = Codecs::decode<format, color>(blob, settings);
                 if (!decoded) {
                     out = std::unexpected(decoded.error());
                 } else if constexpr (color != Color::PALETTE) {
@@ -273,7 +282,8 @@ inline Result<std::vector<uint8_t>> Convert(const Image<Color::RGBA8888>& image,
  * etc1" or "a tga holding bgr888" from a command line: the pair was always there in
  * Codecs::Encode, with nothing but this bridge between it and a string.
  */
-inline Result<Blob> Encode(AnyImage image, Format to, std::optional<Color> as = std::nullopt) {
+inline Result<Blob> Encode(AnyImage image, Format to, std::optional<Color> as = std::nullopt,
+                           const Settings& settings = {}) {
     const auto wanted = as ? as : encodeColorFor(to);
     if (!wanted) {
         return std::unexpected(Error{ErrorCode::UnsupportedFormat,
@@ -296,8 +306,9 @@ inline Result<Blob> Encode(AnyImage image, Format to, std::optional<Color> as = 
                 // the pair exists and the road to it may not, which is a different
                 // sentence from the container not holding that colour at all
                 auto converted = Convert(std::move(image), color);
-                out = converted ? Codecs::Encode<format, color>(
-                                      Image<color>{converted->width, converted->height, std::move(converted->data)})
+                out = converted ? Codecs::encode<format, color>(
+                                      Image<color>{converted->width, converted->height, std::move(converted->data)},
+                                      settings)
                                 : Result<Blob>{std::unexpected(converted.error())};
             }
         }
@@ -315,14 +326,14 @@ inline Result<Blob> Encode(Image<Color::RGBA8888> image, Format to, std::optiona
  * it. there is no conversion into it here on purpose: haio does not pick colours for
  * anybody, so the picture arrives already fitted to a palette or not at all.
  */
-inline Result<Blob> Encode(Image<Color::PALETTE> image, Format to) {
+inline Result<Blob> Encode(Image<Color::PALETTE> image, Format to, const Settings& settings = {}) {
     Result<Blob> out = std::unexpected(Error{ErrorCode::UnsupportedFormat,
                                              "a " + std::string(formatName(to)) + " cannot hold a palette"});
     HAIO_FOR_EACH_FORMAT(f) {
         constexpr Format format = std::meta::extract<Format>(f);
         if constexpr (Codecs::Encodable<format, Color::PALETTE>) {
             if (format != to) continue;
-            out = Codecs::Encode<format, Color::PALETTE>(std::move(image));
+            out = Codecs::encode<format, Color::PALETTE>(std::move(image), settings);
         }
     }
     return out;

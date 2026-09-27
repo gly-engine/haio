@@ -1,6 +1,7 @@
 #include <haio_codec.hpp>
-#include <haio_codecs.hpp>
+#include <haio/generated/codec.hpp>
 #include <haio_convert.hpp>
+#include <haio/codecs/jpeg.hpp>
 
 #include <turbojpeg.h>
 
@@ -27,7 +28,9 @@ namespace Haio::Codecs {
  * container change.
  */
 template <>
-Result<Blob> Encode<Format::JPEG, Color::YUV420>(Image<Color::YUV420> img) {
+Result<Blob> Encode<Format::JPEG, Color::YUV420>(Image<Color::YUV420> img, const Settings& settings) {
+    HAIO_TRY(quality, settingInt(settings, jpegQuality));
+
     const Size size{img.width, img.height};
     HAIO_TRY(expected, sizeOf(Color::YUV420, size));
     if (img.data.size() != expected) HAIO_FAIL(InvalidInput, "invalid yuv420 image for jpeg encode");
@@ -36,7 +39,7 @@ Result<Blob> Encode<Format::JPEG, Color::YUV420>(Image<Color::YUV420> img) {
     if (!handle.raw) HAIO_FAIL(Internal, "cannot start the jpeg encoder");
 
     tj3Set(handle.raw, TJPARAM_SUBSAMP, TJSAMP_420);
-    tj3Set(handle.raw, TJPARAM_QUALITY, 90);
+    tj3Set(handle.raw, TJPARAM_QUALITY, quality);
     tj3Set(handle.raw, TJPARAM_NOREALLOC, 1);
 
     const size_t capacity = tj3JPEGBufSize(img.width, img.height, TJSAMP_420);
