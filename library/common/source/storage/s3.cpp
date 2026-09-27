@@ -1,8 +1,6 @@
-#include <internal/bucket.hpp>
+#include <haio/internal/source/storage.hpp>
 
-#include <boost/asio/use_awaitable.hpp>
-#include <boost/url/parse.hpp>
-#include <boost/url/url.hpp>
+#include <haio_url.hpp>
 
 #include <wolfssl/options.h>
 #include <wolfssl/wolfcrypt/hmac.h>
@@ -16,8 +14,6 @@
 #include <string>
 #include <vector>
 
-namespace asio = boost::asio;
-namespace urls = boost::urls;
 
 namespace {
 
@@ -108,7 +104,7 @@ Stamp nowUtc() {
 
 }
 
-namespace Haio::Cdn::Bucket {
+namespace Haio::Source {
 
 std::string awsSignatureV4(std::string_view secret, std::string_view date, std::string_view region,
                            std::string_view service, std::string_view stringToSign) {
@@ -127,18 +123,16 @@ std::string awsSignatureV4(std::string_view secret, std::string_view date, std::
  * config file. without them the request goes out unsigned, which is exactly right for
  * a public bucket and gives a plain 403 from aws for a private one.
  */
-asio::awaitable<Blob> fetchS3(const BucketConfig& bucket, std::string path) {
-    const auto endpoint = urls::parse_uri_reference(bucket.url);
+Task<Result<Blob>> fetchS3(const Origin& origin, std::string path) {
+    const auto endpoint = Haio::Url::parse(origin.url);
     if (!endpoint) {
-        std::cerr << "invalid s3 endpoint: " << bucket.url << "\n";
-        throw Failure(ErrorCode::Internal, "this bucket is misconfigured");
+        std::cerr << "invalid s3 endpoint: " << origin.url << "\n";
+        co_return std::unexpected(Error{ErrorCode::Internal, "this bucket is misconfigured"});
     }
 
-    const std::string host{endpoint->has_port() ? std::string(endpoint->host()) + ":" + std::string(endpoint->port())
-                                                : std::string(endpoint->host())};
+    const auto host = endpoint->authority();
 
-    // "?region=" told the config which region this is; it is no part of the object
-    std::string prefix{endpoint->path()};
+    auto prefix = endpoint->decodedPath();
     while (!prefix.empty() && prefix.back() == '/') prefix.pop_back();
 
     auto resource = prefix + (path.empty() || path.front() == '/' ? "" : "/") + path;
@@ -148,15 +142,22 @@ asio::awaitable<Blob> fetchS3(const BucketConfig& bucket, std::string path) {
     const auto target = "https://" + host + canonicalPath;
 
     // the config says it; the environment is only asked when the config stays quiet
-    const auto key = bucket.accessKey.empty() ? env("AWS_ACCESS_KEY_ID") : bucket.accessKey;
-    const auto secret = bucket.secretKey.empty() ? env("AWS_SECRET_ACCESS_KEY") : bucket.secretKey;
+    const auto key = origin.accessKey.empty() ? env("AWS_ACCESS_KEY_ID") : origin.accessKey;
+    const auto secret = origin.secretKey.empty() ? env("AWS_SECRET_ACCESS_KEY") : origin.secretKey;
     if (key.empty() || secret.empty()) {
         // a public bucket needs no signature; a private one will say so itself
         co_return co_await fetchUrlWith(target, std::move(path), {});
     }
 
+    // resolveOrigin refuses a bucket that signs without a region, but the keys may
+    // have arrived in the environment since it looked
+    if (origin.region.empty()) {
+        std::cerr << "s3 bucket \"" << origin.name << "\" has credentials and no region\n";
+        co_return std::unexpected(Error{ErrorCode::Internal, "this bucket is misconfigured"});
+    }
+
     const auto stamp = nowUtc();
-    const auto token = bucket.sessionToken.empty() ? env("AWS_SESSION_TOKEN") : bucket.sessionToken;
+    const auto token = origin.sessionToken.empty() ? env("AWS_SESSION_TOKEN") : origin.sessionToken;
 
     // a GET carries no body, and the hash of nothing is still part of what is signed
     const auto payload = toHex(sha256("").data(), WC_SHA256_DIGEST_SIZE);
@@ -174,13 +175,13 @@ asio::awaitable<Blob> fetchS3(const BucketConfig& bucket, std::string path) {
     const auto canonicalRequest = "GET\n" + canonicalPath + "\n\n" + canonicalHeaders + "\n"
                                 + signedHeaders + "\n" + payload;
 
-    const auto scope = stamp.date + "/" + bucket.region + "/s3/aws4_request";
+    const auto scope = stamp.date + "/" + origin.region + "/s3/aws4_request";
     const auto toSign = "AWS4-HMAC-SHA256\n" + stamp.moment + "\n" + scope + "\n"
                       + toHex(sha256(canonicalRequest).data(), WC_SHA256_DIGEST_SIZE);
 
-    const auto signature = awsSignatureV4(secret, stamp.date, bucket.region, "s3", toSign);
+    const auto signature = awsSignatureV4(secret, stamp.date, origin.region, "s3", toSign);
 
-    Headers headers{
+    Platform::Headers headers{
         {"x-amz-content-sha256", payload},
         {"x-amz-date", stamp.moment},
         {"authorization", "AWS4-HMAC-SHA256 Credential=" + key + "/" + scope

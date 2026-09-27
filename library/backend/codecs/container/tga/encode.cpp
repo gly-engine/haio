@@ -1,4 +1,4 @@
-#include "header.hpp"
+#include <haio/internal/codecs/tga.hpp>
 
 #include <haio_codec.hpp>
 #include <haio_codecs.hpp>

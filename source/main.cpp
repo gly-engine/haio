@@ -1,14 +1,10 @@
 #include <haio_cdn.hpp>
 #include <haio_cli.hpp>
-
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/detached.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/signal_set.hpp>
+#include <haio_platform.hpp>
+#include <haio_source.hpp>
 
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 
 #ifdef HAIO_USE_PROFILER
@@ -36,11 +32,8 @@ int cdnCommand(int argc, char* argv[]) {
         throw std::runtime_error("cdn needs a config file, or HAIO_CDN_TOML holding the config itself");
     }
 
-    boost::asio::io_context io;
-    boost::asio::signal_set signals(io, SIGINT, SIGTERM);
-    signals.async_wait([&](auto, auto) { io.stop(); });
-    boost::asio::co_spawn(io, Haio::Cdn::runServer(std::move(config)), boost::asio::detached);
-    io.run();
+    Haio::Platform::stopOnSignal();
+    Haio::Platform::run(Haio::Cdn::runServer(std::move(config)));
     return 0;
 }
 
@@ -53,14 +46,14 @@ int probeCommand(int argc, char* argv[]) {
     int failures = 0;
     for (int i = 1; i < argc; i++) {
         const std::filesystem::path path = argv[i];
-        std::ifstream in(path, std::ios::binary);
-        if (!in) {
+        const auto read = Haio::Source::readFile(path);
+        if (!read) {
             std::cerr << path.string() << ": cannot open\n";
             failures++;
             continue;
         }
 
-        const std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        const auto& data = *read;
         const auto found = Haio::Detect(data);
 
         std::cout << path.string() << ": ";
@@ -89,17 +82,20 @@ int probeCommand(int argc, char* argv[]) {
 
 void printHelp() {
     std::cout << "usage:\n"
-              << "  haio convert <input> [filters] <output>\n"
+              << "  haio convert <input> [filters] <output>   input may be an http url\n"
               << "  haio cdn [config.toml]        without a file, reads HAIO_CDN_TOML\n"
               << "  haio probe <file>...          report what the bytes actually are\n"
               << "\nconfig.toml:\n"
+              << "  [cdn]\n"
               << "  host = \"0.0.0.0\"\n"
               << "  port = 8080\n"
               << "\n"
-              << "  cache = \"mem://?ttl=1h&max=5mb\"   also file://dir and redis://host\n"
+              << "  [cache]\n"
+              << "  ttl = 3600                      seconds; leave [cache] out to keep nothing\n"
+              << "  url = \"redis://127.0.0.1:6379\"   also file://dir; without it, in memory\n"
               << "\n"
               << "  [bucket.assets]\n"
-              << "  url = \"file://assets\"\n";
+              << "  url = \"file://assets\"           also https://host/prefix and s3://host/bucket\n";
 }
 
 }

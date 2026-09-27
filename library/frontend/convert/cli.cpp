@@ -1,9 +1,10 @@
 #include <haio_cli.hpp>
 #include <haio_cli_grammar.hpp>
+#include <haio_platform.hpp>
+#include <haio_source.hpp>
 
 #include <algorithm>
 
-#include <filesystem>
 #include <fstream>
 #include <iostream>
 
@@ -20,6 +21,7 @@ void printUsage() {
     std::cerr << "usage:\n"
               << "  haio convert input.png [filters] output.ppm\n"
               << "  haio convert png:- [filters] ppm:-\n"
+              << "  haio convert https://host/input.png [filters] output.ppm\n"
               << "\nfilters:\n";
 
     const auto spelled = [](const Lexer::Option& option) {
@@ -56,52 +58,56 @@ std::vector<uint8_t> readStream(std::istream& in) {
 }
 
 /**
- * a file says how big it is, so it is read in one go into a buffer of that size.
- * going through readStream instead walks it a byte at a time into a vector that has
- * to guess, and a 32mb png was copied again on every one of the doublings it took.
+ * a url is read the way the cdn reads a bucket, through Haio::Source. this is the one
+ * place the command line waits on the platform's loop, and it waits for nothing else.
  */
-std::vector<uint8_t> readFile(const std::filesystem::path& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) throw std::runtime_error("could not open input: " + path.string());
-
-    std::error_code error;
-    const auto size = std::filesystem::file_size(path, error);
-    if (error) return readStream(in);
-
-    std::vector<uint8_t> data(size);
-    if (!in.read(reinterpret_cast<char*>(data.data()), static_cast<std::streamsize>(size))) {
-        throw std::runtime_error("could not read input: " + path.string());
-    }
-    return data;
+Blob fetchInput(const std::string& uri) {
+    auto fetched = Platform::blockOn(Source::fetchUri(uri));
+    if (!fetched) throw std::runtime_error("could not fetch " + uri + ": " + fetched.error().message);
+    return *std::move(fetched);
 }
 
+Blob readInput(const std::string& path) {
+    if (path == "-") return Source::blobFrom(readStream(std::cin), path);
+    if (path.starts_with("s3://")) {
+        // a bucket needs somewhere to write its region and its keys, and only the
+        // cdn's config has one; a presigned https url reads fine from here
+        throw std::runtime_error("s3 urls are read by the cdn only; use a presigned https url instead: " + path);
+    }
+    if (Source::isRemoteUri(path)) return fetchInput(path);
+
+    auto data = Source::readFile(path);
+    if (!data) throw std::runtime_error("could not read input: " + path);
+    return Source::blobFrom(*std::move(data), path);
+}
+
+/**
+ * the input, with its format settled. blobFrom already asked the bytes, then the
+ * content type, then the name; what is left is a prefix written on purpose, which is
+ * honoured, and a name that turned out wrong, which is worth a warning.
+ */
 Blob readInputBlob(Command& command) {
-    Blob blob;
-    blob.path = command.inputPath;
-    blob.format = command.inputFormat;
-    blob.contentType = contentTypeFor(blob.format);
-    blob.data = command.inputPath == "-" ? readStream(std::cin) : readFile(command.inputPath);
-
+    auto blob = readInput(command.inputPath);
+    const auto named = command.inputFormat;
+    // only what the bytes themselves say is worth contradicting a name over
     const auto found = Detect(blob.data);
-    const bool explicitFormat = !command.inputFormatName.empty();
 
-    if (found && found.format != command.inputFormat) {
-        std::cerr << "warning: " << command.inputPath << " is " << formatName(found.format)
-                  << ", not " << formatName(command.inputFormat);
-        if (explicitFormat) {
-            // the prefix was asked for on purpose, so it is honoured and only flagged
-            std::cerr << "; decoding as " << formatName(command.inputFormat) << " anyway\n";
-        } else {
-            std::cerr << "; decoding as " << formatName(found.format) << '\n';
-            command.inputFormat = found.format;
-            blob.format = found.format;
-            blob.color = found.color;
-            blob.contentType = contentTypeFor(found.format);
+    if (!command.inputFormatName.empty()) {
+        if (found && found.format != named) {
+            std::cerr << "warning: " << command.inputPath << " is " << formatName(found.format)
+                      << ", not " << formatName(named) << "; decoding as " << formatName(named) << " anyway\n";
+            blob.color = Blob{}.color;
         }
-    } else if (found) {
-        blob.color = found.color;
+        blob.format = named;
+        blob.contentType = contentTypeFor(named);
+        return blob;
     }
 
+    if (found && named != Format::RAW && found.format != named) {
+        std::cerr << "warning: " << command.inputPath << " is " << formatName(found.format)
+                  << ", not " << formatName(named) << "; decoding as " << formatName(found.format) << '\n';
+    }
+    command.inputFormat = blob.format;
     return blob;
 }
 

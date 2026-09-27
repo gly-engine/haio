@@ -2,7 +2,9 @@
 set(BOOST_VERSION "1.91.0-1")
 set(BOOST_DIR "${CMAKE_SOURCE_DIR}/vendor/boost")
 set(BOOST_DOWNLOAD "https://github.com/boostorg/boost/releases/download/boost-${BOOST_VERSION}/boost-${BOOST_VERSION}-cmake.tar.xz")
-set(BOOST_INCLUDE_LIBRARIES url asio beast redis spirit CACHE STRING "" FORCE)
+# asio, beast and redis are library/platform/desktop's alone; spirit is the convert
+# grammar's. nothing else in haio should reach for boost
+set(BOOST_INCLUDE_LIBRARIES asio beast redis spirit CACHE STRING "" FORCE)
 haio_fetch(boost "${BOOST_DOWNLOAD}" "${BOOST_DIR}" CMakeLists.txt)
 add_subdirectory("${BOOST_DIR}" "${CMAKE_BINARY_DIR}/boost" EXCLUDE_FROM_ALL)
 
@@ -32,4 +34,4 @@ if(TARGET boost_redis)
     endif()
 endif()
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Boost::url Boost::beast Boost::redis)
+target_link_libraries(${PROJECT_NAME} PRIVATE Boost::beast Boost::redis)

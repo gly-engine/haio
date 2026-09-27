@@ -1,8 +1,7 @@
 #include <haio.hpp>
 #include <haio_string.hpp>
 
-#include <boost/url/encoding_opts.hpp>
-#include <boost/url/parse.hpp>
+#include <haio_url.hpp>
 
 #include <stdexcept>
 
@@ -83,16 +82,11 @@ std::unordered_map<std::string, std::string> parseQueryMap(std::string_view quer
     if (!query.empty() && query.front() == '?') query.remove_prefix(1);
     if (query.empty()) return out;
 
-    std::string target = "/?";
-    target.append(query);
+    const auto parsed = Url::parse("/?" + std::string(query));
+    if (!parsed) throw std::runtime_error("invalid query: " + std::string(query));
 
-    auto parsed = boost::urls::parse_origin_form(target);
-    if (!parsed) throw std::runtime_error("invalid query: " + parsed.error().message());
-
-    boost::urls::encoding_opts opts;
-    opts.space_as_plus = true;
-    for (const auto& param : parsed->params(opts)) {
-        if (!param.key.empty()) out[param.key] = param.has_value ? param.value : std::string{};
+    for (auto& [key, value] : parsed->params(true)) {
+        if (!key.empty()) out[key] = std::move(value);
     }
     return out;
 }

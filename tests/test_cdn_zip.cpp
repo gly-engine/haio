@@ -1,4 +1,4 @@
-#include <internal/bucket.hpp>
+#include <haio/internal/source/zip.hpp>
 
 #include <zlib.h>
 
@@ -8,7 +8,7 @@
 #include <vector>
 
 using namespace Haio;
-using namespace Haio::Cdn::Bucket;
+using namespace Haio::Source;
 
 namespace {
 

@@ -1,7 +1,7 @@
 #include <haio_cdn.hpp>
+#include <haio_source.hpp>
 
-#include <boost/url/parse.hpp>
-#include <boost/url/url.hpp>
+#include <haio_url.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -12,8 +12,6 @@
 #include <cstdlib>
 #include <initializer_list>
 #include <stdexcept>
-
-namespace urls = boost::urls;
 
 namespace {
 
@@ -39,104 +37,6 @@ unsigned short parsePort(const std::string& value) {
     } catch (const std::exception&) {
     }
     throw std::runtime_error("port must be a number between 1 and 65535, got: " + value);
-}
-
-/** file://relative keeps the authority as the first path segment, file:///absolute has none */
-std::filesystem::path fileRoot(const urls::url_view_base& url, const std::string& name) {
-    const auto host = std::string(url.host());
-    const auto path = std::string(url.path());
-
-    if (host.empty()) {
-        if (path.empty() || path == "/") {
-            throw std::runtime_error("file bucket \"" + name + "\" has no directory in its url");
-        }
-        return std::filesystem::path(path);
-    }
-    return std::filesystem::path(host + path);
-}
-
-std::string hostRegion(const std::string& host);
-
-/**
- * most explicit first: what the url says outright, then what an amazon host implies,
- * then the environment every other aws tool reads.
- *
- * it is settled once, while the config loads, so a bucket whose region nobody can
- * work out fails at startup. guessing it wrong would instead sign a request that
- * comes back as a plain 403, which says nothing about the region being the problem.
- */
-std::string regionOf(const urls::url_view_base& url) {
-    for (const auto param : url.params()) {
-        if (param.key == "region" && !param.value.empty()) return param.value;
-    }
-
-    if (const auto found = hostRegion(std::string(url.host())); !found.empty()) return found;
-
-    const char* fromEnv = std::getenv("AWS_DEFAULT_REGION");
-    return fromEnv ? fromEnv : std::string{};
-}
-
-/** s3.eu-west-1.amazonaws.com, and bucket.s3.eu-west-1.amazonaws.com, both name it */
-std::string hostRegion(const std::string& host) {
-    const auto marker = host.find(".s3.");
-    const auto from = marker != std::string::npos ? marker + 4
-                    : host.starts_with("s3.")     ? size_t{3}
-                                                  : std::string::npos;
-    if (from == std::string::npos) return {};
-
-    const auto rest = host.substr(from);
-    const auto dot = rest.find('.');
-    if (dot == std::string::npos) return {};
-
-    const auto candidate = rest.substr(0, dot);
-    return candidate == "amazonaws" ? std::string{} : candidate;
-}
-
-void applyUrl(Haio::Cdn::BucketConfig& bucket) {
-    if (bucket.url.empty()) {
-        throw std::runtime_error("bucket \"" + bucket.name + "\" has no url");
-    }
-
-    const auto parsed = urls::parse_uri_reference(bucket.url);
-    if (!parsed) {
-        throw std::runtime_error("bucket \"" + bucket.name + "\" has an invalid url: " + bucket.url);
-    }
-
-    bucket.scheme = std::string(parsed->scheme());
-    bucket.open = parsed->host() == "*";
-
-    if (bucket.scheme == "file") {
-        if (bucket.open) {
-            throw std::runtime_error("a file bucket cannot be open: " + bucket.url);
-        }
-        bucket.root = fileRoot(*parsed, bucket.name);
-        return;
-    }
-
-    if (bucket.scheme == "s3") {
-        // a signature is made for one host, so there is nothing sensible to sign for
-        // a bucket whose host arrives with the request
-        if (bucket.open) throw std::runtime_error("an s3 bucket cannot be open: " + bucket.url);
-
-        bucket.region = regionOf(*parsed);
-        if (bucket.region.empty()) {
-            throw std::runtime_error("cannot tell the region of s3 bucket \"" + bucket.name
-                                     + "\"; name it in the host, as in s3.eu-west-1.amazonaws.com, "
-                                       "or add ?region=<name> to its url, or set AWS_DEFAULT_REGION");
-        }
-        return;
-    }
-    if (bucket.scheme == "http" || bucket.scheme == "https") return;
-
-    // "//\*" carries no scheme on purpose: the request supplies it
-    if (bucket.scheme.empty()) {
-        if (!bucket.open) {
-            throw std::runtime_error("bucket \"" + bucket.name + "\" needs a scheme in its url: " + bucket.url);
-        }
-        return;
-    }
-
-    throw std::runtime_error("unsupported url scheme \"" + bucket.scheme + "\" in bucket \"" + bucket.name + "\"");
 }
 
 /**
@@ -172,10 +72,10 @@ size_t parseCount(const std::string& key, const std::string& value) {
 
 /** file://dir, redis://host, or nothing at all, which keeps entries in this process */
 void checkCacheUrl(const std::string& value) {
-    const auto parsed = urls::parse_uri_reference(value);
+    const auto parsed = Haio::Url::parse(value);
     if (!parsed) throw std::runtime_error("cache url is not a url: " + value);
 
-    const auto scheme = std::string(parsed->scheme());
+    const auto& scheme = parsed->scheme;
     if (scheme != "file" && scheme != "redis" && scheme != "rediss") {
         throw std::runtime_error("unsupported cache scheme \"" + scheme + "\"; it takes file, redis and rediss");
     }
@@ -276,11 +176,12 @@ Config parseConfig(std::string_view text) {
         else if (key == "access_key") current->accessKey = value;
         else if (key == "secret_key") current->secretKey = value;
         else if (key == "session_token") current->sessionToken = value;
+        else if (key == "region") current->region = value;
         else throw unknownKey("bucket \"" + current->name + "\"", key,
-                              {"url", "access_key", "secret_key", "session_token"});
+                              {"url", "region", "access_key", "secret_key", "session_token"});
     }
 
-    for (auto& [name, bucket] : config.buckets) applyUrl(bucket);
+    for (auto& [name, bucket] : config.buckets) Source::resolveOrigin(bucket);
     return config;
 }
 

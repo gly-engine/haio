@@ -1,3 +1,5 @@
+#include <haio/internal/platform/asio.hpp>
+
 #include <haio_cache.hpp>
 
 #include <boost/asio/as_tuple.hpp>
@@ -10,8 +12,8 @@
 // it: src.hpp exists for exactly that, and keeping it here means the library comes
 // and goes with the file that uses it
 #include <boost/redis/src.hpp>
-#include <boost/url/parse.hpp>
-#include <boost/url/url.hpp>
+
+#include <haio_url.hpp>
 
 #include <iostream>
 #include <stdexcept>
@@ -21,9 +23,18 @@
 
 namespace asio = boost::asio;
 namespace redis = boost::redis;
-namespace urls = boost::urls;
 
 namespace {
+
+/**
+ * one round trip, with the error handed back rather than thrown: a cache that cannot
+ * be reached is a miss, not a failure, and every caller below reads it that way.
+ */
+template <typename Reply>
+asio::awaitable<boost::system::error_code> exec(redis::connection& connection, const redis::request& request, Reply& reply) {
+    const auto [error, size] = co_await connection.async_exec(request, reply, asio::as_tuple(asio::use_awaitable));
+    co_return error;
+}
 
 /**
  * a shared redis, so several haio processes answer from one cache.
@@ -34,30 +45,30 @@ namespace {
  */
 class RedisStore final : public Haio::Cdn::CacheStore {
 public:
-    RedisStore(const std::string& url, std::chrono::seconds ttl, size_t maxUsage, asio::any_io_executor executor)
-        : ttl_(ttl), maxUsage_(maxUsage), connection_(std::make_shared<redis::connection>(executor)) {
-        const auto parsed = urls::parse_uri(url);
-        if (!parsed) throw std::runtime_error("redis cache url is not a url: " + url);
+    RedisStore(const std::string& url, std::chrono::seconds ttl, size_t maxUsage)
+        : ttl_(ttl), maxUsage_(maxUsage), connection_(std::make_shared<redis::connection>(Haio::Platform::Desktop::io().get_executor())) {
+        const auto parsed = Haio::Url::parse(url);
+        if (!parsed || parsed->scheme.empty()) throw std::runtime_error("redis cache url is not a url: " + url);
 
         redis::config config;
-        if (!parsed->host().empty()) config.addr.host = std::string(parsed->host());
-        if (parsed->has_port()) config.addr.port = std::string(parsed->port());
-        if (!parsed->userinfo().empty()) {
-            config.username = std::string(parsed->user());
-            config.password = std::string(parsed->password());
+        if (!parsed->host.empty()) config.addr.host = parsed->hostName();
+        if (!parsed->port.empty()) config.addr.port = parsed->port;
+        if (!parsed->userinfo.empty()) {
+            config.username = parsed->user();
+            config.password = parsed->password();
         }
         // redis://host:port/3 selects database 3, the way every other client reads it
-        if (const auto path = std::string(parsed->path()); path.size() > 1) {
+        if (const auto path = parsed->decodedPath(); path.size() > 1) {
             config.database_index = std::stoi(path.substr(1));
         }
-        config.use_ssl = parsed->scheme() == "rediss";
+        config.use_ssl = parsed->scheme == "rediss";
 
         connection_->async_run(config, asio::consign(asio::detached, connection_));
     }
 
     ~RedisStore() override { connection_->cancel(); }
 
-    asio::awaitable<std::optional<Haio::Cdn::CacheEntry>> get(const std::string& key) override {
+    Haio::Task<std::optional<Haio::Cdn::CacheEntry>> get(const std::string& key) override {
         // read, renew and touch the index in one round trip rather than three
         redis::request request;
         request.push("GET", prefixed(key));
@@ -65,7 +76,7 @@ public:
         request.push("ZADD", index(), std::to_string(stamp()), key);
 
         redis::response<std::optional<std::string>, redis::ignore_t, redis::ignore_t> reply;
-        const auto [error, size] = co_await connection_->async_exec(request, reply, asio::as_tuple(asio::use_awaitable));
+        const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, request, reply));
         if (error) {
             warnOnce(error.message());
             co_return std::nullopt;
@@ -78,7 +89,7 @@ public:
         co_return Haio::Cdn::decodeEntry({reinterpret_cast<const uint8_t*>(raw.data()), raw.size()});
     }
 
-    asio::awaitable<void> put(const std::string& key, const Haio::Cdn::CacheEntry& entry) override {
+    Haio::Task<void> put(const std::string& key, const Haio::Cdn::CacheEntry& entry) override {
         const auto raw = Haio::Cdn::encodeEntry(entry);
 
         redis::request request;
@@ -92,7 +103,7 @@ public:
 
         redis::response<redis::ignore_t, redis::ignore_t, redis::ignore_t,
                         redis::ignore_t, redis::ignore_t> reply;
-        const auto [error, size] = co_await connection_->async_exec(request, reply, asio::as_tuple(asio::use_awaitable));
+        const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, request, reply));
         if (error) {
             warnOnce(error.message());
             co_return;
@@ -133,12 +144,12 @@ private:
      * this is about being a decent tenant of a shared redis rather than about
      * correctness: redis has its own maxmemory, and that one is not ours to set.
      */
-    asio::awaitable<void> trim() {
+    Haio::Task<void> trim() {
         redis::request listing;
         listing.push("ZRANGE", index(), "0", "-1");
 
         redis::response<std::vector<std::string>> listed;
-        if (const auto [error, size] = co_await connection_->async_exec(listing, listed, asio::as_tuple(asio::use_awaitable)); error) {
+        if (const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, listing, listed)); error) {
             warnOnce(error.message());
             co_return;
         }
@@ -151,7 +162,7 @@ private:
         for (const auto& key : keys) measuring.push("EXISTS", prefixed(key));
 
         redis::generic_response present;
-        if (const auto [error, size] = co_await connection_->async_exec(measuring, present, asio::as_tuple(asio::use_awaitable)); error) {
+        if (const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, measuring, present)); error) {
             warnOnce(error.message());
             co_return;
         }
@@ -160,7 +171,7 @@ private:
         for (const auto& key : keys) weighing.push("HGET", sizes(), key);
 
         redis::generic_response weights;
-        if (const auto [error, size] = co_await connection_->async_exec(weighing, weights, asio::as_tuple(asio::use_awaitable)); error) {
+        if (const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, weighing, weights)); error) {
             warnOnce(error.message());
             co_return;
         }
@@ -204,7 +215,7 @@ private:
         if (!dropped) co_return;
 
         redis::generic_response ignored;
-        if (const auto [error, size] = co_await connection_->async_exec(dropping, ignored, asio::as_tuple(asio::use_awaitable)); error) {
+        if (const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, dropping, ignored)); error) {
             warnOnce(error.message());
         }
         co_return;
@@ -229,8 +240,8 @@ private:
 
 namespace Haio::Cdn {
 
-std::unique_ptr<CacheStore> makeRedisStore(std::string url, std::chrono::seconds ttl, size_t maxUsage, asio::any_io_executor executor) {
-    return std::make_unique<RedisStore>(url, ttl, maxUsage, std::move(executor));
+std::unique_ptr<CacheStore> makeRedisStore(std::string url, std::chrono::seconds ttl, size_t maxUsage) {
+    return std::make_unique<RedisStore>(url, ttl, maxUsage);
 }
 
 }

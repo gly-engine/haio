@@ -1,4 +1,5 @@
 #include <haio_cli.hpp>
+#include <haio_source.hpp>
 
 #include <stdexcept>
 
@@ -28,7 +29,7 @@ Pipeline buildPipeline(const Command& command) {
     }
 
     Pipeline pipeline;
-    pipeline |= Tokens::Source("file", command.inputPath);
+    pipeline |= Tokens::Source(Source::isRemoteUri(command.inputPath) ? "url" : "file", command.inputPath);
     pipeline |= Tokens::Decode(command.inputFormat);
 
     for (const auto& token : command.tokens) {

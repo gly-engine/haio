@@ -1,4 +1,4 @@
-#include <internal/bucket.hpp>
+#include <haio/internal/source/zip.hpp>
 #include <haio_util.hpp>
 
 #include <zlib.h>
@@ -42,7 +42,7 @@ std::optional<size_t> findEndOfDirectory(Bytes data) {
 
 }
 
-namespace Haio::Cdn::Bucket {
+namespace Haio::Source {
 
 /**
  * enough of the zip format to read one file out of an archive already in memory.

@@ -1,9 +1,7 @@
 #pragma once
 
 #include <haio_cache.hpp>
-
-#include <boost/asio/any_io_executor.hpp>
-#include <boost/asio/awaitable.hpp>
+#include <haio/internal/cdn/clients.hpp>
 
 #include <chrono>
 #include <map>
@@ -22,16 +20,13 @@ namespace Haio::Cdn::Detail {
  */
 class SingleFlight {
 public:
-    using Producer = std::function<boost::asio::awaitable<Result<CacheEntry>>()>;
-
-    explicit SingleFlight(boost::asio::any_io_executor executor);
+    using Producer = std::function<Task<Result<CacheEntry>>()>;
 
     /** runs the producer, or waits for whoever is already running it for this key */
-    boost::asio::awaitable<Result<CacheEntry>> run(const std::string& key, const Producer& produce);
+    Task<Result<CacheEntry>> run(const std::string& key, const Producer& produce);
 
 private:
     struct Pending;
-    boost::asio::any_io_executor executor_;
     std::map<std::string, std::shared_ptr<Pending>> inFlight_;
 };
 
@@ -53,10 +48,9 @@ private:
         std::chrono::steady_clock::time_point resets;
     };
 
-    static constexpr size_t clientsBeforePrune = 10000;
     size_t perWindow_;
     std::chrono::seconds window_;
-    std::map<std::string, Window> seen_;
+    ClientTable<Window> seen_;
 };
 
 }
