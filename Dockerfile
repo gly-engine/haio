@@ -1,7 +1,6 @@
 FROM debian:forky AS builder
 
-RUN apt update && apt install -y
-RUN apt install -y gcc-16 g++-16 cmake make binutils ca-certificates
+RUN apt update && apt install -y gcc-16 g++-16 cmake make binutils ca-certificates
 RUN mkdir -p /app/docs
 
 COPY ./CMakeLists.txt /app/CMakeLists.txt
@@ -25,5 +24,7 @@ FROM scratch
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /app/build/bin/haio /bin/haio
+
+WORKDIR /workspace
 
 ENTRYPOINT ["/bin/haio"]
