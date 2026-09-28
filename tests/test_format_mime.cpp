@@ -28,11 +28,6 @@ auto main() -> int {
             check(mime == "application/octet-stream", "raw has no mime type of its own");
             continue;
         }
-        // a canvas such as xc: is drawn, not sent or received, so it has none either
-        if (Haio::readsOf(format).draws) {
-            check(mime == "application/octet-stream", name + " is drawn and has no mime type");
-            continue;
-        }
         check(mime != "application/octet-stream", name + " names a mime type");
         check(Haio::formatFromContentType(mime) == format, name + " resolves back from what it sends");
     }

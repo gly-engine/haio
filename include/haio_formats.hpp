@@ -97,13 +97,6 @@ enum class Format {
      * @ext gif
      */
     GIF,
-
-    /**
-     * not a file but a canvas of one colour, "xc:white", which is what imagemagick
-     * calls a generator and treats as a coder like any other. it has no bytes to
-     * recognise and nothing to write, only a decode that draws.
-     */
-    XC,
 };
 
 /**
@@ -192,6 +185,26 @@ inline constexpr ColorAlias colorAliases[] = {
     {"pal8", Color::PALETTE},
     // the p is for planar, which is the only way haio keeps it
     {"yuv420p", Color::YUV420},
+};
+
+
+/**
+ * what paints a picture out of nothing, the way a Format reads one out of bytes:
+ * "xc:white", "gradient:red-blue". imagemagick calls these generators and files them
+ * with its coders; they are kept apart here because they have no bytes to recognise
+ * and nothing to write, and making them a Format meant pretending otherwise.
+ *
+ * the name on the command line is the enumerator in lower case with a dash between
+ * its words, so RadialGradient is radial-gradient. any other name a brush answers to
+ * is declared with it, in include/haio/codecs/generators/.
+ */
+enum class Brush {
+    Xc,               /**< one colour */
+    Null,             /**< nothing, transparent */
+    Gradient,         /**< a linear blend, top to bottom unless told otherwise */
+    RadialGradient,   /**< the same blend from the middle out */
+    Plasma,           /**< a gradient broken up by noise */
+    Hald,             /**< an identity colour lookup table */
 };
 
 }

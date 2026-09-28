@@ -51,16 +51,14 @@ struct Error {
 };
 
 /**
- * one source: a file, a url, stdin, or something a codec draws such as xc:white.
- * each one puts a picture on the stack, in the order they were written.
+ * one source that is read: a file, a url, or stdin. each one puts a picture on the
+ * stack, in the order they were written; a brush such as xc:white paints one too, but
+ * reads nothing and so is a Generate step rather than an Input.
  */
 struct Input {
     std::string path;
     std::string formatName;
     Format format = Format::RAW;
-
-    /** drawn by its codec rather than read, and the path is what to draw */
-    bool drawn = false;
 
     /** what its codec reads, as the options before it wrote them */
     Settings settings;

@@ -24,6 +24,14 @@ Token Source(std::string bucket, std::string path) {
     return token;
 }
 
+Token Generate(Brush brush, std::string words, Settings settings) {
+    Token token{TokenKind::Generate};
+    token.brush = brush;
+    token.expression = std::move(words);
+    token.settings = std::move(settings);
+    return token;
+}
+
 Token DecodeAuto() {
     return Token{TokenKind::DecodeAuto};
 }

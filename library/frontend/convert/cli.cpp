@@ -55,13 +55,17 @@ void printUsage() {
 
     lines.emplace_back("\ncodecs:", "");
     for (const auto& codec : Grammar::codecs) {
-        if (!codec.reads->decode.empty()) {
-            withOptions(std::string(codec.format) + (codec.reads->draws ? ":colour" : " input"),
-                        codec.reads->draws ? "drawn, not read" : "reading", codec.reads->decode);
-        }
+        if (!codec.reads->decode.empty()) withOptions(std::string(codec.format) + " input", "reading", codec.reads->decode);
         if (!codec.reads->encode.empty()) {
             withOptions(std::string(codec.format) + " output", "writing", codec.reads->encode);
         }
+    }
+
+    // the brushes, which paint a picture where a file would be read
+    lines.emplace_back("\nbrushes:", "");
+    for (const auto& brush : Grammar::brushes) {
+        auto line = std::string(brush.name) + ":" + std::string(brush.draws->takes);
+        withOptions(std::move(line), "painted, not read", brush.draws->options);
     }
 
     size_t width = 0;
@@ -163,12 +167,6 @@ Blob readInput(const std::string& path) {
  * honoured, and a name that turned out wrong, which is worth a warning.
  */
 Blob readInputBlob(Input& input) {
-    // what to draw rather than where to read it from, so there is nothing to open
-    if (input.drawn) {
-        return Blob{input.format, Blob{}.color, std::string(contentTypeFor(input.format)), input.path,
-                    std::vector<uint8_t>(input.path.begin(), input.path.end())};
-    }
-
     auto blob = readInput(input.path);
     const auto named = input.format;
     // only what the bytes themselves say is worth contradicting a name over

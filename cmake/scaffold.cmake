@@ -3,11 +3,12 @@ set(HAIO_FORMATS_HEADER "${CMAKE_SOURCE_DIR}/include/haio_formats.hpp")
 
 add_executable(gen_scaffold "${CMAKE_SOURCE_DIR}/scripts/gen_scaffold.cpp")
 
-# codecs: every Detect/Decode/Encode/Move/Convert a codec source specialises, and
-# the settings each one reads, declared in include/haio/codecs/<name>.hpp
+# codecs: every Detect/Decode/Encode/Move/Convert/Generate a codec source specialises,
+# and the settings each one reads, declared in include/haio/codecs/ and, for the
+# brushes, include/haio/codecs/generators/
 file(GLOB_RECURSE HAIO_CODEC_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/library/backend/codecs/*.cpp")
 file(GLOB HAIO_CODEC_HEADERS CONFIGURE_DEPENDS RELATIVE "${CMAKE_SOURCE_DIR}/include"
-     "${CMAKE_SOURCE_DIR}/include/haio/codecs/*.hpp")
+     "${CMAKE_SOURCE_DIR}/include/haio/codecs/*.hpp" "${CMAKE_SOURCE_DIR}/include/haio/codecs/generators/*.hpp")
 set(HAIO_CODEC_INCLUDES --include haio_codec.hpp)
 set(HAIO_CODEC_HEADERS_ABSOLUTE "")
 foreach(header IN LISTS HAIO_CODEC_HEADERS)

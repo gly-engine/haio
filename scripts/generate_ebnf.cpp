@@ -137,10 +137,13 @@ void printOptions() {
 
     // the codecs' own, which the input or the output takes when it is of that format
     for (const auto& codec : Grammar::codecs) {
-        const auto input = std::string(codec.format) + (codec.reads->draws ? ":" : " input");
+        const auto input = std::string(codec.format) + " input";
         const auto output = std::string(codec.format) + " output";
         for (const auto& option : codec.reads->decode) row(input, option);
         for (const auto& option : codec.reads->encode) row(output, option);
+    }
+    for (const auto& brush : Grammar::brushes) {
+        for (const auto& option : brush.draws->options) row(std::string(brush.name) + ":", option);
     }
     std::cout << '\n';
 }
@@ -155,7 +158,16 @@ int main() {
     append(Grammar::structureRules, command);
     command.push_back({"transform", transformAlternation(false)});
     command.push_back({"merge", transformAlternation(true)});
-    command.push_back({"source", "{ codec-setting } , file-spec"});
+    command.push_back({"source", "{ codec-setting } , ( drawn | file-spec )"});
+
+    // every codec that draws rather than reads, and what it takes after its colon
+    std::vector<std::string> drawn;
+    for (const auto& brush : Grammar::brushes) {
+        auto piece = "\"" + std::string(brush.name) + ":\"";
+        if (!brush.draws->takes.empty()) piece += " , [ " + std::string(brush.draws->takes) + " ]";
+        drawn.push_back(std::move(piece));
+    }
+    command.push_back({"drawn", alternation(drawn)});
     command.push_back({"output", "{ output-option | codec-setting } , file-spec"});
     command.push_back({"output-option", alternation(optionsOf(Grammar::output))});
     command.push_back({"codec-setting", "\"-define\" , define-spec | codec-option"});

@@ -28,8 +28,8 @@ namespace {
 constexpr std::string_view returnTypes[] = {"bool ", "Result<Blob> ", "Result<void> ", "Result<Image<"};
 
 /**
- * "Decode<Format::PNG, ..." or "Crop<Color::RGBA8888>(": a name, specialised on one
- * of the two enums. any name will do, so a new transform needs no line here.
+ * "Decode<Format::PNG, ...", "Crop<Color::RGBA8888>(" or "Generate<Brush::Xc, ...":
+ * a name, specialised on one of the enums. any name will do, so a new transform needs no line here.
  */
 bool isEntryPoint(std::string_view named) {
     const auto open = named.find('<');
@@ -38,7 +38,7 @@ bool isEntryPoint(std::string_view named) {
         return false;
     }
     const auto rest = named.substr(open + 1);
-    return rest.starts_with("Format::") || rest.starts_with("Color::");
+    return rest.starts_with("Format::") || rest.starts_with("Color::") || rest.starts_with("Brush::");
 }
 
 /** "Result<Image> Decode<Format::PNG>(const Image& i) {" -> the same line as a declaration */

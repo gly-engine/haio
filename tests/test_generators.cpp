@@ -1,0 +1,96 @@
+#include <haio.hpp>
+
+#include <iostream>
+#include <string>
+
+namespace {
+
+using namespace Haio;
+
+int failures = 0;
+
+void check(bool ok, const std::string& what) {
+    if (ok) return;
+    std::cerr << "fail: " << what << '\n';
+    failures++;
+}
+
+/** a picture painted by a brush, as the command line would ask for it */
+Image<Color::RGBA8888> draw(Brush brush, std::string_view words, Settings settings = {}) {
+    auto native = GenerateNative(brush, words, settings);
+    check(native.has_value(), std::string(brushName(brush)) + ":" + std::string(words) + " paints");
+    if (!native) return {};
+    auto rgba = Convert(*std::move(native), Color::RGBA8888);
+    return rgba ? Image<Color::RGBA8888>{rgba->width, rgba->height, std::move(rgba->data)} : Image<Color::RGBA8888>{};
+}
+
+uint32_t at(const Image<Color::RGBA8888>& image, int x, int y) {
+    const auto* p = image.data.data() + (static_cast<size_t>(y) * static_cast<size_t>(image.width) + static_cast<size_t>(x)) * 4;
+    return (uint32_t{p[3]} << 24) | (uint32_t{p[0]} << 16) | (uint32_t{p[1]} << 8) | p[2];
+}
+
+Settings sized(std::string size) { return {Setting{"size", std::move(size)}}; }
+
+}
+
+/**
+ * every value below is what imagemagick 6.9.12 draws for the same line, read off
+ * `convert ... -depth 8 txt:-`. the generators are meant to be the same picture pixel
+ * for pixel, so these are exact rather than close.
+ */
+auto main() -> int {
+    // top to bottom, rounded the way its sixteen bit quantum rounds
+    const auto linear = draw(Brush::Gradient, "red-blue", sized("1x5"));
+    check(at(linear, 0, 0) == 0xFFFF0000 && at(linear, 0, 1) == 0xFFBF003F && at(linear, 0, 2) == 0xFF7F007F
+              && at(linear, 0, 4) == 0xFF0000FF, "gradient:red-blue runs top to bottom");
+
+    const auto odd = draw(Brush::Gradient, "#123456-#fedcba", sized("1x6"));
+    check(at(odd, 0, 1) == 0xFF41556A, "a blend lands where imagemagick rounds it");
+
+    // one colour fades to white when it is dark and to black when it is bright
+    check(at(draw(Brush::Gradient, "blue", sized("1x3")), 0, 2) == 0xFFFFFFFF, "gradient:blue fades to white");
+    check(at(draw(Brush::Gradient, "#ff8800", sized("1x3")), 0, 2) == 0xFF000000, "gradient:#ff8800 fades to black");
+
+    // a single row runs across rather than being one colour
+    check(at(draw(Brush::Gradient, "", sized("5x1")), 1, 0) == 0xFFBFBFBF, "a 5x1 gradient runs across");
+
+    // transparency blends apart from the colours, which are weighted by it
+    const auto clear = draw(Brush::Gradient, "#ff000080-#0000ff", sized("1x5"));
+    check(at(clear, 0, 1) == 0xA0990065, "a half transparent end is blended as imagemagick blends it");
+
+    const auto northEast = draw(Brush::Gradient, "black-white", {Setting{"size", "8x5"}, Setting{"gradient:direction", "NorthEast"}});
+    check(at(northEast, 0, 0) == 0xFF3E3E3E && at(northEast, 7, 0) == 0xFFFFFFFF && at(northEast, 0, 4) == 0xFF000000,
+          "northeast runs corner to corner");
+
+    const auto radial = draw(Brush::RadialGradient, "", sized("7x3"));
+    check(at(radial, 3, 1) == 0xFFFFFFFF && at(radial, 2, 1) == 0xFFAAAAAA && at(radial, 1, 0) == 0xFF404040
+              && at(radial, 0, 1) == 0xFF000000, "radial-gradient reaches the larger half");
+
+    const auto diagonal = draw(Brush::RadialGradient, "", {Setting{"size", "7x3"}, Setting{"gradient:extent", "Diagonal"}});
+    check(at(diagonal, 0, 1) == 0xFF0D0D0D, "a diagonal extent reaches the corners");
+
+    const auto hald = draw(Brush::Hald, "2");
+    check(hald.width == 8 && hald.height == 8 && at(hald, 1, 0) == 0xFF550000 && at(hald, 4, 0) == 0xFF005500,
+          "hald:2 is 8x8, red fastest");
+
+    const auto nothing = draw(Brush::Null, "", sized("3x2"));
+    check(nothing.width == 3 && at(nothing, 2, 1) == 0x00000000, "null: is transparent at any size");
+
+    // the noise is haio's own, so all that can be held to is that a seed repeats itself
+    const Settings seeded{Setting{"size", "33x17"}, Setting{"seed", "7"}};
+    check(draw(Brush::Plasma, "", seeded).data == draw(Brush::Plasma, "", seeded).data, "a seed draws the same plasma twice");
+    check(draw(Brush::Plasma, "fractal", seeded).data != draw(Brush::Plasma, "", seeded).data,
+          "plasma:fractal starts from other corners");
+
+    // the names come off the enumerators, a dash between words, and the aliases off the declarations
+    check(brushName(Brush::RadialGradient) == "radial-gradient" && brushNamed("radial-gradient") == Brush::RadialGradient,
+          "RadialGradient is spelled radial-gradient");
+    check(brushNamed("null") == Brush::Null && brushNamed("Hald") == Brush::Hald, "a brush is named in any case");
+    check(brushNamed("canvas") == Brush::Xc && brushNamed("fractal") == Brush::Plasma, "canvas and fractal are aliases");
+    check(!brushNamed("radialgradient") && !brushNamed("png"), "and nothing else is a brush");
+    static_assert(Codecs::Generatable<Brush::Hald, Color::RGBA8888>, "a brush is declared for the colour it paints in");
+    static_assert(!Codecs::Generatable<Brush::Hald, Color::RGB565>, "and only for that one");
+
+    if (failures == 0) std::cout << "generators: ok\n";
+    return failures == 0 ? 0 : 1;
+}

@@ -17,6 +17,7 @@ namespace Haio {
 
 enum class TokenKind {
     Source,
+    Generate,   /**< a picture painted by a brush, which reads no input */
     DecodeAuto,
     Decode,
     Crop,
@@ -60,10 +61,13 @@ struct Token {
     /** Composite only: where the second picture goes on the first; the offset is rect.x and rect.y */
     Gravity gravity = Gravity::NorthWest;
 
+    /** Generate only: which brush; what it paints is in expression and its options in settings */
+    Brush brush = Brush::Xc;
+
     /** Fx only: the expression, read and not run */
     std::string expression;
 
-    /** Decode and Encode: what the codec reads, as -quality or -define wrote it */
+    /** Decode, Encode and Generate: what the codec reads, as -quality or -define wrote it */
     Settings settings;
 };
 
@@ -79,6 +83,7 @@ private:
 
 namespace Tokens {
 Token Source(std::string bucket, std::string path);
+Token Generate(Brush brush, std::string words, Settings settings = {});
 Token DecodeAuto();
 Token Decode(Format format, Settings settings = {});
 Token Crop(Rect rect);

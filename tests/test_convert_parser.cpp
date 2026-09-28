@@ -11,7 +11,9 @@ std::vector<Haio::Token> transformsOf(const Haio::Cli::Command& cmd) {
     std::vector<Haio::Token> out;
     for (const auto& token : cmd.steps) {
         using enum Haio::TokenKind;
-        if (token.kind != Source && token.kind != Decode && token.kind != Open && token.kind != Close) out.push_back(token);
+        if (token.kind != Source && token.kind != Decode && token.kind != Generate && token.kind != Open && token.kind != Close) {
+            out.push_back(token);
+        }
     }
     return out;
 }
@@ -74,16 +76,18 @@ int main() {
         assert(args[6] == ")");
     }
 
-    // -size is an option like any other, and the codec that draws xc: is what takes it
+    // -size is an option like any other, and the brush xc: is what takes it; a brush
+    // paints rather than reads, so it is a step and never an input
     {
         auto cmd = parse({"convert", "-size", "512x512", "xc:white", "-fx", "j/h", "out.png"});
         assert(!cmd.error);
-        assert(cmd.inputs[0].drawn);
-        assert(cmd.inputs[0].format == Haio::Format::XC);
-        assert(cmd.inputs[0].path == "white");
-        assert(cmd.inputs[0].settings.size() == 1);
-        assert(cmd.inputs[0].settings[0].name == "size");
-        assert(cmd.inputs[0].settings[0].value == "512x512");
+        assert(cmd.inputs.empty());
+        assert(cmd.steps[0].kind == Generate);
+        assert(cmd.steps[0].brush == Haio::Brush::Xc);
+        assert(cmd.steps[0].expression == "white");
+        assert(cmd.steps[0].settings.size() == 1);
+        assert(cmd.steps[0].settings[0].name == "size");
+        assert(cmd.steps[0].settings[0].value == "512x512");
         assert(transformsOf(cmd)[0].kind == Fx);
         assert(transformsOf(cmd)[0].expression == "j/h");
         assert(cmd.outputFormat == Haio::Format::PNG);
@@ -92,8 +96,25 @@ int main() {
     {
         auto cmd = parse({"convert", "xc:red", "out.png"});
         assert(!cmd.error);
-        assert(cmd.inputs[0].drawn);
-        assert(cmd.inputs[0].settings.empty());
+        assert(cmd.steps[0].kind == Generate);
+        assert(cmd.steps[0].settings.empty());
+    }
+    // a brush answers to its own name, in any case, and to the others it declared
+    {
+        auto cmd = parse({"convert", "-size", "2x2", "RADIAL-GRADIENT:red-blue", "(", "canvas:red", ")", "-composite",
+                          "(", "fractal:", ")", "-composite", "out.png"});
+        assert(!cmd.error);
+        std::vector<Haio::Brush> painted;
+        for (const auto& token : cmd.steps) {
+            if (token.kind == Generate) painted.push_back(token.brush);
+        }
+        assert((painted == std::vector{Haio::Brush::RadialGradient, Haio::Brush::Xc, Haio::Brush::Plasma}));
+    }
+    // and takes the options it declared and nothing else
+    {
+        auto cmd = parse({"convert", "-size", "8x8", "hald:2", "out.png"});
+        assert(cmd.error);
+        assert(cmd.error.message == "unrecognized option `-size' for hald");
     }
 
     // the output takes what its codec declared, and only that
@@ -265,7 +286,7 @@ int main() {
 
     /**
      * "--size" used to be a spelling of -resize. two dashes are one now, so it is
-     * -size, which only a codec that draws takes.
+     * -size, which only a brush takes.
      */
     {
         auto cmd = parse({"convert", "input.png", "--size", "8x9", "out.png"});
@@ -316,10 +337,9 @@ int main() {
         auto cmd = Haio::Cli::parseCommandLine(
             R"(convert xc:blue \( -size 1x1 xc:red \) -geometry +0+0 -composite output.png)");
         assert(!cmd.error);
-        assert(cmd.inputs.size() == 2);
-        assert(cmd.inputs[1].drawn);
-        assert(cmd.inputs[1].path == "red");
-        assert(cmd.inputs[1].settings[0].value == "1x1");
+        assert(cmd.inputs.empty());
+        assert(cmd.steps[2].kind == Generate && cmd.steps[2].expression == "red");
+        assert(cmd.steps[2].settings[0].value == "1x1");
         assert(transformsOf(cmd).size() == 1);
         assert(transformsOf(cmd)[0].kind == Composite);
         assert(transformsOf(cmd)[0].gravity == Haio::Gravity::NorthWest);

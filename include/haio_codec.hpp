@@ -5,6 +5,7 @@
 #include "haio_object.hpp"
 #include "haio/stage.hpp"
 
+#include <array>
 #include <charconv>
 #include <expected>
 #include <meta>
@@ -194,6 +195,13 @@ template <Format F, Color P> Result<Image<P>> Decode(const Blob&, const Settings
 template <Format F, Color P> Result<Blob>     Encode(Image<P>, const Settings&)    = delete;
 
 /**
+ * a picture painted out of nothing by a Brush, in the colour it is painted in: the
+ * words are what came after its colon on the command line, "red-blue" for
+ * "gradient:red-blue", and the settings its options, -size among them.
+ */
+template <Brush B, Color P> Result<Image<P>> Generate(std::string_view words, const Settings&) = delete;
+
+/**
  * @name Convert
  * @{
  */
@@ -225,6 +233,12 @@ template <Color From, Color To> Result<void> Move(Bytes src, std::span<uint8_t> 
  * @defgroup decode Decode
  * every pair this build can read into pixels. a format may be recognised here and
  * still be missing from @ref decode, which is how haio names a file it cannot open.
+ */
+
+/**
+ * @defgroup generate Generate
+ * every brush this build can paint with, and the colours it paints in. a brush reads
+ * no bytes, which is what keeps it out of @ref decode.
  */
 
 /**
@@ -271,6 +285,13 @@ template <Format F, Color P> concept EncodesPlain    = requires (Image<P> i) { {
 template <Format F, Color P> concept EncodesSettings = requires (Image<P> i, const Settings& s) { { Encode<F, P>(std::move(i), s) } -> std::same_as<Result<Blob>>; };
 template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P>;
 /**
+ * @ingroup generate
+ * can this brush paint in this colour, asked of the pair rather than answered by hand.
+ */
+template <Brush B, Color P> concept Generatable = requires (std::string_view w, const Settings& s) {
+    { Generate<B, P>(w, s) } -> std::same_as<Result<Image<P>>>;
+};
+/**
  * @ingroup move
  * is there a loop from one colour to the other, asked of the pair rather than answered by hand.
  */
@@ -308,16 +329,23 @@ Result<Blob> encode(Image<P> image, const Settings& settings) {
 struct Reads {
     std::span<const Stages::Option> decode = {};
     std::span<const Stages::Option> encode = {};
-
-    /**
-     * the value after the prefix is what to draw, not a file to read: "xc:white" is a
-     * canvas, the way imagemagick's generators are coders like any other.
-     */
-    bool draws = false;
 };
 
-// "= Reads{}" rather than "{}": gcc 16 crashes on the braces alone
 template <Format F> inline constexpr Reads reads = Reads{};
+
+/**
+ * what a brush takes on the command line, declared beside it in
+ * include/haio/codecs/generators/: its options, what the words after its colon are,
+ * and any other name it answers to, as xc does to canvas.
+ */
+struct Draws {
+    std::span<const Stages::Option> options = {};
+    std::string_view takes = {};
+    std::array<std::string_view, 2> aliases = {};
+};
+
+// "= Draws{}" for the same reason as reads above
+template <Brush B> inline constexpr Draws draws = Draws{};
 
 }
 
@@ -347,6 +375,23 @@ template <Format F> inline constexpr Reads reads = Reads{};
 
 #define HAIO_FOR_EACH_COLOR(e) \
     template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^Haio::Color)))
+
+#define HAIO_FOR_EACH_BRUSH(e) \
+    template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^Haio::Brush)))
+
+/** the enumerator is RadialGradient, the name people type is radial-gradient */
+consteval std::string_view kebabOf(std::meta::info enumerator) {
+    std::string out;
+    for (const char c : std::meta::identifier_of(enumerator)) {
+        if (c >= 'A' && c <= 'Z') {
+            if (!out.empty()) out += '-';
+            out += static_cast<char>(c - 'A' + 'a');
+        } else {
+            out += c;
+        }
+    }
+    return std::define_static_string(out);
+}
 
 /** the enumerator is PNG, the name people type is png */
 consteval std::string_view lowerOf(std::meta::info enumerator) {

@@ -116,6 +116,13 @@ struct CodecReads {
     const Codecs::Reads* reads = nullptr;
 };
 
+/** a brush, the name it is written as, and what it takes */
+struct BrushDraws {
+    Brush brush = Brush::Xc;
+    std::string_view name;
+    const Codecs::Draws* draws = nullptr;
+};
+
 namespace Detail {
 
 template <Format F>
@@ -127,6 +134,10 @@ consteval size_t readingCodecs() {
         if (readsAnything<std::meta::extract<Format>(e)>) count++;
     }
     return count;
+}
+
+consteval size_t brushCount() {
+    return std::meta::enumerators_of(^^Brush).size();
 }
 
 }
@@ -141,6 +152,25 @@ inline constexpr auto codecs = [] {
     }
     return out;
 }();
+
+/** every brush, straight off the Brush enum, whatever it takes */
+inline constexpr auto brushes = [] {
+    std::array<BrushDraws, Detail::brushCount()> out{};
+    size_t at = 0;
+    HAIO_FOR_EACH_BRUSH(e) {
+        constexpr Brush brush = std::meta::extract<Brush>(e);
+        out[at++] = BrushDraws{brush, kebabOf(e), &Codecs::draws<brush>};
+    }
+    return out;
+}();
+
+/** the options a brush named at runtime takes */
+constexpr std::span<const Stages::Option> optionsOf(Brush brush) {
+    for (const auto& one : brushes) {
+        if (one.brush == brush) return one.draws->options;
+    }
+    return {};
+}
 
 /** how the shell's words become the parser's, which boost.spirit x3 does */
 inline constexpr std::array lexerRules = {
@@ -190,7 +220,8 @@ inline constexpr std::array notes = {
     Note{"`png:-` and `ppm:-` use stdin/stdout with an explicit format."},
     Note{"an unknown prefix such as `foo:bar.png` is parsed as a normal path."},
     Note{"the input and the output also take the options their codec declares, and `-define` for the ones spelled with a colon; the table above lists them."},
-    Note{"a canvas such as `xc:white` is a codec that draws rather than reads, so `-size` is one of its options."},
+    Note{"a canvas such as `xc:white` is painted by a brush rather than read by a codec, so `-size` is one of its options; `canvas:` is `xc:` and `fractal:` is `plasma:` under another name, as they are for imagemagick."},
+    Note{"`gradient:` and `radial-gradient:` draw the same pixels imagemagick 6 does, `-define gradient:*` included, except where imagemagick 6 slips: south by -define measured against the width, and a start pixel in the last column taking its neighbour's colour. `plasma:` is haio's own noise, so a `-seed` repeats haio's picture rather than imagemagick's."},
     Note{"every source puts a picture on a stack, the way imagemagick keeps a list: a file, an http url, `-` for stdin, or a canvas such as `xc:white`. the last word is always the output."},
     Note{"a transform changes the picture on top of the stack, the one made last; imagemagick would change them all. a merge such as `-composite` wants exactly two in its parenthesis and leaves one."},
     Note{"a parenthesis only scopes the stack: what is inside sees only the pictures made inside, and they join the stack around it at the `)`. options do not cross it."},

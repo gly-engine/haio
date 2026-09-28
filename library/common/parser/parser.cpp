@@ -74,7 +74,7 @@ public:
             return std::move(command_);
         }
         if (scopes_.size() > 1) return fail("unbalanced parenthesis", "(");
-        if (command_.inputs.empty()) return fail("no images defined");
+        if (sources_ == 0) return fail("no images defined");
         if (!hasOutput_) return fail("missing an image filename", words_.back().text);
         return std::move(command_);
     }
@@ -85,6 +85,9 @@ private:
     Parsed command_;
     std::vector<Pending> pending_;
     bool hasOutput_ = false;
+
+    /** every source so far, read or painted */
+    size_t sources_ = 0;
 
     /**
      * how many pictures each open parenthesis holds, the line itself first.
@@ -134,6 +137,9 @@ private:
         }
         for (const auto& codec : Grammar::codecs) {
             if (in(codec.reads->decode) || in(codec.reads->encode)) return true;
+        }
+        for (const auto& brush : Grammar::brushes) {
+            if (in(brush.draws->options)) return true;
         }
         return false;
     }
@@ -336,7 +342,7 @@ private:
      * imagemagick would ignore it, because it was written to change something.
      */
     std::optional<Settings> settingsOf(const std::vector<Stages::Taken>& taken, std::span<const Stages::Option> reads,
-                                       Format format, std::string_view spelled) {
+                                       std::string_view context) {
         Settings out;
         for (const auto& one : taken) {
             if (one.option->spellings[0] != Grammar::define.spellings[0]) {
@@ -353,7 +359,7 @@ private:
                 return o.spellings[0].find(':') != std::string_view::npos && o.spellings[0] == key;
             });
             if (declared == reads.end()) {
-                refuseWhole("unrecognized define " + Stages::quoted(one.value) + " for " + std::string(formatName(format)),
+                refuseWhole("unrecognized define " + Stages::quoted(one.value) + " for " + std::string(context),
                             one.value);
                 return std::nullopt;
             }
@@ -364,13 +370,15 @@ private:
             // each key once: -define may repeat, but one key said twice would leave the
             // codec to pick which of the two was meant
             if (settingNamed(out, key)) {
-                refuseWhole("define given twice " + Stages::quoted(one.value) + " for " + std::string(formatName(format)),
+                refuseWhole("define given twice " + Stages::quoted(one.value) + " for " + std::string(context),
                             one.value);
                 return std::nullopt;
             }
             const auto value = one.value.substr(equals + 1);
-            if (Stages::refusal(*declared, value)) {
-                refuseWhole("invalid argument for option `-define': " + one.value, one.value);
+            if (const auto why = Stages::refusal(*declared, value)) {
+                // a name out of a list says which list, as it does for any other option
+                const bool listed = declared->shape == Stages::Shape::Name && !declared->called.empty();
+                refuseWhole(listed ? *why : "invalid argument for option `-define': " + one.value, one.value);
                 return std::nullopt;
             }
             out.push_back(Setting{std::string(key), value});
@@ -381,43 +389,58 @@ private:
     /**
      * a source, which puts one picture on the stack.
      *
-     * every source is a generator of sorts: "xc:white" is drawn by its codec, a path
-     * names a file on this machine and an http url one somewhere else.
+     * a prefix that names a brush is painted rather than read -- "xc:white",
+     * "gradient:red-blue" -- and takes that brush's options. anything else is a file:
+     * a path on this machine, an http url, or "-", maybe with a format written in
+     * front of it.
      */
     bool source(std::string_view word) {
+        const auto prefixed = prefixOf(word);
+        if (prefixed) {
+            if (const auto brush = brushNamed(prefixed->prefix)) return paint(*brush, prefixed->value, word);
+        }
+
         Input input;
         input.path = std::string(word);
-
-        const auto prefixed = prefixOf(word);
         if (prefixed && knownFormat(prefixed->prefix)) {
-            const auto format = *knownFormat(prefixed->prefix);
-            if (prefixed->value.empty() && !readsOf(format).draws) {
-                return refuse("missing an image filename", std::string(word));
-            }
+            if (prefixed->value.empty()) return refuse("missing an image filename", std::string(word));
             input.path = prefixed->value;
             input.formatName = prefixed->prefix;
-            input.format = format;
+            input.format = *knownFormat(prefixed->prefix);
         }
         if (input.formatName.empty()) input.format = formatFromPathOrRaw(input.path);
 
         const auto& reads = readsOf(input.format);
-        input.drawn = reads.draws;
-
         const auto codec = codecStage(Grammar::input, reads.decode);
         const auto taken = take(codec.stage, contextOf(input.format, word), word);
         if (!taken) return false;
 
-        auto settings = settingsOf(*taken, reads.decode, input.format, word);
+        auto settings = settingsOf(*taken, reads.decode, contextOf(input.format, word));
         if (!settings) return false;
         input.settings = *std::move(settings);
 
-        command_.steps.push_back(Tokens::Source(input.drawn                        ? "drawn"
-                                                : Source::isRemoteUri(input.path) ? "url"
-                                                                                  : "file",
-                                                input.path));
+        command_.steps.push_back(Tokens::Source(Source::isRemoteUri(input.path) ? "url" : "file", input.path));
         command_.steps.push_back(Tokens::Decode(input.format, input.settings));
         command_.inputs.push_back(std::move(input));
         scopes_.back()++;
+        sources_++;
+        return true;
+    }
+
+    /** a picture a brush paints, which is a source like any other and reads no input */
+    bool paint(Brush brush, std::string_view words, std::string_view word) {
+        const auto options = Grammar::optionsOf(brush);
+        const auto context = std::string(brushName(brush));
+        const auto codec = codecStage(Grammar::input, options);
+        const auto taken = take(codec.stage, context, word);
+        if (!taken) return false;
+
+        auto settings = settingsOf(*taken, options, context);
+        if (!settings) return false;
+
+        command_.steps.push_back(Tokens::Generate(brush, std::string(words), *std::move(settings)));
+        scopes_.back()++;
+        sources_++;
         return true;
     }
 
@@ -477,7 +500,7 @@ private:
             command_.outputColorName = color->value;
         }
 
-        auto settings = settingsOf(*taken, reads.encode, command_.outputFormat, word);
+        auto settings = settingsOf(*taken, reads.encode, contextOf(command_.outputFormat, word));
         if (!settings) return false;
         command_.outputSettings = *std::move(settings);
 

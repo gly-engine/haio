@@ -81,6 +81,28 @@ constexpr const Codecs::Reads& readsOf(Format wanted) {
     return Codecs::reads<Format::RAW>;
 }
 
+constexpr std::string_view brushName(Brush wanted) {
+    HAIO_FOR_EACH_BRUSH(e) {
+        if (std::meta::extract<Brush>(e) == wanted) return kebabOf(e);
+    }
+    return "xc";
+}
+
+/** the brush a prefix names, by its own name or one it declared, in any case */
+constexpr std::optional<Brush> brushNamed(std::string_view name) {
+    char buffer[32]{};
+    const auto key = Detail::lowered(name, buffer);
+    HAIO_FOR_EACH_BRUSH(e) {
+        constexpr Brush brush = std::meta::extract<Brush>(e);
+        if (kebabOf(e) == key) return brush;
+        for (const auto alias : Codecs::draws<brush>.aliases) {
+            if (!alias.empty() && alias == key) return brush;
+        }
+    }
+    return std::nullopt;
+}
+
+
 /** what a file turned out to be: the container and the colour it holds */
 struct Found {
     Format format = Format::RAW;
@@ -210,6 +232,31 @@ inline Result<AnyImage> Convert(AnyImage image, Color to) {
 
     HAIO_TRY(middle, Convert(std::move(image), Color::RGBA8888));
     return Convert(std::move(middle), to);
+}
+
+/**
+ * a picture painted by a brush named at runtime, in the first colour it paints in.
+ * that is rgba8888 for all of them today; a brush that learns to paint straight into
+ * another colour only has to be declared for it.
+ */
+inline Result<AnyImage> GenerateNative(Brush brush, std::string_view words, const Settings& settings) {
+    Result<AnyImage> out = std::unexpected(Error{ErrorCode::UnsupportedFormat,
+                                                 "this build cannot paint " + std::string(brushName(brush))});
+    bool done = false;
+    HAIO_FOR_EACH_BRUSH(b) {
+        constexpr Brush painter = std::meta::extract<Brush>(b);
+        HAIO_FOR_EACH_COLOR(c) {
+            constexpr Color color = std::meta::extract<Color>(c);
+            if constexpr (Codecs::Generatable<painter, color> && color != Color::PALETTE) {
+                if (done || painter != brush) continue;
+                done = true;
+                auto painted = Codecs::Generate<painter, color>(words, settings);
+                out = painted ? Result<AnyImage>{AnyImage{color, painted->width, painted->height, std::move(painted->data)}}
+                              : Result<AnyImage>{std::unexpected(painted.error())};
+            }
+        }
+    }
+    return out;
 }
 
 /**

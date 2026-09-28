@@ -156,7 +156,7 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
 
 /**
  * a conversion described at runtime, which is what a url query and a command line
- * both build. every Decode puts a picture on the stack, a transform changes the one
+ * both build. every Decode and every Generate puts a picture on the stack, a transform changes the one
  * on top, merges turn the two of a parenthesis into one, and the encode at the end
  * takes the one that is left.
  *
@@ -227,6 +227,18 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
             case TokenKind::Decode:
                 failure = decode(token.settings);
                 break;
+
+            // painted rather than read, so it takes no input and leaves the next one
+            // for the Decode it belongs to
+            case TokenKind::Generate: {
+                auto painted = GenerateNative(token.brush, token.expression, token.settings);
+                if (!painted) {
+                    failure = painted.error();
+                    break;
+                }
+                stack.push_back(Picture{*std::move(painted), {}, std::nullopt});
+                break;
+            }
             case TokenKind::Crop: failure = onTop(crop, token); break;
             case TokenKind::Resize: failure = onTop(resize, token); break;
             case TokenKind::Radius: failure = onTop(radius, token); break;
