@@ -135,6 +135,9 @@ enum class Color {
     BGRA8888,
 
     GRAY8,
+
+    /** grey then alpha; to -compose tint a colour, where a GRAY8 is a mask */
+    GRAYALPHA88,
     ETC1,
     YUV420,
 
@@ -182,6 +185,8 @@ inline constexpr ColorAlias colorAliases[] = {
     {"rgb555le", Color::RGB555},
     {"gray", Color::GRAY8},
     {"grey", Color::GRAY8},
+    {"ya8", Color::GRAYALPHA88},
+    {"gray8a", Color::GRAYALPHA88},
     {"pal8", Color::PALETTE},
     // the p is for planar, which is the only way haio keeps it
     {"yuv420p", Color::YUV420},

@@ -23,6 +23,7 @@ enum class TokenKind {
     Crop,
     Resize,
     Radius,
+    Negate,
     Palette,
     Composite,
     Fx,
@@ -60,6 +61,7 @@ struct Token {
 
     /** Composite only: where the second picture goes on the first; the offset is rect.x and rect.y */
     Gravity gravity = Gravity::NorthWest;
+    Compose compose = Compose::Over;   /**< and how the two are mixed */
 
     /** Generate only: which brush; what it paints is in expression and its options in settings */
     Brush brush = Brush::Xc;
@@ -90,8 +92,9 @@ Token Crop(Rect rect);
 Token Resize(Size size, ResizeFilter filter = ResizeFilter::Point);
 Token ResizeByPercent(int percent, ResizeFilter filter = ResizeFilter::Point);
 Token Radius(int radius);
+Token Negate();
 Token Palette(std::string palette, Dither dither, size_t limit, Limit limitHow);
-Token Composite(Gravity gravity, int x, int y);
+Token Composite(Compose compose, Gravity gravity, int x, int y);
 Token Fx(std::string expression);
 Token Open();
 Token Close();

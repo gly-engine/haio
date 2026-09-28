@@ -27,7 +27,7 @@ inline constexpr Stages::Option barcodeFormat{
     .called = "barcode format",
 };
 
-inline constexpr Stages::Option codeOptions[] = {Canvas::moduleSize, barcodeFormat, Canvas::fill, Canvas::background};
+inline constexpr Stages::Option codeOptions[] = {Canvas::moduleSize, barcodeFormat};
 
 /** code:12345, the words after the colon being what the bars say */
 template <> inline constexpr Draws draws<Brush::Code>{.options = codeOptions, .takes = "text"};

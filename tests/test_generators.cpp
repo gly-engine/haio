@@ -99,8 +99,9 @@ auto main() -> int {
     check(scaled.width == 64 && at(scaled, 10, 10) == 0xFFFFFFFF && at(scaled, 11, 11) == 0xFF000000,
           "a scaled code keeps its modules whole, its margin with them");
 
-    const auto coloured = draw(Brush::Qr, "tiny", {Setting{"fill", "red"}, Setting{"background", "blue"}});
-    check(at(coloured, 0, 0) == 0xFF0000FF && at(coloured, 1, 1) == 0xFFFF0000, "-fill and -background paint it");
+    // a code is grey, black on opaque white; colour comes from tinting it
+    check(GenerateNative(Brush::Qr, "tiny", {})->color == Color::GRAYALPHA88, "qr: paints in grayalpha88");
+    check(GenerateNative(Brush::Code, "haio", {})->color == Color::GRAYALPHA88, "and so does code:");
 
     // -hole leaves the middle in the background, grown to whole modules
     const auto holed = draw(Brush::Qr, "http://pudim.com.br", {Setting{"size", "300x300"}, Setting{"hole", "64x64"}});
@@ -141,6 +142,8 @@ auto main() -> int {
     check(!brushNamed("radialgradient") && !brushNamed("png"), "and nothing else is a brush");
     static_assert(Codecs::Generatable<Brush::Hald, Color::RGBA8888>, "a brush is declared for the colour it paints in");
     static_assert(!Codecs::Generatable<Brush::Hald, Color::RGB565>, "and only for that one");
+    static_assert(Codecs::Generatable<Brush::Qr, Color::GRAYALPHA88> && !Codecs::Generatable<Brush::Qr, Color::RGBA8888>,
+                  "a code is painted in grey alone");
 
     if (failures == 0) std::cout << "generators: ok\n";
     return failures == 0 ? 0 : 1;

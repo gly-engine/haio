@@ -278,8 +278,8 @@ private:
     }
 
     /**
-     * a transform changes the picture on top of the stack, and a merge wants exactly
-     * two in its parenthesis and leaves one.
+     * a transform changes the picture on top of the stack, and a merge wants a picture
+     * and one or two over it in its parenthesis, and leaves one.
      */
     bool transform(const Stage& stage, const Word& dashed) {
         // a stage that takes no value, as -composite, reads no word after it
@@ -289,10 +289,8 @@ private:
 
         auto& pictures = scopes_.back();
         if (pictures == 0) return refuse("no images defined", dashed.spelling);
-        // @todo imagemagick's -composite takes a third picture as the mask
-        if (stage.merges && pictures != 2) {
-            return refuse(pictures == 1 ? "image sequence is required" : "image sequence is too long", dashed.spelling);
-        }
+        if (stage.merges && pictures == 1) return refuse("image sequence is required", dashed.spelling);
+        if (stage.merges && pictures > 3) return refuse("image sequence is too long", dashed.spelling);
 
         const auto taken = take(stage, stage.name(), dashed.spelling);
         if (!taken) return false;

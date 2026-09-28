@@ -56,41 +56,95 @@ constexpr std::pair<int, int> placeOf(Size base, Size layer, Gravity gravity, in
             row(dy, (base.height - layer.height) / 2 + dy, base.height - layer.height - dy)};
 }
 
+/** imagemagick's -compose names, one file each in `library/backend/transforms/composite/blend/` */
+enum class Compose {
+    Over,
+    Multiply,
+    Screen,
+    Overlay,
+    Darken,
+    Lighten,
+    ColorDodge,
+    ColorBurn,
+    HardLight,
+    SoftLight,
+    Difference,
+    Exclusion,
+    Plus,
+    DstIn,
+
+    /** haio's own: black takes the colour and white stays, "qr:foo xc:red" */
+    Tint,
+};
+
 /**
- * one picture over another, the way imagemagick's default -compose over does it:
- * straight alpha, the layer's coverage first and whatever shows through after. the
- * part of the layer that falls outside the base is dropped, as it is there.
+ * straight alpha in, worked out premultiplied as imagemagick 6 does: colour(Sc, Sa, Dc, Da)
+ * is the premultiplied channel and alpha(Sa, Da) the coverage, both from 0 to 1.
  */
-inline Image<Color::RGBA8888> composeOver(Image<Color::RGBA8888> base, const Image<Color::RGBA8888>& layer,
-                                          int x, int y) {
+template <typename Colour, typename Alpha>
+Image<Color::RGBA8888> blendWith(Image<Color::RGBA8888> base, const Image<Color::RGBA8888>& layer, int x, int y,
+                                 Colour&& colour, Alpha&& alpha) {
     const int x0 = std::max(0, x);
     const int y0 = std::max(0, y);
     const int x1 = std::min(base.width, x + layer.width);
     const int y1 = std::min(base.height, y + layer.height);
+
+    // through imagemagick's sixteen bit quantum; it keeps transparency, not alpha, so that is what is cut
+    const auto byteOf = [](double share) {
+        return static_cast<uint8_t>(static_cast<uint32_t>(std::clamp(share * 65535.0 + 0.5, 0.0, 65535.0)) / 257);
+    };
 
     for (int by = y0; by < y1; by++) {
         for (int bx = x0; bx < x1; bx++) {
             auto* under = base.data.data() + (static_cast<size_t>(by) * static_cast<size_t>(base.width) + static_cast<size_t>(bx)) * 4;
             const auto* over = layer.data.data()
                              + (static_cast<size_t>(by - y) * static_cast<size_t>(layer.width) + static_cast<size_t>(bx - x)) * 4;
+            if (over[3] == 0) continue;
 
-            const int la = over[3];
-            if (la == 255) {
-                std::copy_n(over, 4, under);
-                continue;
-            }
-            if (la == 0) continue;
-
-            // everything scaled by 255 so the sums stay whole numbers
-            const int ba = under[3] * (255 - la) / 255;
-            const int alpha = la + ba;
+            const double sa = over[3] / 255.0;
+            const double da = under[3] / 255.0;
+            const double ra = std::clamp(alpha(sa, da), 0.0, 1.0);
             for (int c = 0; c < 3; c++) {
-                under[c] = static_cast<uint8_t>((over[c] * la + under[c] * ba + alpha / 2) / alpha);
+                const double premultiplied = colour(over[c] / 255.0, sa, under[c] / 255.0, da);
+                under[c] = ra > 0 ? byteOf(premultiplied / ra) : 0;
             }
-            under[3] = static_cast<uint8_t>(alpha);
+            under[3] = static_cast<uint8_t>(255 - byteOf(1 - ra));
         }
     }
     return base;
+}
+
+/** the layer's pixel, or opaque black where it does not reach, which tints nothing */
+inline const uint8_t* colourAt(const Image<Color::RGBA8888>& layer, int x, int y) {
+    static constexpr uint8_t black[4] = {0, 0, 0, 0xFF};
+    if (x < 0 || y < 0 || x >= layer.width || y >= layer.height) return black;
+    return layer.data.data() + (static_cast<size_t>(y) * static_cast<size_t>(layer.width) + static_cast<size_t>(x)) * 4;
+}
+
+/** a times b, both out of 255, rounded */
+constexpr uint8_t timesOf(int a, int b) {
+    return static_cast<uint8_t>((a * b + 127) / 255);
+}
+
+/** inverted, multiplied, inverted back */
+constexpr uint8_t screenOf(int a, int b) {
+    return static_cast<uint8_t>(255 - timesOf(255 - a, 255 - b));
+}
+
+
+constexpr double unionOf(double sa, double da) {
+    return sa + da - sa * da;
+}
+
+/** a w3c separable blend B(Sc, Dc) */
+template <typename B>
+Image<Color::RGBA8888> blendSeparable(Image<Color::RGBA8888> base, const Image<Color::RGBA8888>& layer, int x, int y,
+                                      B&& blend) {
+    return blendWith(std::move(base), layer, x, y,
+                     [&](double sc, double sa, double dc, double da) {
+                         return sc * sa * (1 - da) + dc * da * (1 - sa) + sa * da * blend(sc, dc);
+                     },
+                     unionOf);
 }
 
 namespace Transforms {
@@ -101,11 +155,25 @@ namespace Transforms {
  * layer's alpha that says where it covers.
  */
 template <Color P>
-Result<Image<P>> Composite(Image<P> base, const Image<Color::RGBA8888>& layer, Gravity gravity, int x, int y) = delete;
+Result<Image<P>> Composite(Image<P> base, const Image<Color::RGBA8888>& layer, Compose compose, Gravity gravity,
+                           int x, int y) = delete;
 
 template <Color P>
-concept Composable = requires (Image<P> b, const Image<Color::RGBA8888>& l, Gravity g, int x) {
-    { Composite<P>(std::move(b), l, g, x, x) } -> std::same_as<Result<Image<P>>>;
+concept Composable = requires (Image<P> b, const Image<Color::RGBA8888>& l, Compose c, Gravity g, int x) {
+    { Composite<P>(std::move(b), l, c, g, x, x) } -> std::same_as<Result<Image<P>>>;
+};
+
+/**
+ * the layer at x, y over the base. a pair other than rgba8888 on rgba8888 is declared
+ * only where it means something else, as tint over a grey, in `blend/NAME/BASE.cpp`;
+ * every other pair is converted first.
+ */
+template <Compose C, Color Base = Color::RGBA8888, Color Layer = Color::RGBA8888>
+Result<Image<Color::RGBA8888>> Blend(Image<Base> base, const Image<Layer>& layer, int x, int y) = delete;
+
+template <Compose C, Color Base = Color::RGBA8888, Color Layer = Color::RGBA8888>
+concept Blendable = requires (Image<Base> b, const Image<Layer>& l, int x) {
+    { Blend<C, Base, Layer>(std::move(b), l, x, x) } -> std::same_as<Result<Image<Color::RGBA8888>>>;
 };
 
 }
@@ -117,14 +185,17 @@ inline constexpr Option compositeOptions[] = {
      .fallback = "+0+0"},
     {.spellings = {"gravity"}, .takes = "name", .help = "which edge or corner the offset is measured from",
      .shape = Shape::Name, .names = namesOf<Gravity>(), .fallback = "northwest", .called = "gravity type"},
+    {.spellings = {"compose"}, .takes = "name",
+     .help = "how the layer and the picture under it are mixed",
+     .shape = Shape::Name, .names = namesOf<Compose>(), .fallback = "over", .called = "compose operator"},
 };
 
-/** the picture from the parenthesis before it, laid over the one before that */
+/** "dst src -composite" lays src over dst, and "dst src1 src2" src1 tinted by src2 */
 inline constexpr Stage composite{
     .spellings = {"composite"},
     .rule = "composite",
     .options = compositeOptions,
-    .help = "lay the picture in the parenthesis before it over this one",
+    .help = "lay the picture after the first over it, or the second tinted by the third",
     .merges = true,
 };
 

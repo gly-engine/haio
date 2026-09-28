@@ -45,7 +45,10 @@ Built build<&composite>(std::string_view, const Given& given) {
     auto gravity = Gravity::NorthWest;
     if (const auto* named = given.find("gravity")) gravity = *enumNamed<Gravity>(named->value);
 
-    return Tokens::Composite(gravity, x, y);
+    auto compose = Compose::Over;
+    if (const auto* named = given.find("compose")) compose = *enumNamed<Compose>(named->value);
+
+    return Tokens::Composite(compose, gravity, x, y);
 }
 
 }

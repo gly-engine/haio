@@ -25,7 +25,7 @@ std::optional<Error> digitsFor(std::string_view words, std::string_view what, si
  * counted here to make -format ean8 mean ean-8 rather than whatever the digits say.
  */
 template <>
-Result<Image<Color::RGBA8888>> Generate<Brush::Code, Color::RGBA8888>(std::string_view words, const Settings& settings) {
+Result<Image<Color::GRAYALPHA88>> Generate<Brush::Code, Color::GRAYALPHA88>(std::string_view words, const Settings& settings) {
     auto format = Barcode::Code128;
     if (const auto* named = settingNamed(settings, barcodeFormat.name())) format = *Stages::enumNamed<Barcode>(named->value);
 

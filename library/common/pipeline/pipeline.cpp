@@ -74,8 +74,9 @@ Token Palette(std::string palette, Dither dither, size_t limit, Limit limitHow) 
     return token;
 }
 
-Token Composite(Gravity gravity, int x, int y) {
+Token Composite(Compose compose, Gravity gravity, int x, int y) {
     Token token{TokenKind::Composite};
+    token.compose = compose;
     token.gravity = gravity;
     token.rect.x = x;
     token.rect.y = y;
@@ -100,6 +101,10 @@ Token Radius(int radius) {
     Token token{TokenKind::Radius};
     token.radius = radius;
     return token;
+}
+
+Token Negate() {
+    return Token{TokenKind::Negate};
 }
 
 Token Encode(Format format, std::optional<Color> color, Settings settings) {

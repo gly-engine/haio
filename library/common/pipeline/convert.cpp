@@ -1,5 +1,6 @@
 #include <haio.hpp>
 
+#include <meta>
 #include <optional>
 
 namespace Haio {
@@ -100,6 +101,30 @@ std::optional<Error> radius(Picture& picture, const Token& token) {
     return keep(picture.image, Transforms::Radius<Color::RGBA8888>(std::move(picture.image), token.radius));
 }
 
+/** a grey stays grey, so the ones negate runs on as they are are not widened first */
+std::optional<Error> negate(Picture& picture, const Token&) {
+    picture.indexed.reset();
+    if (picture.native) {
+        auto& native = *picture.native;
+        std::optional<Error> out;
+        bool done = false;
+        HAIO_FOR_EACH_COLOR(c) {
+            constexpr Color colour = std::meta::extract<Color>(c);
+            if constexpr (colour != Color::PALETTE && Transforms::Negatable<colour>) {
+                if (!done && colour == native.color) {
+                    done = true;
+                    auto negated = Transforms::Negate<colour>(Image<colour>{native.width, native.height, std::move(native.data)});
+                    if (negated) native.data = std::move(negated->data);
+                    else out = negated.error();
+                }
+            }
+        }
+        if (done) return out;
+    }
+    if (auto failed = picture.rgba()) return failed;
+    return keep(picture.image, Transforms::Negate<Color::RGBA8888>(std::move(picture.image)));
+}
+
 /**
  * quantise, keep the indices, and expand back to full colour.
  *
@@ -132,17 +157,52 @@ std::optional<Error> palette(Picture& picture, const Token& token) {
     return std::nullopt;
 }
 
-/**
- * the second picture laid over the first, the way imagemagick's -composite takes the
- * first two of its list. the result is always full colour with an alpha, so the
- * indices of a palette go: a layer drawn over them is colours the palette never had.
- */
-std::optional<Error> composite(Picture& base, Picture layer, const Token& token) {
+Size sizeOf(const Picture& picture) {
+    return picture.native ? Size{picture.native->width, picture.native->height}
+                          : Size{picture.image.width, picture.image.height};
+}
+
+/** a blend declared for the two colours as they are, so tint sees a grey as a grey */
+std::optional<Result<Image<Color::RGBA8888>>> blendAsTheyAre(Compose compose, Picture& base, Picture& layer, int x, int y) {
+    const auto colourOf = [](const Picture& picture) { return picture.native ? picture.native->color : Color::RGBA8888; };
+    const auto under = colourOf(base);
+    const auto over = colourOf(layer);
+
+    std::optional<Result<Image<Color::RGBA8888>>> out;
+    template for (constexpr auto m : std::define_static_array(std::meta::enumerators_of(^^Compose))) {
+        constexpr Compose mode = std::meta::extract<Compose>(m);
+        HAIO_FOR_EACH_COLOR(b) {
+            constexpr Color bc = std::meta::extract<Color>(b);
+            HAIO_FOR_EACH_COLOR(l) {
+                constexpr Color lc = std::meta::extract<Color>(l);
+                constexpr bool elsewhere = bc == Color::RGBA8888 && lc == Color::RGBA8888;
+                if constexpr (bc != Color::PALETTE && lc != Color::PALETTE && !elsewhere
+                              && Transforms::Blendable<mode, bc, lc>) {
+                    if (!out && mode == compose && bc == under && lc == over) {
+                        auto shape = base.current();
+                        auto colour = layer.current();
+                        base.native.reset();
+                        layer.native.reset();
+                        out = Transforms::Blend<mode, bc, lc>(Image<bc>{shape.width, shape.height, std::move(shape.data)},
+                                                              Image<lc>{colour.width, colour.height, std::move(colour.data)},
+                                                              x, y);
+                    }
+                }
+            }
+        }
+    }
+    return out;
+}
+
+/** the layer over the base; the result is full colour, so the indices of a palette go */
+std::optional<Error> composite(Picture& base, Picture layer, Compose compose, Gravity gravity, int x, int y) {
+    base.indexed.reset();
+    const auto [left, top] = placeOf(sizeOf(base), sizeOf(layer), gravity, x, y);
+    if (auto blended = blendAsTheyAre(compose, base, layer, left, top)) return keep(base.image, *std::move(blended));
     if (auto failed = base.rgba()) return failed;
     if (auto failed = layer.rgba()) return failed;
-    base.indexed.reset();
-    return keep(base.image, Transforms::Composite<Color::RGBA8888>(std::move(base.image), layer.image, token.gravity,
-                                                                    token.rect.x, token.rect.y));
+    return keep(base.image, Transforms::Composite<Color::RGBA8888>(std::move(base.image), layer.image, compose,
+                                                                    Gravity::NorthWest, left, top));
 }
 
 }
@@ -231,7 +291,13 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
             // painted rather than read, so it takes no input and leaves the next one
             // for the Decode it belongs to
             case TokenKind::Generate: {
-                auto painted = GenerateNative(token.brush, token.expression, token.settings);
+                // without -size, "qr:foo xc:red" paints the red as big as the code
+                auto settings = token.settings;
+                if (!settingNamed(settings, "size") && sizeFallsBack(token.brush) && stack.size() > scopes.back()) {
+                    const auto before = sizeOf(stack.back());
+                    settings.push_back(Setting{"size", std::to_string(before.width) + "x" + std::to_string(before.height)});
+                }
+                auto painted = GenerateNative(token.brush, token.expression, settings);
                 if (!painted) {
                     failure = painted.error();
                     break;
@@ -242,6 +308,7 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
             case TokenKind::Crop: failure = onTop(crop, token); break;
             case TokenKind::Resize: failure = onTop(resize, token); break;
             case TokenKind::Radius: failure = onTop(radius, token); break;
+            case TokenKind::Negate: failure = onTop(negate, token); break;
             case TokenKind::Palette: failure = onTop(palette, token); break;
 
             case TokenKind::Composite: {
@@ -250,15 +317,22 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
                     failure = pictures.error();
                     break;
                 }
-                // @todo imagemagick takes a third picture as the mask
-                if (pictures->size() != 2) {
-                    failure = Error{ErrorCode::InvalidInput, "-composite joins two pictures, and there are "
+                if (pictures->size() != 2 && pictures->size() != 3) {
+                    failure = Error{ErrorCode::InvalidInput, "-composite joins a picture and one or two over it, and there are "
                                                                  + std::to_string(pictures->size())};
                     break;
                 }
+                // two over the destination are one: the second tints the first, from its top left corner
+                if (pictures->size() == 3) {
+                    auto colour = std::move(stack.back());
+                    stack.pop_back();
+                    failure = composite(stack.back(), std::move(colour), Compose::Tint, Gravity::NorthWest, 0, 0);
+                    if (failure) break;
+                }
                 auto layer = std::move(stack.back());
                 stack.pop_back();
-                failure = composite(stack.back(), std::move(layer), token);
+                failure = composite(stack.back(), std::move(layer), token.compose, token.gravity,
+                                    token.rect.x, token.rect.y);
                 break;
             }
 

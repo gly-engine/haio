@@ -86,6 +86,7 @@ constexpr size_t strideOf(Color color) {
         case Color::BGR888:   return 3;
         case Color::BGRA8888: return 4;
         case Color::GRAY8:    return 1;
+        case Color::GRAYALPHA88: return 2;
         // one byte per pixel, so a crop or a resize can index it like any other
         case Color::PALETTE:  return 1;
         // tiled and planar, so no pixel has an address of its own
@@ -118,6 +119,7 @@ constexpr int alphaOffsetOf(Color color) {
         // is nothing here to clear on its own
         case Color::RGBA5551: break;
         case Color::GRAY8:    break;
+        case Color::GRAYALPHA88: return 1;
         // tiled and planar, so no pixel has an address of its own
         case Color::CHR_NES:  break;
         case Color::ETC1:     break;

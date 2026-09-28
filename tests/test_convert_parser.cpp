@@ -412,7 +412,7 @@ int main() {
         assert(cmd.error.token == "out.png");
     }
     {
-        auto cmd = parse({"convert", "a.png", "b.png", "c.png", "-composite", "out.png"});
+        auto cmd = parse({"convert", "a.png", "b.png", "c.png", "d.png", "-composite", "out.png"});
         assert(cmd.error);
         assert(cmd.error.token == "-composite");
     }
@@ -420,6 +420,39 @@ int main() {
         auto cmd = parse({"convert", "a.png", "-composite", "out.png"});
         assert(cmd.error);
         assert(cmd.error.token == "-composite");
+    }
+    {
+        // and so is one alone in a parenthesis with nothing before it
+        auto cmd = parse({"convert", "(", "a.png", "-composite", ")", "out.png"});
+        assert(cmd.error);
+        assert(cmd.error.token == "-composite");
+    }
+    // a parenthesis is only precedence, so one picture in it has nothing to join
+    {
+        auto cmd = parse({"convert", "z.png", "(", "qr:oi", "-composite", ")", "out.png"});
+        assert(cmd.error);
+        assert(cmd.error.token == "-composite");
+    }
+    {
+        auto cmd = parse({"convert", "qr:oi", "-negate", "out.png"});
+        assert(!cmd.error);
+        assert(transformsOf(cmd)[0].kind == Haio::TokenKind::Negate);
+    }
+    // three are the destination and a picture tinted by the one after it
+    {
+        auto cmd = parse({"convert", "dog.png", "qr:oi", "xc:red", "-composite", "out.png"});
+        assert(!cmd.error);
+        assert(transformsOf(cmd)[0].compose == Haio::Compose::Over);
+    }
+    {
+        auto cmd = parse({"convert", "a.png", "b.png", "-compose", "Color-Dodge", "-composite", "out.png"});
+        assert(!cmd.error);
+        assert(transformsOf(cmd)[0].compose == Haio::Compose::ColorDodge);
+    }
+    {
+        auto cmd = parse({"convert", "a.png", "b.png", "-compose", "vivid", "-composite", "out.png"});
+        assert(cmd.error);
+        assert(cmd.error.message == "unrecognized compose operator `vivid'");
     }
     {
         // imagemagick blames the output here too: it is where the parenthesis was still open

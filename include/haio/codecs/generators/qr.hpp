@@ -40,7 +40,7 @@ inline constexpr Stages::Option qrHole{
 };
 
 /**
- * the quiet zone, in modules, in the background colour. the standards ask for four
+ * the quiet zone, in modules, in white. the standards ask for four
  * around a qr code and one around a data matrix; one is what most readers need, and
  * zero is the code alone.
  */
@@ -49,8 +49,7 @@ inline constexpr Stages::Option qrMargin{
     .shape = Stages::Shape::Integer, .least = 0, .most = 64, .fallback = "1",
 };
 
-inline constexpr Stages::Option qrOptions[] = {Canvas::moduleSize, matrixFormat, Canvas::fill, Canvas::background,
-                                                qrLevel, qrHole, qrMargin};
+inline constexpr Stages::Option qrOptions[] = {Canvas::moduleSize, matrixFormat, qrLevel, qrHole, qrMargin};
 
 /** qr:"http://pudim.com.br", the words after the colon being what the code says */
 template <> inline constexpr Draws draws<Brush::Qr>{.options = qrOptions, .takes = "text"};

@@ -102,6 +102,20 @@ constexpr std::optional<Brush> brushNamed(std::string_view name) {
     return std::nullopt;
 }
 
+/**
+ * whether a brush's -size, when nobody says, is only a stand-in -- xc:'s 1x1 -- rather
+ * than a size of its own, as a qr: has. a stand-in gives way to the picture before it.
+ */
+constexpr bool sizeFallsBack(Brush wanted) {
+    HAIO_FOR_EACH_BRUSH(e) {
+        constexpr Brush brush = std::meta::extract<Brush>(e);
+        if (brush != wanted) continue;
+        for (const auto& option : Codecs::draws<brush>.options) {
+            if (option.name() == "size") return !option.fallback.empty();
+        }
+    }
+    return false;
+}
 
 /** what a file turned out to be: the container and the colour it holds */
 struct Found {

@@ -10,11 +10,12 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 /**
  * what code: and qr: share: zint encodes, and the modules it lays out are painted
- * here the way every brush paints, rather than through zint's own rendering, which is
- * left out of the build along with its file writers.
+ * here rather than through zint's own rendering, which is left out of the build along
+ * with its file writers. black on opaque white; colour comes from a -composite after.
  */
 namespace Haio::Codecs::Zint {
 
@@ -28,13 +29,13 @@ namespace Haio::Codecs::Zint {
  * another, which is what stretching it to fit would do and what a scanner minds most.
  * a linear code fills the height it is given.
  *
- * a hole, when there is one, is left in the middle in the background colour: the
+ * a hole, when there is one, is left in the middle in white: the
  * pixels asked for, grown to whole modules and centred on the module grid. without
  * -size the hole is what decides the scale, so the picture comes out as small as it
  * can be with that hole in it and the code still readable.
  */
 template <typename Tweak>
-Result<Image<Color::RGBA8888>> paint(int symbology, std::string_view words, const Settings& settings, Tweak&& tweak,
+Result<Image<Color::GRAYALPHA88>> paint(int symbology, std::string_view words, const Settings& settings, Tweak&& tweak,
                                      int margin = 0, std::optional<Size> hole = std::nullopt) {
     if (words.empty()) HAIO_FAIL(InvalidInput, "nothing to encode; it goes after the colon, as in qr:hello");
 
@@ -50,9 +51,6 @@ Result<Image<Color::RGBA8888>> paint(int symbology, std::string_view words, cons
     if (encoded >= ZINT_ERROR) {
         HAIO_FAIL(InvalidInput, "unable to encode " + Stages::quoted(words) + ": " + std::string(symbol->errtxt));
     }
-
-    HAIO_TRY(ink, Canvas::colourSetting(settings, Canvas::fill));
-    HAIO_TRY(paper, Canvas::colourSetting(settings, Canvas::background));
 
     const bool linear = symbol->rows == 1;
     const int columns = symbol->width;
@@ -129,17 +127,20 @@ Result<Image<Color::RGBA8888>> paint(int symbology, std::string_view words, cons
         return ((symbol->encoded_data[row][x >> 3] >> (x & 7)) & 1) != 0;
     };
 
-    auto image = Canvas::blank(size);
-    for (int y = 0; y < size.height; y++) {
-        for (int x = 0; x < size.width; x++) Canvas::put(image, x, y, paper);
-    }
+    constexpr uint8_t ink = 0x00;
+    constexpr uint8_t paper = 0xFF;
+    Image<Color::GRAYALPHA88> image{
+        size.width, size.height,
+        std::vector<uint8_t>(static_cast<size_t>(size.width) * static_cast<size_t>(size.height) * 2, paper)};
 
     const int left = (size.width - wide * scale) / 2 + margin * scale;
     const int top = linear ? 0 : (size.height - tall * scale) / 2 + margin * scale;
     const int height = linear ? size.height : rows * scale;
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < columns * scale; x++) {
-            if (dark(x / scale, linear ? 0 : y / scale)) Canvas::put(image, left + x, top + y, ink);
+            if (dark(x / scale, linear ? 0 : y / scale)) {
+                image.data[(static_cast<size_t>(top + y) * static_cast<size_t>(size.width) + static_cast<size_t>(left + x)) * 2] = ink;
+            }
         }
     }
     return image;

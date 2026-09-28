@@ -13,7 +13,7 @@ namespace Haio::Codecs {
  * 30% -- unless qr:level says.
  */
 template <>
-Result<Image<Color::RGBA8888>> Generate<Brush::Qr, Color::RGBA8888>(std::string_view words, const Settings& settings) {
+Result<Image<Color::GRAYALPHA88>> Generate<Brush::Qr, Color::GRAYALPHA88>(std::string_view words, const Settings& settings) {
     auto format = Matrix::QrCode;
     if (const auto* named = settingNamed(settings, matrixFormat.name())) format = *Stages::enumNamed<Matrix>(named->value);
 
