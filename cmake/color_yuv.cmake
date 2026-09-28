@@ -34,6 +34,8 @@ set_target_properties(libyuv PROPERTIES
     IMPORTED_LOCATION "${LIBYUV_BIN}/lib/libyuv.a"
     INTERFACE_INCLUDE_DIRECTORIES "${LIBYUV_BIN}/include"
 )
+add_dependencies(libyuv libyuv_proj)
+add_dependencies(${PROJECT_NAME} libyuv_proj)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE libyuv)
 target_include_directories(${PROJECT_NAME} PRIVATE "${LIBYUV_DIR}/include")
