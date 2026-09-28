@@ -134,6 +134,23 @@ auto main() -> int {
     check(!GenerateNative(Brush::Code, "123", {Setting{"format", "ean8"}}), "an ean-8 is 7 digits or 8");
     check(!GenerateNative(Brush::Qr, "x", {Setting{"size", "10x10"}}), "and a code that does not fit is refused");
 
+    // text is black on white, as big as its lines without -size and centred with one
+    const auto words = draw(Brush::Text, "ola mundo", {Setting{"font-size", "32"}});
+    bool inked = false;
+    for (int y = 0; y < words.height; y++) {
+        for (int x = 0; x < words.width; x++) inked = inked || at(words, x, y) == 0xFF000000;
+    }
+    check(words.height >= 32 && at(words, 0, 0) == 0xFFFFFFFF && inked, "text: is black on white");
+    check(draw(Brush::Text, "oi", sized("200x100")).width == 200, "text: is drawn at the size asked for");
+
+    // a style is its words in any order and any case, and one the font lacks is made up
+    const auto bold = draw(Brush::Text, "oi", {Setting{"font-size", "32"}, Setting{"font-style", "ItalicBold"}});
+    check(bold.data != draw(Brush::Text, "oi", {Setting{"font-size", "32"}}).data, "-font-style ItalicBold is not regular");
+    check(bold.data == draw(Brush::Text, "oi", {Setting{"font-size", "32"}, Setting{"font-style", "bold italic"}}).data,
+          "and is the same as bold italic");
+    check(!GenerateNative(Brush::Text, "oi", {Setting{"font-style", "heavy"}}), "a style it does not know is refused");
+    check(!GenerateNative(Brush::Text, "oi", {Setting{"font-name", "No Such Family"}}), "and so is a font it cannot find");
+
     // the names come off the enumerators, a dash between words, and the aliases off the declarations
     check(brushName(Brush::RadialGradient) == "radial-gradient" && brushNamed("radial-gradient") == Brush::RadialGradient,
           "RadialGradient is spelled radial-gradient");

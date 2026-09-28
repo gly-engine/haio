@@ -212,6 +212,7 @@ enum class Brush {
     Hald,             /**< an identity colour lookup table */
     Code,             /**< a barcode, code 128 unless -format says another */
     Qr,               /**< a qr code, or a data matrix when -format says so */
+    Text,             /**< words in a font, black on white */
 };
 
 }
