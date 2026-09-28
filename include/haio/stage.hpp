@@ -105,13 +105,22 @@ struct Option {
 
 namespace Detail {
 
+/**
+ * two names the same once case, spaces, dashes and underscores stop mattering:
+ * "Code 128", "CODE-128" and "code128" are one symbology however somebody wrote it,
+ * and "north_east" the same gravity as "NorthEast".
+ */
 constexpr bool sameName(std::string_view a, std::string_view b) {
-    if (a.size() != b.size()) return false;
-    for (size_t i = 0; i < a.size(); i++) {
-        const auto lower = [](char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; };
-        if (lower(a[i]) != lower(b[i])) return false;
+    const auto skipped = [](char c) { return c == ' ' || c == '-' || c == '_'; };
+    const auto lower = [](char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; };
+    size_t i = 0;
+    size_t j = 0;
+    while (true) {
+        while (i < a.size() && skipped(a[i])) i++;
+        while (j < b.size() && skipped(b[j])) j++;
+        if (i == a.size() || j == b.size()) return i == a.size() && j == b.size();
+        if (lower(a[i++]) != lower(b[j++])) return false;
     }
-    return true;
 }
 
 constexpr std::optional<int> wholeNumber(std::string_view text) {

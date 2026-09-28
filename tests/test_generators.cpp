@@ -82,6 +82,57 @@ auto main() -> int {
     check(draw(Brush::Plasma, "fractal", seeded).data != draw(Brush::Plasma, "", seeded).data,
           "plasma:fractal starts from other corners");
 
+    // a code is its modules and a one module margin: "tiny" is a version 1 qr code,
+    // 21 modules a side, and without -size a module is a pixel
+    const auto qr = draw(Brush::Qr, "tiny");
+    check(qr.width == 23 && qr.height == 23, "qr:tiny is its 21 modules and a margin of one");
+    check(at(qr, 0, 0) == 0xFFFFFFFF && at(qr, 1, 1) == 0xFF000000 && at(qr, 8, 8) == 0xFFFFFFFF,
+          "a finder pattern starts where the margin ends");
+
+    const auto bare = draw(Brush::Qr, "tiny", {Setting{"margin", "0"}});
+    check(bare.width == 21 && at(bare, 0, 0) == 0xFF000000, "-margin 0 is the code alone");
+    const auto wide = draw(Brush::Qr, "tiny", {Setting{"margin", "4"}});
+    check(wide.width == 29 && at(wide, 3, 3) == 0xFFFFFFFF && at(wide, 4, 4) == 0xFF000000, "-margin 4 is the standard's");
+
+    // with -size, the largest whole module that fits with its margin, centred: 23 in 64 is two
+    const auto scaled = draw(Brush::Qr, "tiny", sized("64x64"));
+    check(scaled.width == 64 && at(scaled, 10, 10) == 0xFFFFFFFF && at(scaled, 11, 11) == 0xFF000000,
+          "a scaled code keeps its modules whole, its margin with them");
+
+    const auto coloured = draw(Brush::Qr, "tiny", {Setting{"fill", "red"}, Setting{"background", "blue"}});
+    check(at(coloured, 0, 0) == 0xFF0000FF && at(coloured, 1, 1) == 0xFFFF0000, "-fill and -background paint it");
+
+    // -hole leaves the middle in the background, grown to whole modules
+    const auto holed = draw(Brush::Qr, "http://pudim.com.br", {Setting{"size", "300x300"}, Setting{"hole", "64x64"}});
+    bool empty = true;
+    for (int y = 150 - 32; y < 150 + 32; y++) {
+        for (int x = 150 - 32; x < 150 + 32; x++) empty = empty && at(holed, x, y) == 0xFFFFFFFF;
+    }
+    check(empty, "-hole leaves a hole in the middle");
+    check(!GenerateNative(Brush::Qr, "http://pudim.com.br", {Setting{"size", "300x300"}, Setting{"hole", "150x150"}}),
+          "and refuses one that would leave the code unreadable");
+    check(!GenerateNative(Brush::Qr, "http://pudim.com.br", {Setting{"size", "155x155"}, Setting{"hole", "64x64"}}),
+          "a third of the side each way is the most a hole may be");
+
+    // without -size the hole decides the scale: the fewest pixels a module that make
+    // room for it, 8 here, so 29 modules and the margin are 248 pixels
+    const auto grown = draw(Brush::Qr, "http://pudim.com.br", {Setting{"hole", "64x64"}});
+    bool room = true;
+    for (int y = 124 - 32; y < 124 + 32; y++) {
+        for (int x = 124 - 32; x < 124 + 32; x++) room = room && at(grown, x, y) == 0xFFFFFFFF;
+    }
+    check(grown.width == 248 && grown.height == 248 && room, "-hole alone sizes the picture to fit it");
+
+    // a linear code fills the height it is given, one row of bars
+    const auto bars = draw(Brush::Code, "haio", {Setting{"size", "300x40"}, Setting{"format", "Code 39"}});
+    check(bars.width == 300 && bars.height == 40, "code: is drawn at the size asked for");
+    bool same = true;
+    for (int x = 0; x < bars.width; x++) same = same && at(bars, x, 0) == at(bars, x, 39);
+    check(same, "and every row of it is the same row");
+
+    check(!GenerateNative(Brush::Code, "123", {Setting{"format", "ean8"}}), "an ean-8 is 7 digits or 8");
+    check(!GenerateNative(Brush::Qr, "x", {Setting{"size", "10x10"}}), "and a code that does not fit is refused");
+
     // the names come off the enumerators, a dash between words, and the aliases off the declarations
     check(brushName(Brush::RadialGradient) == "radial-gradient" && brushNamed("radial-gradient") == Brush::RadialGradient,
           "RadialGradient is spelled radial-gradient");

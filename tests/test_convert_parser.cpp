@@ -194,6 +194,25 @@ int main() {
         assert(transformsOf(cmd)[0].dither == Haio::Dither::Strict);
     }
 
+    // a name is a name however it is written: case, spaces, dashes and underscores aside
+    for (const auto* spelled : {"Code128", "code 128", "CODE-128", "code_128"}) {
+        auto cmd = parse({"convert", "-format", spelled, "code:haio", "out.png"});
+        assert(!cmd.error);
+        assert(cmd.steps[0].kind == Generate && cmd.steps[0].brush == Haio::Brush::Code);
+    }
+    {
+        auto cmd = parse({"convert", "-format", "pdf417", "code:haio", "out.png"});
+        assert(cmd.error);
+        assert(cmd.error.message == "unrecognized barcode format `pdf417'");
+    }
+    // and -format before qr: is qr's, before the output the output's
+    {
+        auto cmd = parse({"convert", "-format", "data matrix", "qr:haio", "-format", "tga", "out.bin"});
+        assert(!cmd.error);
+        assert(cmd.steps[0].settings[0].value == "data matrix");
+        assert(cmd.outputFormat == Haio::Format::TGA);
+    }
+
     // -filter is for the stage after it to read, and -resize reads it too
     {
         auto cmd = parse({"convert", "input.png", "-filter", "Point", "-resize", "8x8", "out.png"});

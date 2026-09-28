@@ -25,6 +25,16 @@ inline constexpr Stages::Option size{
     .shape = Stages::Shape::Size, .fallback = "1x1",
 };
 
+/**
+ * the same -size for a code, which has a size of its own when nobody says one: a
+ * pixel a module, the code and no margin. told apart only so the usage says so.
+ */
+inline constexpr Stages::Option moduleSize{
+    .spellings = {"size"}, .takes = "size",
+    .help = "the size it is drawn at, a whole number of pixels a module; one a module when nobody says",
+    .shape = Stages::Shape::Size,
+};
+
 /** a side past this is a typo, not a picture, and would ask for more memory than there is */
 inline constexpr int largest = 16384;
 
@@ -45,6 +55,21 @@ inline Result<uint32_t> colourOf(std::string_view text) {
     const auto colour = Util::GetColorFromName(text);
     if (!colour) HAIO_FAIL(InvalidInput, "unrecognized color " + Stages::quoted(text));
     return *colour;
+}
+
+/** the ink and the paper, named the way imagemagick's -fill and -background are */
+inline constexpr Stages::Option fill{
+    .spellings = {"fill"}, .takes = "colour", .help = "the colour it is painted in", .fallback = "black",
+};
+
+inline constexpr Stages::Option background{
+    .spellings = {"background"}, .takes = "colour", .help = "the colour behind it", .fallback = "white",
+};
+
+/** a colour option, or its fallback when nobody said */
+inline Result<uint32_t> colourSetting(const Settings& settings, const Stages::Option& option) {
+    const auto* setting = settingNamed(settings, option.name());
+    return colourOf(setting ? std::string_view{setting->value} : option.fallback);
 }
 
 /** how bright a colour is, the way imagemagick weighs it: rec.709 on the stored values */

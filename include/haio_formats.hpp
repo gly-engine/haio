@@ -205,6 +205,8 @@ enum class Brush {
     RadialGradient,   /**< the same blend from the middle out */
     Plasma,           /**< a gradient broken up by noise */
     Hald,             /**< an identity colour lookup table */
+    Code,             /**< a barcode, code 128 unless -format says another */
+    Qr,               /**< a qr code, or a data matrix when -format says so */
 };
 
 }
