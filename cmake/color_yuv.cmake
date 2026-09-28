@@ -1,10 +1,9 @@
 option(HAIO_USE_LIBYUV "convert images with libyuv" ON)
 
-set(LIBYUV_VERSION "a7c0e17c5aaefcbe6b0c35e17fa0a83727370f0a")
+set(LIBYUV_VERSION "7320155784bdfefb69db8edddca37ecacf7e5198")
 set(LIBYUV_DIR "${CMAKE_SOURCE_DIR}/vendor/libyuv")
 set(LIBYUV_BIN "${CMAKE_BINARY_DIR}/libyuv")
-set(LIBYUV_DOWNLOAD "https://chromium.googlesource.com/libyuv/libyuv/+archive/${LIBYUV_VERSION}.tar.gz")
-
+set(LIBYUV_DOWNLOAD "https://github.com/lemenkov/libyuv/archive/${LIBYUV_VERSION}.zip")
 haio_fetch(libyuv "${LIBYUV_DOWNLOAD}" "${LIBYUV_DIR}" CMakeLists.txt)
 file(MAKE_DIRECTORY "${LIBYUV_BIN}/include")
 
