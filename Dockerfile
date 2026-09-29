@@ -1,7 +1,7 @@
 FROM debian:forky AS builder
 
-RUN apt update && apt install -y
-RUN apt install -y gcc-16 g++-16 cmake make binutils ca-certificates
+RUN apt update -y
+RUN apt install -y gcc-16 g++-16 nasm cmake make binutils ca-certificates
 RUN mkdir -p /app/docs
 
 COPY ./CMakeLists.txt /app/CMakeLists.txt
@@ -22,6 +22,10 @@ RUN make -C build -j$(nproc --ignore 1)
 RUN strip build/bin/haio
 
 FROM scratch
+
+LABEL org.opencontainers.image.source="https://github.com/gly-engine/haio"
+LABEL org.opencontainers.image.description="HAIO CLI/CDN"
+LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /app/build/bin/haio /bin/haio

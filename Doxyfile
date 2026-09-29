@@ -18,6 +18,7 @@ INLINE_GROUPED_CLASSES = YES
 INLINE_SIMPLE_STRUCTS  = YES
 TYPEDEF_HIDES_STRUCT   = YES
 SOURCE_BROWSER         = YES
+HIDE_SCOPE_NAMES       = YES
 GENERATE_RTF           = NO
 GENERATE_LATEX         = NO
 VERBATIM_HEADERS       = NO
@@ -29,16 +30,19 @@ OUTPUT_LANGUAGE        = English
 FILE_PATTERNS          = *.cpp *.hpp *.md
 EXTENSION_MAPPING      = h=c
 # @mime tags the Format enumerators with the content types they carry, and
-# scripts/gen_codecs.cpp builds the lookup from them at build time
+# scripts/gen_scaffold.cpp builds the lookup from them at build time
 ALIASES                = mime="^^<b>Mime type:</b>"
 ALIASES               += ext="^^<b>Extension:</b>"
-
-INPUT                  = include library source docs
+INPUT                  = include library source docs build/docs
+IMAGE_PATH             = assets build/docs/assets
+# runs the @haio{convert} examples in the comments; see scripts/doxygen_filter.cpp
+INPUT_FILTER           = build/bin/doxygen_filter
 MARKDOWN_ID_STYLE      = GITHUB
 # Theme: https://jothepro.github.io/doxygen-awesome-css/
 GENERATE_TREEVIEW      = YES
 DISABLE_INDEX          = NO
 FULL_SIDEBAR           = NO
 HTML_EXTRA_STYLESHEET  = $(DOXYGEN_AWESOME_PATH)/doxygen-awesome.css \
-                         $(DOXYGEN_AWESOME_PATH)/doxygen-awesome-sidebar-only.css
+                         $(DOXYGEN_AWESOME_PATH)/doxygen-awesome-sidebar-only.css \
+                         docs/haio.css
 HTML_COLORSTYLE        = LIGHT

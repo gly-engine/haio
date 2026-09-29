@@ -2,6 +2,7 @@
 
 #include "haio_codec.hpp"
 
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -44,6 +45,13 @@ uint32_t readU32BE(Bytes data, size_t off);
 uint64_t readU64LE(Bytes data, size_t off);
 
 Result<std::vector<uint8_t>> slice(Bytes data, size_t off, size_t len);
+
+/**
+ * a colour by the name imagemagick gives it -- "tomato", "gray50", "#ff8800",
+ * "transparent" -- with imagemagick's value, packed 0xAARRGGBB the way a palette packs one. nothing when the
+ * text names no colour. canvases draw with it, and so will gradients.
+ */
+std::optional<uint32_t> GetColorFromName(std::string_view name);
 
 /**
  * what the gpu containers need to agree on. these always spoke about colour rather

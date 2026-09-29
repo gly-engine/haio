@@ -1,3 +1,4 @@
+#include <cctype>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -10,6 +11,9 @@ std::string basename(const std::string& path) {
     std::string name = (pos == std::string::npos) ? path : path.substr(pos + 1);
     auto dot = name.find_last_of('.');
     if (dot != std::string::npos) name = name.substr(0, dot);
+    for (auto& c : name) {
+        if (!std::isalnum(static_cast<unsigned char>(c))) c = '_';
+    }
     return name;
 }
 

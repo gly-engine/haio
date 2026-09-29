@@ -1,4 +1,5 @@
 #include <haio_palette.hpp>
+#include <haio/stage.hpp>
 #include <haio_util.hpp>
 
 #include <algorithm>
@@ -53,18 +54,13 @@ int clampByte(int value) { return value < 0 ? 0 : value > 255 ? 255 : value; }
 
 namespace Haio {
 
+/** the names are the enumerators, so the parser's list and this one cannot drift */
 std::optional<Dither> ditherNamed(std::string_view name) {
-    if (name == "nearest") return Dither::Nearest;
-    if (name == "bayer") return Dither::Bayer;
-    if (name == "floyd") return Dither::Floyd;
-    if (name == "error") return Dither::Strict;
-    return std::nullopt;
+    return Stages::enumNamed<Dither>(name);
 }
 
 std::optional<Limit> limitNamed(std::string_view name) {
-    if (name == "sort") return Limit::Sort;
-    if (name == "spread") return Limit::Spread;
-    return std::nullopt;
+    return Stages::enumNamed<Limit>(name);
 }
 
 Result<std::vector<uint32_t>> limitPalette(const Image<Color::RGBA8888>& image,
@@ -202,7 +198,7 @@ Result<Image<Color::PALETTE>> toPalette(const Image<Color::RGBA8888>& image,
             if (how == Dither::Strict && distance(palette[chosen], wanted) != 0) {
                 return std::unexpected(Error{ErrorCode::InvalidInput,
                                              "the colour at " + std::to_string(x) + "," + std::to_string(y)
-                                                 + " is not in the palette, and -filter error means every one must be"});
+                                                 + " is not in the palette, and -filter strict means every one must be"});
             }
             indices[y * width + x] = static_cast<uint8_t>(chosen);
 

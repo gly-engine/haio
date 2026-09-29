@@ -17,3 +17,6 @@ std::unique_ptr<IWindow> CreateWindow(const char* title, int width, int height);
 // last: they ask the codecs what they can do, so those must be declared by now
 #include "haio_registry.hpp"
 #include "haio_pipe.hpp"
+
+// and the transforms, declared per colour off library/backend/transforms/
+#include <haio/generated/transform.hpp>

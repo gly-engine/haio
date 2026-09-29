@@ -1,5 +1,5 @@
 #include <haio.hpp>
-#include <haio_codecs.hpp>
+#include <haio/generated/codec.hpp>
 
 #include <algorithm>
 #include <cctype>

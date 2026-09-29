@@ -2,8 +2,7 @@
 
 #include "haio.hpp"
 #include "haio_cache.hpp"
-
-#include <boost/asio/awaitable.hpp>
+#include "haio_source.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -41,23 +40,35 @@
  *
  * ".." and a segment starting with "~" are refused.
  *
- * ## Bucket Zip
+ * ## Bucket Archive
  *
- * a path may name a file inside an archive, as in `/cdn/assets/pack.zip/logo.png`,
- * when `allow_unzip` is on. the archive is read once and kept in memory, so asking
- * for a second picture out of it costs no fetch.
+ * a path may name a file inside an archive when `allow_unzip` is on, and a file
+ * inside an archive inside that one:
  *
- * an entry larger than `max_unzip`, or one that expands more than two hundred times,
- * is refused: real image data barely compresses, so anything near that is an attempt
- * to spend memory rather than an archive.
+ * @code
+ * /cdn/assets/pack.zip/logo.png
+ * /cdn/assets/foo.ipk/data.tar.gz/assets/icon80x80.png
+ * @endcode
+ *
+ * the first segment named like an archive (`.zip`, `.ipk`, `.deb`, `.tar`, `.tgz`,
+ * `.gz`) is the file the bucket holds. what it is, though, is read from its bytes:
+ * zip, ar (which is what an ipk and a deb are), tar, or any of them under gzip. inside
+ * it the path is walked a segment at a time, and every entry on the way that is an
+ * archive itself is opened in turn.
+ *
+ * every archive opened is kept in memory, each level on its own, so a second icon out
+ * of the same `data.tar.gz` costs neither the fetch nor the gunzip.
+ *
+ * a file larger than `max_unzip`, or one that expands more than two hundred times, is
+ * refused, and a gzip is held to the same: real image data barely compresses, so
+ * anything near that is an attempt to spend memory rather than an archive.
  *
  * ## Bucket Http
  *
  * @code{.toml}
  * [bucket.upstream]
  * url = "https://host/prefix"   # everything under one prefix
- * url = "s3://s3.eu-west-1.amazonaws.com/bucket"   # signed, region from the host
- * url = "s3://minio.local:9000/bucket?region=us-east-1"   # or said outright
+ * url = "s3://s3.eu-west-1.amazonaws.com/bucket"   # signed, with region beside it
  * url = "https://*"             # open: the request names the host
  * @endcode
  *
@@ -66,14 +77,20 @@
  *
  * ## Bucket S3
  *
- * an `s3://` bucket is https with a signature. the region is settled while the config
- * loads, from `?region=` if it says so, else from an amazon host, else from
- * `AWS_DEFAULT_REGION`. a bucket whose region nobody can work out is refused at
- * startup rather than at the first request.
+ * an `s3://` bucket is https with a signature, and the signature is made over a
+ * region: the host only says where the connection goes, so the region is written
+ * next to the url. a bucket that signs and has none is refused at startup rather
+ * than at its first request, which would come back as a 403 that says nothing about
+ * why. one that does not sign needs no region at all.
+ *
+ * amazon names the region in the host too, `bucket.s3.eu-west-1.amazonaws.com`, and
+ * the two have to agree. minio takes `us-east-1` unless it was set up otherwise, and
+ * r2 takes `auto`.
  *
  * @code{.toml}
  * [bucket.orders]
  * url = "s3://bucket.s3.us-east-1.amazonaws.com/prefix"
+ * region = "us-east-1"    # needed once it signs
  * access_key = "AKIA..."
  * secret_key = "..."
  * session_token = "..."   # only for temporary credentials
@@ -162,7 +179,7 @@
  * max_size_percent = 500         # in percent, what a resize may ask for as a share
  * max_cache_entries_by_ip = 30   # entries one address may create per ttl window
  * max_requests_by_ip = 10        # per second, as a leaky bucket
- * allow_unzip = false            # whether a path may reach inside a zip
+ * allow_unzip = false            # whether a path may reach inside an archive
  * max_unzip = 64                 # in mb, one extracted file and the archives kept
  * @endcode
  *
@@ -182,7 +199,7 @@
  * | `max_cache_entries_by_ip` | one caller evicting everyone else's entries      |
  * | `max_requests_by_ip`      | a flood                                          |
  * | `allow_unzip`             | work on behalf of whoever wrote the file         |
- * | `max_unzip`               | a small zip that expands into a large one        |
+ * | `max_unzip`               | a small archive that expands into a large one    |
  *
  * over the cache quota the answer is still produced and still correct, it is simply
  * not stored: the limit is on eviction, not on access.
@@ -191,33 +208,10 @@
 namespace Haio::Cdn {
 
 /**
- * a bucket is described entirely by the scheme of its url:
- *
- *   file://relative/dir     file:///absolute/dir
- *   http://host/prefix      https://host/prefix      s3://host/bucket
- *   https://\*               open, the request names the host
- *   //\*                     open, the request names the scheme and the host
+ * a bucket is an origin with a name, read from [bucket.<name>]; see
+ * Haio::Source::Origin for what its url may say.
  */
-struct BucketConfig {
-    std::string name;
-    std::string url;
-
-    // derived from the url while the config loads, so a bad one fails at startup
-    std::string scheme;
-    bool open = false;
-    std::filesystem::path root;
-
-    /** s3 only: from ?region=, then the host, then AWS_DEFAULT_REGION */
-    std::string region;
-
-    /**
-     * s3 only, and the reason a config file deserves careful permissions. empty
-     * leaves the request unsigned, which is what a public bucket wants.
-     */
-    std::string accessKey;
-    std::string secretKey;
-    std::string sessionToken;
-};
+using BucketConfig = Source::Origin;
 
 /**
  * every limit the server has, in one table, so that reviewing what protects this
@@ -248,11 +242,11 @@ struct SecurityConfig {
     /** requests one address may make per second; zero is no limit */
     size_t maxRequestsByIp = 0;
 
-    /** whether a path may reach inside a zip; off unless asked for */
+    /** whether a path may reach inside an archive; off unless asked for */
     bool allowUnzip = false;
 
     /**
-     * bytes one file out of a zip may take, and what the archives kept in memory may
+     * bytes one file out of an archive may take, and what the archives kept in memory may
      * take altogether. megabytes in the config.
      */
     size_t maxUnzip = 64u << 20;
@@ -278,9 +272,9 @@ struct Config {
 
 Config parseConfig(std::string_view text);
 Config loadConfig(const std::filesystem::path& path);
-namespace Bucket { class ZipArchives; }
+Task<Result<Blob>> fetchBucket(const Config& config, Source::Archives& archives, std::string bucket, std::string path);
 
-boost::asio::awaitable<Result<Blob>> fetchBucket(const Config& config, Bucket::ZipArchives& archives, std::string bucket, std::string path);
-boost::asio::awaitable<void> runServer(Config config);
+/** listens until the platform's loop is stopped, and throws if it cannot listen at all */
+Task<void> runServer(Config config);
 
 }

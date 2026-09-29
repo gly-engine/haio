@@ -9,7 +9,7 @@ namespace Haio {
  * what a file is: the container that holds pixels. RAW means no container at all,
  * just the bytes of a colour format, which is why it needs its size supplied.
  *
- * the \@mime and \@ext tags are read by scripts/gen_codecs.cpp, which builds the lookups both ways
+ * the \@mime and \@ext tags are read by scripts/gen_scaffold.cpp, which builds the lookups both ways
  * from them. the first one is what haio writes, the rest are only accepted. this is what
  * a c++26 enum annotation will carry once the compiler parses them, and until then a
  * tag keeps them on the enumerator instead of in a table somewhere else.
@@ -135,6 +135,9 @@ enum class Color {
     BGRA8888,
 
     GRAY8,
+
+    /** grey then alpha; to -compose tint a colour, where a GRAY8 is a mask */
+    GRAYALPHA88,
     ETC1,
     YUV420,
 
@@ -153,6 +156,13 @@ enum class Color {
      * holding this, and converting to PALETTE is what unpacks it.
      */
     CHR_NES,
+
+    /**
+     * a size and no pixels. every colour becomes it by forgetting its pixels, and it
+     * becomes rgba8888 as a transparent picture, so "-pix_fmt nil" is a clear canvas
+     * as big as the picture it was, with nothing allocated until something draws.
+     */
+    NIL,
 };
 
 /**
@@ -182,9 +192,41 @@ inline constexpr ColorAlias colorAliases[] = {
     {"rgb555le", Color::RGB555},
     {"gray", Color::GRAY8},
     {"grey", Color::GRAY8},
+    {"g8", Color::GRAY8},
+    // imagemagick's -type, for the greys
+    {"grayscale", Color::GRAY8},
+    {"greyscale", Color::GRAY8},
+    {"grayscalealpha", Color::GRAYALPHA88},
+    {"greyscalealpha", Color::GRAYALPHA88},
+    {"ya8", Color::GRAYALPHA88},
+    {"gray8a", Color::GRAYALPHA88},
     {"pal8", Color::PALETTE},
     // the p is for planar, which is the only way haio keeps it
     {"yuv420p", Color::YUV420},
+    {"null", Color::NIL},
+};
+
+
+/**
+ * what paints a picture out of nothing, the way a Format reads one out of bytes:
+ * "xc:white", "gradient:red-blue". imagemagick calls these generators and files them
+ * with its coders; they are kept apart here because they have no bytes to recognise
+ * and nothing to write, and making them a Format meant pretending otherwise.
+ *
+ * the name on the command line is the enumerator in lower case with a dash between
+ * its words, so RadialGradient is radial-gradient. any other name a brush answers to
+ * is declared with it, in include/haio/codecs/generators/.
+ */
+enum class Brush {
+    Xc,               /**< one colour */
+    Null,             /**< nothing, transparent */
+    Gradient,         /**< a linear blend, top to bottom unless told otherwise */
+    RadialGradient,   /**< the same blend from the middle out */
+    Plasma,           /**< a gradient broken up by noise */
+    Hald,             /**< an identity colour lookup table */
+    Code,             /**< a barcode, code 128 unless -format says another */
+    Qr,               /**< a qr code, or a data matrix when -format says so */
+    Text,             /**< words in a font, black on white */
 };
 
 }

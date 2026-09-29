@@ -1,9 +1,11 @@
-#include <bucket/bucket.hpp>
+#include <haio/internal/source/storage.hpp>
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
-using namespace Haio::Cdn::Bucket;
+using namespace Haio::Source;
+using Haio::Source::Origin;
 
 namespace {
 
@@ -47,6 +49,25 @@ auto main() -> int {
         check(base != awsSignatureV4("secret", "20150830", "us-east-1", "iam", toSign), "the service is part of it");
         check(base != awsSignatureV4("secret", "20150830", "us-east-1", "s3", toSign + "x"), "the request is part of it");
         check(base == awsSignatureV4("secret", "20150830", "us-east-1", "s3", toSign), "the same inputs sign the same");
+    }
+
+    // a region is only asked for when it will be signed with, and only ever written
+    {
+        unsetenv("AWS_ACCESS_KEY_ID");
+        unsetenv("AWS_SECRET_ACCESS_KEY");
+
+        Origin open{.name = "public", .url = "s3://minio.local:9000/bucket"};
+        resolveOrigin(open);
+        check(open.region.empty(), "an unsigned bucket resolves without a region");
+
+        Origin keyed{.name = "private", .url = "s3://bucket.s3.eu-west-1.amazonaws.com", .accessKey = "a", .secretKey = "b"};
+        bool refused = false;
+        try { resolveOrigin(keyed); } catch (const std::exception&) { refused = true; }
+        check(refused, "a bucket that signs and writes no region is refused, whatever its host says");
+
+        keyed.region = "eu-west-1";
+        resolveOrigin(keyed);
+        check(keyed.region == "eu-west-1", "the region the config wrote is kept");
     }
 
     if (failures == 0) std::cout << "cdn s3: ok\n";

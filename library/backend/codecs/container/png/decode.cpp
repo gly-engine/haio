@@ -8,6 +8,8 @@
 #define WUFFS_CONFIG__MODULES
 #include <wuffs-v0.4.c>
 
+#include <memory>
+
 namespace {
 
 /**
@@ -69,14 +71,16 @@ Result<Image<P>> decodePng(const Blob& blob) {
     }
 
     wuffs_base__range_ii_u64 wb = wuffs_base__image_decoder__workbuf_len(wuffs_png__decoder__upcast_as__wuffs_base__image_decoder(&dec));
-    std::vector<uint8_t> work(wb.max_incl ? static_cast<size_t>(wb.max_incl) : 0);
+
+    const size_t workLength = wb.max_incl ? static_cast<size_t>(wb.max_incl) : 0;
+    const auto work = std::make_unique_for_overwrite<uint8_t[]>(workLength);
 
     st = wuffs_base__image_decoder__decode_frame(
         wuffs_png__decoder__upcast_as__wuffs_base__image_decoder(&dec),
         &pb,
         &src,
         WUFFS_BASE__PIXEL_BLEND__SRC,
-        wuffs_base__make_slice_u8(work.data(), work.size()),
+        wuffs_base__make_slice_u8(work.get(), workLength),
         nullptr
     );
     if (!wuffs_base__status__is_ok(&st)) {

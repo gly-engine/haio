@@ -9,3 +9,4 @@ latex/
 *.exe
 *.bin
 *.toml
+*.prof
