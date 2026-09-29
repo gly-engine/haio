@@ -4,6 +4,7 @@
 #include "haio/stage.hpp"
 
 #include <algorithm>
+#include <array>
 #include <utility>
 
 namespace Haio {
@@ -56,6 +57,15 @@ constexpr std::pair<int, int> placeOf(Size base, Size layer, Gravity gravity, in
             row(dy, (base.height - layer.height) / 2 + dy, base.height - layer.height - dy)};
 }
 
+/**
+ * how a layer and the picture under it are mixed, named as imagemagick's -compose
+ * names them.
+ *
+ * @todo the operators that take `-define compose:args`, which the composite stage
+ * cannot pass yet: dissolve and blend (a share of src and of dst), modulate
+ * (brightness and saturation), and blur, displace and distort (src as a map that
+ * resamples dst).
+ */
 enum class Compose {
     /**
      * @ref Haio::Transforms::Blend<Compose::Over> @n
@@ -142,6 +152,252 @@ enum class Compose {
      */
     DstIn,
     /**
+     * @ref Haio::Transforms::Blend<Compose::SrcIn> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose srcin -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose srcin -composite -resize 64x64 png:-
+     */
+    SrcIn,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::SrcOut> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose srcout -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose srcout -composite -resize 64x64 png:-
+     */
+    SrcOut,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::SrcAtop> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose srcatop -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose srcatop -composite -resize 64x64 png:-
+     */
+    SrcAtop,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::DstOver> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose dstover -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose dstover -composite -resize 64x64 png:-
+     */
+    DstOver,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::DstOut> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose dstout -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose dstout -composite -resize 64x64 png:-
+     */
+    DstOut,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::DstAtop> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose dstatop -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose dstatop -composite -resize 64x64 png:-
+     */
+    DstAtop,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Xor> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose xor -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose xor -composite -resize 64x64 png:-
+     */
+    Xor,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Clear> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose clear -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose clear -composite -resize 64x64 png:-
+     */
+    Clear,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::MinusDst> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose minusdst -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose minusdst -composite -resize 64x64 png:-
+     */
+    MinusDst,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::MinusSrc> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose minussrc -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose minussrc -composite -resize 64x64 png:-
+     */
+    MinusSrc,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::DivideDst> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose dividedst -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose dividedst -composite -resize 64x64 png:-
+     */
+    DivideDst,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::DivideSrc> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose dividesrc -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose dividesrc -composite -resize 64x64 png:-
+     */
+    DivideSrc,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::ModulusAdd> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose modulusadd -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose modulusadd -composite -resize 64x64 png:-
+     */
+    ModulusAdd,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::ModulusSubtract> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose modulussubtract -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose modulussubtract -composite -resize 64x64 png:-
+     */
+    ModulusSubtract,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::LinearDodge> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose lineardodge -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose lineardodge -composite -resize 64x64 png:-
+     */
+    LinearDodge,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::LinearBurn> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose linearburn -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose linearburn -composite -resize 64x64 png:-
+     */
+    LinearBurn,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::LinearLight> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose linearlight -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose linearlight -composite -resize 64x64 png:-
+     */
+    LinearLight,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::VividLight> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose vividlight -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose vividlight -composite -resize 64x64 png:-
+     */
+    VividLight,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::PinLight> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose pinlight -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose pinlight -composite -resize 64x64 png:-
+     */
+    PinLight,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::PegtopLight> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose pegtoplight -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose pegtoplight -composite -resize 64x64 png:-
+     */
+    PegtopLight,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::HardMix> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose hardmix -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose hardmix -composite -resize 64x64 png:-
+     */
+    HardMix,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Hue> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose hue -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose hue -composite -resize 64x64 png:-
+     */
+    Hue,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Saturate> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose saturate -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose saturate -composite -resize 64x64 png:-
+     */
+    Saturate,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Luminize> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose luminize -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose luminize -composite -resize 64x64 png:-
+     */
+    Luminize,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Colorize> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose colorize -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose colorize -composite -resize 64x64 png:-
+     */
+    Colorize,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Src> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose src -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose src -composite -resize 64x64 png:-
+     */
+    Src,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Dst> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose dst -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose dst -composite -resize 64x64 png:-
+     */
+    Dst,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Copy> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose copy -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose copy -composite -resize 64x64 png:-
+     */
+    Copy,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::CopyRed> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose copyred -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose copyred -composite -resize 64x64 png:-
+     */
+    CopyRed,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::CopyGreen> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose copygreen -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose copygreen -composite -resize 64x64 png:-
+     */
+    CopyGreen,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::CopyBlue> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose copyblue -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose copyblue -composite -resize 64x64 png:-
+     */
+    CopyBlue,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::CopyCyan> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose copycyan -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose copycyan -composite -resize 64x64 png:-
+     */
+    CopyCyan,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::CopyMagenta> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose copymagenta -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose copymagenta -composite -resize 64x64 png:-
+     */
+    CopyMagenta,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::CopyYellow> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose copyyellow -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose copyyellow -composite -resize 64x64 png:-
+     */
+    CopyYellow,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::CopyBlack> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose copyblack -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose copyblack -composite -resize 64x64 png:-
+     */
+    CopyBlack,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::CopyOpacity> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose copyopacity -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose copyopacity -composite -resize 64x64 png:-
+     */
+    CopyOpacity,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::DarkenIntensity> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose darkenintensity -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose darkenintensity -composite -resize 64x64 png:-
+     */
+    DarkenIntensity,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::LightenIntensity> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose lightenintensity -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose lightenintensity -composite -resize 64x64 png:-
+     */
+    LightenIntensity,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::ChangeMask> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose changemask -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose changemask -composite -resize 64x64 png:-
+     */
+    ChangeMask,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Stereo> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose stereo -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose stereo -composite -resize 64x64 png:-
+     */
+    Stereo,
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Bumpmap> @n
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose bumpmap -composite -resize 64x64 png:-
+     * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose bumpmap -composite -resize 64x64 png:-
+     */
+    Bumpmap,
+    /**
      * @ref Haio::Transforms::Blend<Compose::Tint> @n
      * @ref Haio::Transforms::Blend<Compose::Tint, Color::GRAYALPHA88> @n
      * @ref Haio::Transforms::Blend<Compose::Tint, Color::GRAY8> @n
@@ -150,6 +406,11 @@ enum class Compose {
      */
     Tint,
 };
+
+/** a share from 0 to 1 through imagemagick's sixteen bit quantum and down to a byte */
+constexpr uint8_t quantumByteOf(double share) {
+    return static_cast<uint8_t>(static_cast<uint32_t>(std::clamp(share * 65535.0 + 0.5, 0.0, 65535.0)) / 257);
+}
 
 /**
  * straight alpha in, worked out premultiplied as imagemagick 6 does: colour(Sc, Sa, Dc, Da)
@@ -163,11 +424,6 @@ Image<Color::RGBA8888> blendWith(Image<Color::RGBA8888> dst, const Image<Color::
     const int x1 = std::min(dst.width, x + src.width);
     const int y1 = std::min(dst.height, y + src.height);
 
-    // through imagemagick's sixteen bit quantum; it keeps transparency, not alpha, so that is what is cut
-    const auto byteOf = [](double share) {
-        return static_cast<uint8_t>(static_cast<uint32_t>(std::clamp(share * 65535.0 + 0.5, 0.0, 65535.0)) / 257);
-    };
-
     for (int by = y0; by < y1; by++) {
         for (int bx = x0; bx < x1; bx++) {
             auto* under = dst.data.data() + (static_cast<size_t>(by) * static_cast<size_t>(dst.width) + static_cast<size_t>(bx)) * 4;
@@ -180,9 +436,10 @@ Image<Color::RGBA8888> blendWith(Image<Color::RGBA8888> dst, const Image<Color::
             const double ra = std::clamp(alpha(sa, da), 0.0, 1.0);
             for (int c = 0; c < 3; c++) {
                 const double premultiplied = colour(over[c] / 255.0, sa, under[c] / 255.0, da);
-                under[c] = ra > 0 ? byteOf(premultiplied / ra) : 0;
+                under[c] = ra > 0 ? quantumByteOf(premultiplied / ra) : 0;
             }
-            under[3] = static_cast<uint8_t>(255 - byteOf(1 - ra));
+            // imagemagick keeps transparency, not alpha, so that is what is cut
+            under[3] = static_cast<uint8_t>(255 - quantumByteOf(1 - ra));
         }
     }
     return dst;
@@ -220,6 +477,51 @@ Image<Color::RGBA8888> blendSeparable(Image<Color::RGBA8888> dst, const Image<Co
                          return sc * sa * (1 - da) + dc * da * (1 - sa) + sa * da * blend(sc, dc);
                      },
                      unionOf);
+}
+
+/** what a blend written with blendPixels leaves where src does not reach */
+enum class Outside {
+    Kept,      /**< dst as it was */
+    Cleared,   /**< nothing, as imagemagick 6 leaves it for the operators that keep only where src is */
+};
+
+/**
+ * every pixel src covers, the clear ones too, since some operators change dst where
+ * src has no alpha: blend(s, d) takes both as straight rgba from 0 to 1 and answers
+ * the same, and what src does not reach is kept or cleared.
+ */
+template <typename B>
+Image<Color::RGBA8888> blendPixels(Image<Color::RGBA8888> dst, const Image<Color::RGBA8888>& src, int x, int y,
+                                   Outside outside, B&& blend) {
+    for (int by = 0; by < dst.height; by++) {
+        for (int bx = 0; bx < dst.width; bx++) {
+            auto* under = dst.data.data() + (static_cast<size_t>(by) * static_cast<size_t>(dst.width) + static_cast<size_t>(bx)) * 4;
+            if (bx < x || by < y || bx >= x + src.width || by >= y + src.height) {
+                if (outside == Outside::Cleared) std::fill_n(under, 4, 0);
+                continue;
+            }
+            const auto* over = src.data.data()
+                             + (static_cast<size_t>(by - y) * static_cast<size_t>(src.width) + static_cast<size_t>(bx - x)) * 4;
+            const std::array<double, 4> s{over[0] / 255.0, over[1] / 255.0, over[2] / 255.0, over[3] / 255.0};
+            const std::array<double, 4> d{under[0] / 255.0, under[1] / 255.0, under[2] / 255.0, under[3] / 255.0};
+            const std::array<double, 4> res = blend(s, d);
+            under[3] = static_cast<uint8_t>(255 - quantumByteOf(1 - res[3]));
+            for (int c = 0; c < 3; c++) under[c] = under[3] == 0 ? 0 : quantumByteOf(res[c]);
+        }
+    }
+    return dst;
+}
+
+/** how bright a straight rgba pixel is, rec.709 as imagemagick 6 weighs it */
+constexpr double intensityOf(const std::array<double, 4>& pixel) {
+    return 0.212656 * pixel[0] + 0.715158 * pixel[1] + 0.072186 * pixel[2];
+}
+
+/** 1 / v, or as near as imagemagick lets it get when v is next to nothing */
+constexpr double reciprocalOf(double v) {
+    constexpr double epsilon = 1.0e-12;
+    if (v >= epsilon || v <= -epsilon) return 1 / v;
+    return v < 0 ? -1 / epsilon : 1 / epsilon;
 }
 
 namespace Transforms {
