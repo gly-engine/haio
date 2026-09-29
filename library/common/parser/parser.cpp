@@ -279,7 +279,7 @@ private:
 
     /**
      * a transform changes the picture on top of the stack, and a merge wants a picture
-     * and one or two over it in its parenthesis, and leaves one.
+     * and one to three over it in its parenthesis, and leaves one.
      */
     bool transform(const Stage& stage, const Word& dashed) {
         // a stage that takes no value, as -composite, reads no word after it
@@ -290,7 +290,7 @@ private:
         auto& pictures = scopes_.back();
         if (pictures == 0) return refuse("no images defined", dashed.spelling);
         if (stage.merges && pictures == 1) return refuse("image sequence is required", dashed.spelling);
-        if (stage.merges && pictures > 3) return refuse("image sequence is too long", dashed.spelling);
+        if (stage.merges && pictures > 4) return refuse("image sequence is too long", dashed.spelling);
 
         const auto taken = take(stage, stage.name(), dashed.spelling);
         if (!taken) return false;
@@ -482,20 +482,14 @@ private:
         const auto codec = codecStage(Grammar::output, reads.encode);
         const auto taken = take(codec.stage, contextOf(command_.outputFormat, word), word);
         if (!taken) return false;
-        const Stages::Given given{*taken};
 
         /**
          * the colour stored inside the output, which is not the same question as the
-         * container: a tga holds any of six and a ktx2 any of three.
+         * container: a tga holds any of six and a ktx2 any of three. a -pix_fmt written
+         * last is the one, the way it is for ffmpeg.
          */
-        if (const auto* color = given.find("pix_fmt")) {
-            const auto named = colorNamed(color->value);
-            if (!named) {
-                return refuse("unrecognized pixel format",
-                              color->value);
-            }
-            command_.outputColor = *named;
-            command_.outputColorName = color->value;
+        if (!command_.steps.empty() && command_.steps.back().kind == TokenKind::PixFmt) {
+            command_.outputColor = command_.steps.back().color;
         }
 
         auto settings = settingsOf(*taken, reads.encode, contextOf(command_.outputFormat, word));

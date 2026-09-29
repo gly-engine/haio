@@ -157,6 +157,21 @@ std::optional<Error> palette(Picture& picture, const Token& token) {
     return std::nullopt;
 }
 
+/** the picture in another colour, kept there as it is kept in the one it was decoded in */
+std::optional<Error> pixFmt(Picture& picture, const Token& token) {
+    // indices are only ever the ones a palette left, so they are kept rather than made
+    if (token.color == Color::PALETTE) {
+        if (picture.indexed) return std::nullopt;
+        return Error{ErrorCode::InvalidInput,
+                     "a palette is colours a picture was fitted to, and this one was not; name some with -palete"};
+    }
+    picture.indexed.reset();
+    auto converted = Convert(picture.current(), *token.color);
+    if (!converted) return converted.error();
+    picture.native = *std::move(converted);
+    return std::nullopt;
+}
+
 Size sizeOf(const Picture& picture) {
     return picture.native ? Size{picture.native->width, picture.native->height}
                           : Size{picture.image.width, picture.image.height};
@@ -199,6 +214,11 @@ std::optional<Error> composite(Picture& base, Picture layer, Compose compose, Gr
     base.indexed.reset();
     const auto [left, top] = placeOf(sizeOf(base), sizeOf(layer), gravity, x, y);
     if (auto blended = blendAsTheyAre(compose, base, layer, left, top)) return keep(base.image, *std::move(blended));
+    // the base's colour picks the blend, so a layer in any other colour is widened to the rgba8888 they take
+    if (layer.native && layer.native->color != Color::RGBA8888) {
+        if (auto failed = layer.rgba()) return failed;
+        if (auto blended = blendAsTheyAre(compose, base, layer, left, top)) return keep(base.image, *std::move(blended));
+    }
     if (auto failed = base.rgba()) return failed;
     if (auto failed = layer.rgba()) return failed;
     return keep(base.image, Transforms::Composite<Color::RGBA8888>(std::move(base.image), layer.image, compose,
@@ -310,6 +330,7 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
             case TokenKind::Radius: failure = onTop(radius, token); break;
             case TokenKind::Negate: failure = onTop(negate, token); break;
             case TokenKind::Palette: failure = onTop(palette, token); break;
+            case TokenKind::PixFmt: failure = onTop(pixFmt, token); break;
 
             case TokenKind::Composite: {
                 auto pictures = inScope();
@@ -317,10 +338,25 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
                     failure = pictures.error();
                     break;
                 }
-                if (pictures->size() != 2 && pictures->size() != 3) {
-                    failure = Error{ErrorCode::InvalidInput, "-composite joins a picture and one or two over it, and there are "
+                if (pictures->size() < 2 || pictures->size() > 4) {
+                    failure = Error{ErrorCode::InvalidInput, "-composite joins a picture and one to three over it, and there are "
                                                                  + std::to_string(pictures->size())};
                     break;
+                }
+                // three over the destination are one: the first tints the shape and the second
+                // its negative, and the first of the two goes over the second
+                if (pictures->size() == 4) {
+                    auto second = std::move(stack.back());
+                    stack.pop_back();
+                    auto first = std::move(stack.back());
+                    stack.pop_back();
+                    auto negative = stack.back();
+                    failure = negate(negative, token);
+                    if (!failure) failure = composite(negative, std::move(second), Compose::Tint, Gravity::NorthWest, 0, 0);
+                    if (!failure) failure = composite(stack.back(), std::move(first), Compose::Tint, Gravity::NorthWest, 0, 0);
+                    if (!failure) failure = composite(negative, std::move(stack.back()), Compose::Over, Gravity::NorthWest, 0, 0);
+                    if (failure) break;
+                    stack.back() = std::move(negative);
                 }
                 // two over the destination are one: the second tints the first, from its top left corner
                 if (pictures->size() == 3) {

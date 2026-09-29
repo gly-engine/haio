@@ -188,7 +188,7 @@ Image<Color::RGBA8888> blendWith(Image<Color::RGBA8888> dst, const Image<Color::
     return dst;
 }
 
-/** the src's pixel, or opaque black where it does not reach, which tints nothing */
+/** the src's pixel, or opaque black where it does not reach */
 inline const uint8_t* colourAt(const Image<Color::RGBA8888>& src, int x, int y) {
     static constexpr uint8_t black[4] = {0, 0, 0, 0xFF};
     if (x < 0 || y < 0 || x >= src.width || y >= src.height) return black;
@@ -198,11 +198,6 @@ inline const uint8_t* colourAt(const Image<Color::RGBA8888>& src, int x, int y) 
 /** a times b, both out of 255, rounded */
 constexpr uint8_t timesOf(int a, int b) {
     return static_cast<uint8_t>((a * b + 127) / 255);
-}
-
-/** inverted, multiplied, inverted back */
-constexpr uint8_t screenOf(int a, int b) {
-    return static_cast<uint8_t>(255 - timesOf(255 - a, 255 - b));
 }
 
 

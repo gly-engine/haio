@@ -25,6 +25,7 @@ enum class TokenKind {
     Radius,
     Negate,
     Palette,
+    PixFmt,     /**< the picture moved into the colour in color */
     Composite,
     Fx,
     Open,    /**< a parenthesis: what comes after it, until Close, sees only its own pictures */
@@ -39,8 +40,8 @@ struct Token {
     Format format = Format::RAW;
 
     /**
-     * Encode only: which colour to store inside the container, when somebody named
-     * one. nothing named is not the same as rgba8888: it means the container picks,
+     * Encode: which colour to store inside the container, when somebody named
+     * one; PixFmt: the colour the picture is moved into. nothing named is not the same as rgba8888: it means the container picks,
      * which for most of them is the only colour they write anyway.
      */
     std::optional<Color> color;
@@ -94,6 +95,7 @@ Token ResizeByPercent(int percent, ResizeFilter filter = ResizeFilter::Point);
 Token Radius(int radius);
 Token Negate();
 Token Palette(std::string palette, Dither dither, size_t limit, Limit limitHow);
+Token PixFmt(Color color);
 Token Composite(Compose compose, Gravity gravity, int x, int y);
 Token Fx(std::string expression);
 Token Open();

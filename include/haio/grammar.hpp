@@ -97,8 +97,6 @@ inline constexpr Stages::Option outputFormat{
 
 inline constexpr Stages::Option outputOptions[] = {
     outputFormat,
-    {.spellings = {"pix_fmt", "pix_format"}, .takes = "colour-name",
-     .help = "the colour stored inside it, as ffmpeg names it"},
 };
 
 inline constexpr Stages::Stage output{
@@ -223,11 +221,12 @@ inline constexpr std::array notes = {
     Note{"a canvas such as `xc:white` is painted by a brush rather than read by a codec, so `-size` is one of its options; `canvas:` is `xc:` and `fractal:` is `plasma:` under another name, as they are for imagemagick."},
     Note{"`gradient:` and `radial-gradient:` draw the same pixels imagemagick 6 does, `-define gradient:*` included, except where imagemagick 6 slips: south by -define measured against the width, and a start pixel in the last column taking its neighbour's colour. `plasma:` is haio's own noise, so a `-seed` repeats haio's picture rather than imagemagick's."},
     Note{"every source puts a picture on a stack, the way imagemagick keeps a list: a file, an http url, `-` for stdin, or a canvas such as `xc:white`. the last word is always the output."},
-    Note{"a transform changes the picture on top of the stack, the one made last; imagemagick would change them all. a merge such as `-composite` wants exactly two in its parenthesis and leaves one."},
+    Note{"a transform changes the picture on top of the stack, the one made last; imagemagick would change them all. a merge such as `-composite` wants two to four in its parenthesis and leaves one: with three the third tints the second, and with four the fourth tints the second's negative under it."},
     Note{"a parenthesis only scopes the stack: what is inside sees only the pictures made inside, and they join the stack around it at the `)`. options do not cross it."},
     Note{"the output takes exactly one picture, so two left on the stack is an error rather than two files."},
     Note{"`-fx` is parsed but currently rejected during pipeline construction."},
     Note{"naming a colour a container cannot store is an error rather than a silent conversion."},
+    Note{"`-pix_fmt` moves the picture on top into that colour, and written right before the output it is also the colour stored inside it."},
     Note{"`raw:out.bin` with a `-pix_fmt` writes the pixels themselves, which is the only way to ask for a colour with no container around it."},
 };
 

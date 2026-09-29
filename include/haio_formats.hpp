@@ -185,6 +185,12 @@ inline constexpr ColorAlias colorAliases[] = {
     {"rgb555le", Color::RGB555},
     {"gray", Color::GRAY8},
     {"grey", Color::GRAY8},
+    {"g8", Color::GRAY8},
+    // imagemagick's -type, for the greys
+    {"grayscale", Color::GRAY8},
+    {"greyscale", Color::GRAY8},
+    {"grayscalealpha", Color::GRAYALPHA88},
+    {"greyscalealpha", Color::GRAYALPHA88},
     {"ya8", Color::GRAYALPHA88},
     {"gray8a", Color::GRAYALPHA88},
     {"pal8", Color::PALETTE},

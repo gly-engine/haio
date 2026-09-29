@@ -107,6 +107,12 @@ Token Negate() {
     return Token{TokenKind::Negate};
 }
 
+Token PixFmt(Color color) {
+    Token token{TokenKind::PixFmt};
+    token.color = color;
+    return token;
+}
+
 Token Encode(Format format, std::optional<Color> color, Settings settings) {
     Token token{TokenKind::Encode};
     token.format = format;

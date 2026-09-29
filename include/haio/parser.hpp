@@ -83,9 +83,8 @@ struct Parsed {
     Format outputFormat = Format::RAW;
     Settings outputSettings;
 
-    /** which colour to store inside the output, when -pix_fmt named one */
+    /** which colour to store inside the output, when a -pix_fmt right before it named one */
     std::optional<Color> outputColor;
-    std::string outputColorName;
 };
 
 Parsed parse(std::span<const Word> words);

@@ -444,6 +444,16 @@ int main() {
         assert(!cmd.error);
         assert(transformsOf(cmd)[0].compose == Haio::Compose::Over);
     }
+    // four are the destination, a shape, and the colours of its black and of its white
+    {
+        auto cmd = parse({"convert", "dog.png", "qr:oi", "xc:red", "xc:blue", "-composite", "out.png"});
+        assert(!cmd.error);
+    }
+    {
+        auto cmd = parse({"convert", "dog.png", "qr:oi", "xc:red", "xc:blue", "xc:green", "-composite", "out.png"});
+        assert(cmd.error);
+        assert(cmd.error.token == "-composite");
+    }
     {
         auto cmd = parse({"convert", "a.png", "b.png", "-compose", "Color-Dodge", "-composite", "out.png"});
         assert(!cmd.error);
@@ -490,10 +500,24 @@ int main() {
         assert(!cmd.error);
         assert(cmd.outputColor == Haio::Color::YUV420);
     }
+    // each -pix_fmt moves the picture, and the one right before the output is what it keeps
     {
         auto cmd = parse({"convert", "input.png", "-pix_fmt", "rgb565", "-pix_format", "bgr888", "out.tga"});
+        assert(!cmd.error);
+        assert(transformsOf(cmd).size() == 2);
+        assert(cmd.outputColor == Haio::Color::BGR888);
+    }
+    {
+        auto cmd = parse({"convert", "a.png", "b.png", "-pix_fmt", "grayscale", "xc:red", "-composite", "out.png"});
+        assert(!cmd.error);
+        assert(transformsOf(cmd)[0].kind == Haio::TokenKind::PixFmt);
+        assert(transformsOf(cmd)[0].color == Haio::Color::GRAY8);
+        assert(!cmd.outputColor);
+    }
+    {
+        auto cmd = parse({"convert", "-pix_fmt", "gray8", "input.png", "out.png"});
         assert(cmd.error);
-        assert(cmd.error.token == "-pix_format");
+        assert(cmd.error.token == "-pix_fmt");
     }
     {
         auto cmd = parse({"convert", "input.png", "-pix_fmt", "nonsense", "out.tga"});
