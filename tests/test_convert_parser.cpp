@@ -473,10 +473,21 @@ int main() {
         assert(!cmd.error);
         assert(transformsOf(cmd)[0].kind == Haio::TokenKind::PixFmt);
     }
-    // anything else first, or a qr with one colour after it, is left as written
+    // with one colour, null: is the second
+    {
+        auto cmd = parse({"convert", "text:oi", "xc:red", "-composite", "out.png"});
+        assert(!cmd.error);
+        using enum Haio::TokenKind;
+        const auto& steps = cmd.steps;
+        assert(steps.size() == 6);
+        assert(steps[1].kind == PixFmt && steps[1].color == Haio::Color::NIL);
+        assert(steps[4].kind == Generate && steps[4].brush == Haio::Brush::Null);
+        assert(steps[5].kind == Composite);
+    }
+    // anything else first, or a compose asked for with one colour, is left as written
     for (const auto& line : std::vector<std::vector<std::string>>{
              {"convert", "a.png", "xc:red", "xc:blue", "-composite", "out.png"},
-             {"convert", "qr:oi", "xc:red", "-composite", "out.png"},
+             {"convert", "qr:oi", "xc:red", "-compose", "multiply", "-composite", "out.png"},
              {"convert", "xc:white", "qr:oi", "xc:red", "-composite", "out.png"}}) {
         auto cmd = parse(line);
         assert(!cmd.error);

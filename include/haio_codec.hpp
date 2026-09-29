@@ -349,8 +349,9 @@ struct Draws {
     std::array<std::string_view, 2> aliases = {};
 
     /**
-     * a shape that, first of three in a -composite, is the shape rather than the
-     * background: "qr:x xc:red xc:blue" is read as "qr:x -pix_fmt nil qr:x xc:red xc:blue"
+     * a shape that, first in a -composite, is the shape rather than the background:
+     * "qr:x xc:red xc:blue" is read as "qr:x -pix_fmt nil qr:x xc:red xc:blue", and
+     * "qr:x xc:red" as "qr:x xc:red null:" before that
      */
     bool composite4 = false;
 };

@@ -319,8 +319,16 @@ private:
         auto token = build(stage, *value, Stages::Given{*taken});
         if (!token) return refuseWhole(std::move(token.error().message), std::move(token.error().token));
 
+        const bool shapeFirst = stage.merges && firsts_.back() && composite4Of(command_.steps[firsts_.back()->begin].brush);
+
+        // a shape and one colour over it is that colour on nothing, which is two colours with null: the second
+        if (shapeFirst && pictures == 2 && token->compose == Compose::Over) {
+            command_.steps.push_back(Tokens::Generate(Brush::Null, {}));
+            pictures = 3;
+        }
+
         // a shape first of three is the shape, over a clear copy of itself for the size
-        if (stage.merges && pictures == 3 && firsts_.back() && composite4Of(command_.steps[firsts_.back()->begin].brush)) {
+        if (shapeFirst && pictures == 3) {
             const auto begin = command_.steps.begin() + static_cast<std::ptrdiff_t>(firsts_.back()->begin);
             std::vector<Token> copy(begin, command_.steps.begin() + static_cast<std::ptrdiff_t>(firsts_.back()->end));
             copy.push_back(Tokens::PixFmt(Color::NIL));
