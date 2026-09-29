@@ -65,6 +65,9 @@ constexpr std::pair<int, int> placeOf(Size base, Size layer, Gravity gravity, in
  * cannot pass yet: dissolve and blend (a share of src and of dst), modulate
  * (brightness and saturation), and blur, displace and distort (src as a map that
  * resamples dst).
+ *
+ * @note photoshop's dissolve is not imagemagick's: it shows each pixel or not at
+ * random, as likely as its opacity, where imagemagick fades by a share.
  */
 enum class Compose {
     /**

@@ -7,6 +7,9 @@ namespace Haio::Transforms {
 /**
  * the colour where both are opaque; Haio::blendSeparable has the rest.
  *
+ * @note photoshop's soft light is its own formula, a little off w3c's that
+ * imagemagick follows; pegtoplight comes closer to it.
+ *
  * @startuml{math}
  * {: ("res"_"rgb" = {("dst"_"rgb" - (1 - 2 "src"_"rgb") "dst"_"rgb" (1 - "dst"_"rgb"), "if " "src"_"rgb" <= 0.5), ("dst"_"rgb" + (2 "src"_"rgb" - 1)(D("dst"_"rgb") - "dst"_"rgb"), "otherwise"):}), (D(x) = {(((16x - 12)x + 4)x, "if " x <= 0.25), (sqrt(x), "otherwise"):}), ("res"_"a" = "dst"_"a" + "src"_"a"(1 - "dst"_"a")) :}
  * @enduml
