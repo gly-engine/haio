@@ -103,11 +103,11 @@ auto main() -> int {
     check(GenerateNative(Brush::Qr, "tiny", {})->color == Color::GRAYALPHA88, "qr: paints in grayalpha88");
     check(GenerateNative(Brush::Code, "haio", {})->color == Color::GRAYALPHA88, "and so does code:");
 
-    // -hole leaves the middle in the background, grown to whole modules
+    // -hole leaves the middle clear, grown to whole modules
     const auto holed = draw(Brush::Qr, "http://pudim.com.br", {Setting{"size", "300x300"}, Setting{"hole", "64x64"}});
     bool empty = true;
     for (int y = 150 - 32; y < 150 + 32; y++) {
-        for (int x = 150 - 32; x < 150 + 32; x++) empty = empty && at(holed, x, y) == 0xFFFFFFFF;
+        for (int x = 150 - 32; x < 150 + 32; x++) empty = empty && at(holed, x, y) == 0;
     }
     check(empty, "-hole leaves a hole in the middle");
     check(!GenerateNative(Brush::Qr, "http://pudim.com.br", {Setting{"size", "300x300"}, Setting{"hole", "150x150"}}),
@@ -120,7 +120,7 @@ auto main() -> int {
     const auto grown = draw(Brush::Qr, "http://pudim.com.br", {Setting{"hole", "64x64"}});
     bool room = true;
     for (int y = 124 - 32; y < 124 + 32; y++) {
-        for (int x = 124 - 32; x < 124 + 32; x++) room = room && at(grown, x, y) == 0xFFFFFFFF;
+        for (int x = 124 - 32; x < 124 + 32; x++) room = room && at(grown, x, y) == 0;
     }
     check(grown.width == 248 && grown.height == 248 && room, "-hole alone sizes the picture to fit it");
 

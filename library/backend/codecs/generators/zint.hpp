@@ -29,7 +29,7 @@ namespace Haio::Codecs::Zint {
  * another, which is what stretching it to fit would do and what a scanner minds most.
  * a linear code fills the height it is given.
  *
- * a hole, when there is one, is left in the middle in white: the
+ * a hole, when there is one, is left in the middle clear: the
  * pixels asked for, grown to whole modules and centred on the module grid. without
  * -size the hole is what decides the scale, so the picture comes out as small as it
  * can be with that hole in it and the code still readable.
@@ -138,8 +138,12 @@ Result<Image<Color::GRAYALPHA88>> paint(int symbology, std::string_view words, c
     const int height = linear ? size.height : rows * scale;
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < columns * scale; x++) {
-            if (dark(x / scale, linear ? 0 : y / scale)) {
-                image.data[(static_cast<size_t>(top + y) * static_cast<size_t>(size.width) + static_cast<size_t>(left + x)) * 2] = ink;
+            const auto at = (static_cast<size_t>(top + y) * static_cast<size_t>(size.width) + static_cast<size_t>(left + x)) * 2;
+            if (inHole(x / scale, linear ? 0 : y / scale)) {
+                image.data[at] = 0;
+                image.data[at + 1] = 0;
+            } else if (dark(x / scale, linear ? 0 : y / scale)) {
+                image.data[at] = ink;
             }
         }
     }

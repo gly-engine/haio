@@ -6,8 +6,9 @@
 
 namespace {
 
-/** U+2580, which fills the top half of the cell and leaves the bottom to the background */
-constexpr std::string_view halfBlock = "▀";
+/** U+2580 and U+2584, which fill one half of the cell and leave the other to the background */
+constexpr std::string_view upperHalf = "▀";
+constexpr std::string_view lowerHalf = "▄";
 
 void appendNumber(std::string& out, int value) {
     out += std::to_string(value);
@@ -18,21 +19,22 @@ void appendNumber(std::string& out, int value) {
 namespace Haio::Codecs {
 
 /**
- * two pixel rows per terminal row, using the upper half block.
+ * two pixel rows per terminal row, using the half blocks.
  *
  * the foreground paints the top pixel and the background the bottom one, which buys
  * twice the vertical resolution of the ansi rendering for the same number of lines
  * and makes the aspect ratio come out roughly square.
  *
- * an odd number of rows leaves the last cell with nothing below it, and its
- * background is left black rather than repeating the row above: a doubled last line
- * reads as part of the picture, a dark one reads as the edge.
+ * a terminal cannot blend, so a pixel under half opaque is not there, and where it is
+ * not the terminal's own background shows: a clear top is the lower half block in the
+ * bottom's colour, and a clear cell is a space. an odd number of rows leaves the last
+ * cell with nothing below it, which is clear the same way.
  */
 template <>
-Result<Blob> Encode<Format::UTF8, Color::RGB888>(Image<Color::RGB888> img) {
+Result<Blob> Encode<Format::UTF8, Color::RGBA8888>(Image<Color::RGBA8888> img) {
     const Size size{img.width, img.height};
-    HAIO_TRY(expected, sizeOf(Color::RGB888, size));
-    if (img.data.size() != expected) HAIO_FAIL(InvalidInput, "invalid rgb888 image for utf8 encode");
+    HAIO_TRY(expected, sizeOf(Color::RGBA8888, size));
+    if (img.data.size() != expected) HAIO_FAIL(InvalidInput, "invalid rgba8888 image for utf8 encode");
 
     const auto width = static_cast<size_t>(img.width);
     const auto height = static_cast<size_t>(img.height);
@@ -40,54 +42,62 @@ Result<Blob> Encode<Format::UTF8, Color::RGB888>(Image<Color::RGB888> img) {
     std::string out;
     out.reserve(width * ((height + 1) / 2) * 40);
 
-    const auto colourAt = [&](size_t row, size_t x, bool present) -> uint32_t {
-        if (!present) return 0;
-        const auto at = (row * width + x) * 3;
-        return (static_cast<uint32_t>(img.data[at + 0]) << 16)
-             | (static_cast<uint32_t>(img.data[at + 1]) << 8)
-             | img.data[at + 2];
+    const auto pixelAt = [&](size_t row, size_t x) -> const uint8_t* {
+        if (row >= height) return nullptr;
+        const auto* pixel = img.data.data() + (row * width + x) * 4;
+        return pixel[3] >= 0x80 ? pixel : nullptr;
     };
 
-    const auto appendColour = [&](std::string_view lead, uint32_t colour) {
-        out += lead;
-        appendNumber(out, static_cast<int>((colour >> 16) & 0xFF));
-        out += ';';
-        appendNumber(out, static_cast<int>((colour >> 8) & 0xFF));
-        out += ';';
-        appendNumber(out, static_cast<int>(colour & 0xFF));
+    const auto appendColour = [&](std::string& into, std::string_view lead, const uint8_t* pixel) {
+        into += lead;
+        appendNumber(into, pixel[0]);
+        into += ';';
+        appendNumber(into, pixel[1]);
+        into += ';';
+        appendNumber(into, pixel[2]);
     };
 
+    std::string colours;
     for (size_t y = 0; y < height; y += 2) {
         /**
          * a terminal keeps the colour it was last told, so saying it again is bytes
          * nobody reads. a picture in few colours repeats itself constantly, and this
          * is exactly the picture somebody renders in a terminal.
          *
-         * the pair is tracked rather than each half, because a cell sets both at once.
+         * the whole escape is compared rather than each half, because a cell sets both at once.
          */
-        uint32_t lastTop = 0;
-        uint32_t lastBottom = 0;
-        bool anySoFar = false;
+        std::string last;
 
         for (size_t x = 0; x < width; x++) {
-            const auto top = colourAt(y, x, true);
-            const auto bottom = colourAt(y + 1, x, y + 1 < height);
+            const auto* top = pixelAt(y, x);
+            const auto* bottom = pixelAt(y + 1, x);
 
-            if (!anySoFar || top != lastTop || bottom != lastBottom) {
-                appendColour("\x1b[38;2;", top);
-                appendColour(";48;2;", bottom);
-                out += 'm';
-                lastTop = top;
-                lastBottom = bottom;
-                anySoFar = true;
+            colours.clear();
+            std::string_view glyph = " ";
+            if (top && bottom) {
+                appendColour(colours, "\x1b[38;2;", top);
+                appendColour(colours, ";48;2;", bottom);
+                glyph = upperHalf;
+            } else if (top || bottom) {
+                appendColour(colours, "\x1b[38;2;", top ? top : bottom);
+                colours += ";49";
+                glyph = top ? upperHalf : lowerHalf;
+            } else {
+                colours += "\x1b[49";
             }
-            out += halfBlock;
+            colours += 'm';
+
+            if (colours != last) {
+                out += colours;
+                last = colours;
+            }
+            out += glyph;
         }
         // the reset ends the row, so the next one starts with nothing assumed
         out += "\x1b[0m\n";
     }
 
-    return Blob{Format::UTF8, Color::RGB888, "text/x-ansi-halfblock", {},
+    return Blob{Format::UTF8, Color::RGBA8888, "text/x-ansi-halfblock", {},
                 std::vector<uint8_t>(out.begin(), out.end())};
 }
 
