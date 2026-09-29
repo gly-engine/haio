@@ -102,12 +102,12 @@ enum class Compose {
  * is the premultiplied channel and alpha(Sa, Da) the coverage, both from 0 to 1.
  */
 template <typename Colour, typename Alpha>
-Image<Color::RGBA8888> blendWith(Image<Color::RGBA8888> base, const Image<Color::RGBA8888>& layer, int x, int y,
+Image<Color::RGBA8888> blendWith(Image<Color::RGBA8888> dst, const Image<Color::RGBA8888>& src, int x, int y,
                                  Colour&& colour, Alpha&& alpha) {
     const int x0 = std::max(0, x);
     const int y0 = std::max(0, y);
-    const int x1 = std::min(base.width, x + layer.width);
-    const int y1 = std::min(base.height, y + layer.height);
+    const int x1 = std::min(dst.width, x + src.width);
+    const int y1 = std::min(dst.height, y + src.height);
 
     // through imagemagick's sixteen bit quantum; it keeps transparency, not alpha, so that is what is cut
     const auto byteOf = [](double share) {
@@ -116,9 +116,9 @@ Image<Color::RGBA8888> blendWith(Image<Color::RGBA8888> base, const Image<Color:
 
     for (int by = y0; by < y1; by++) {
         for (int bx = x0; bx < x1; bx++) {
-            auto* under = base.data.data() + (static_cast<size_t>(by) * static_cast<size_t>(base.width) + static_cast<size_t>(bx)) * 4;
-            const auto* over = layer.data.data()
-                             + (static_cast<size_t>(by - y) * static_cast<size_t>(layer.width) + static_cast<size_t>(bx - x)) * 4;
+            auto* under = dst.data.data() + (static_cast<size_t>(by) * static_cast<size_t>(dst.width) + static_cast<size_t>(bx)) * 4;
+            const auto* over = src.data.data()
+                             + (static_cast<size_t>(by - y) * static_cast<size_t>(src.width) + static_cast<size_t>(bx - x)) * 4;
             if (over[3] == 0) continue;
 
             const double sa = over[3] / 255.0;
@@ -131,14 +131,14 @@ Image<Color::RGBA8888> blendWith(Image<Color::RGBA8888> base, const Image<Color:
             under[3] = static_cast<uint8_t>(255 - byteOf(1 - ra));
         }
     }
-    return base;
+    return dst;
 }
 
-/** the layer's pixel, or opaque black where it does not reach, which tints nothing */
-inline const uint8_t* colourAt(const Image<Color::RGBA8888>& layer, int x, int y) {
+/** the src's pixel, or opaque black where it does not reach, which tints nothing */
+inline const uint8_t* colourAt(const Image<Color::RGBA8888>& src, int x, int y) {
     static constexpr uint8_t black[4] = {0, 0, 0, 0xFF};
-    if (x < 0 || y < 0 || x >= layer.width || y >= layer.height) return black;
-    return layer.data.data() + (static_cast<size_t>(y) * static_cast<size_t>(layer.width) + static_cast<size_t>(x)) * 4;
+    if (x < 0 || y < 0 || x >= src.width || y >= src.height) return black;
+    return src.data.data() + (static_cast<size_t>(y) * static_cast<size_t>(src.width) + static_cast<size_t>(x)) * 4;
 }
 
 /** a times b, both out of 255, rounded */
@@ -160,13 +160,13 @@ constexpr double unionOf(double sa, double da) {
  * a w3c separable blend, B(dst, src) where both are opaque, and around it:
  *
  * @startuml{math}
- * {: ("result"_"rgb" = ("src"_"rgb" "src"_"a" (1 - "dst"_"a") + "dst"_"rgb" "dst"_"a" (1 - "src"_"a") + "dst"_"a" "src"_"a" B("dst"_"rgb", "src"_"rgb")) / "result"_"a"), ("result"_"a" = "dst"_"a" + "src"_"a"(1 - "dst"_"a")) :}
+ * {: ("res"_"rgb" = ("src"_"rgb" "src"_"a" (1 - "dst"_"a") + "dst"_"rgb" "dst"_"a" (1 - "src"_"a") + "dst"_"a" "src"_"a" B("dst"_"rgb", "src"_"rgb")) / "res"_"a"), ("res"_"a" = "dst"_"a" + "src"_"a"(1 - "dst"_"a")) :}
  * @enduml
  */
 template <typename B>
-Image<Color::RGBA8888> blendSeparable(Image<Color::RGBA8888> base, const Image<Color::RGBA8888>& layer, int x, int y,
+Image<Color::RGBA8888> blendSeparable(Image<Color::RGBA8888> dst, const Image<Color::RGBA8888>& src, int x, int y,
                                       B&& blend) {
-    return blendWith(std::move(base), layer, x, y,
+    return blendWith(std::move(dst), src, x, y,
                      [&](double sc, double sa, double dc, double da) {
                          return sc * sa * (1 - da) + dc * da * (1 - sa) + sa * da * blend(sc, dc);
                      },
@@ -189,14 +189,24 @@ concept Composable = requires (Image<P> b, const Image<Color::RGBA8888>& l, Comp
     { Composite<P>(std::move(b), l, c, g, x, x) } -> std::same_as<Result<Image<P>>>;
 };
 
+/** what every blend answers with */
+using BlendRes = Result<Image<Color::RGBA8888>>;
+
+/** the picture under, which the blend changes and hands back; rgba8888 unless a blend says */
+template <Color P = Color::RGBA8888>
+using BlendDst = Image<P>;
+
+/** the picture laid on it */
+using BlendSrc = const Image<Color::RGBA8888>&;
+
 /** @cond */
-template <Compose C, Color Base = Color::RGBA8888, Color Layer = Color::RGBA8888>
-Result<Image<Color::RGBA8888>> Blend(Image<Base> base, const Image<Layer>& layer, int x, int y) = delete;
+template <Compose C, Color Dst = Color::RGBA8888, Color Src = Color::RGBA8888>
+BlendRes Blend(BlendDst<Dst> dst, const Image<Src>& src, int x, int y) = delete;
 /** @endcond */
 
-template <Compose C, Color Base = Color::RGBA8888, Color Layer = Color::RGBA8888>
-concept Blendable = requires (Image<Base> b, const Image<Layer>& l, int x) {
-    { Blend<C, Base, Layer>(std::move(b), l, x, x) } -> std::same_as<Result<Image<Color::RGBA8888>>>;
+template <Compose C, Color Dst = Color::RGBA8888, Color Src = Color::RGBA8888>
+concept Blendable = requires (BlendDst<Dst> d, const Image<Src>& s, int x) {
+    { Blend<C, Dst, Src>(std::move(d), s, x, x) } -> std::same_as<BlendRes>;
 };
 
 }

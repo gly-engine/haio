@@ -25,8 +25,6 @@
 
 namespace {
 
-constexpr std::string_view returnTypes[] = {"bool ", "Result<Blob> ", "Result<void> ", "Result<Image<"};
-
 /**
  * "Decode<Format::PNG, ...", "Crop<Color::RGBA8888>(", "Generate<Brush::Xc, ..." or
  * "Blend<Compose::Multiply>(":
@@ -43,19 +41,28 @@ bool isEntryPoint(std::string_view named) {
         || rest.starts_with("Compose::");
 }
 
-/** "Result<Image> Decode<Format::PNG>(const Image& i) {" -> the same line as a declaration */
+/**
+ * "Result<Image> Decode<Format::PNG>(const Image& i) {" -> the same line as a declaration.
+ *
+ * a definition starts at the first column with its return type, whatever that is --
+ * Result<Image<Color::X>>, bool, or an alias such as BlendRes -- and the entry point
+ * is the first word after a space outside any angle brackets.
+ */
 std::string declarationOf(std::string_view line) {
+    if (line.empty() || !std::isalpha(static_cast<unsigned char>(line[0]))) return {};
+    if (line.starts_with("template") || line.starts_with("using") || line.starts_with("namespace")) return {};
     if (line.starts_with("constexpr ")) line.remove_prefix(10);
 
-    const auto* returns = std::ranges::find_if(returnTypes, [line](std::string_view t) { return line.starts_with(t); });
-    if (returns == std::end(returnTypes)) return {};
-
-    // Result<Image<Color::X>> puts the colour before the name, so the entry point is
-    // wherever the "<" of the specialisation is rather than a fixed offset
-    const auto named = *returns == "Result<Image<"
-        ? std::string_view{line}.substr(line.find("> ") + 2)
-        : line.substr(returns->size());
-    if (!isEntryPoint(named)) return {};
+    bool found = false;
+    int depth = 0;
+    for (size_t at = 0; at < line.size() && !found; at++) {
+        const char c = line[at];
+        if (c == '<') depth++;
+        else if (c == '>') depth--;
+        else if (c == '(' && depth == 0) break;
+        else if (c == ' ' && depth == 0) found = isEntryPoint(line.substr(at + 1));
+    }
+    if (!found) return {};
 
     const auto close = line.rfind(')');
     if (close == std::string_view::npos) return {};
