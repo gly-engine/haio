@@ -2,7 +2,13 @@
 
 namespace Haio::Transforms {
 
-/** screen on the colours, multiply on the alphas */
+/**
+ * where src does not reach, it is opaque black, which tints nothing.
+ *
+ * @startuml{math}
+ * {: ("result"_"rgb" = 1 - (1 - "dst"_"rgb")(1 - "src"_"rgb")), ("result"_"a" = "dst"_"a" "src"_"a") :}
+ * @enduml
+ */
 template <>
 Result<Image<Color::RGBA8888>> Blend<Compose::Tint>(Image<Color::RGBA8888> base, const Image<Color::RGBA8888>& layer, int x, int y) {
     for (int by = 0; by < base.height; by++) {

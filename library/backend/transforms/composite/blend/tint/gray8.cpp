@@ -3,8 +3,12 @@
 namespace Haio::Transforms {
 
 /**
- * a grey alone is how much of the colour shows, dark being all of it. only the alpha
+ * a grey alone is how much of src shows, dark being all of it; only the alpha
  * is cut, so a half covered edge is the colour at half rather than a darker one.
+ *
+ * @startuml{math}
+ * {: ("result"_"rgb" = "src"_"rgb"), ("result"_"a" = "src"_"a" (1 - "dst"_"g")) :}
+ * @enduml
  */
 template <>
 Result<Image<Color::RGBA8888>> Blend<Compose::Tint, Color::GRAY8>(Image<Color::GRAY8> base, const Image<Color::RGBA8888>& layer, int x, int y) {

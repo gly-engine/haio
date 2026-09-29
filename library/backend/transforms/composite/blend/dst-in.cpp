@@ -2,7 +2,13 @@
 
 namespace Haio::Transforms {
 
-/** like imagemagick, what the layer does not reach is cleared too */
+/**
+ * like imagemagick, what src does not reach is cleared too, as a "src"_"a" of 0.
+ *
+ * @startuml{math}
+ * {: ("result"_"rgb" = "dst"_"rgb"), ("result"_"a" = "dst"_"a" "src"_"a") :}
+ * @enduml
+ */
 template <>
 Result<Image<Color::RGBA8888>> Blend<Compose::DstIn>(Image<Color::RGBA8888> base, const Image<Color::RGBA8888>& layer, int x, int y) {
     for (int by = 0; by < base.height; by++) {

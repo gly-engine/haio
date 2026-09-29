@@ -56,24 +56,44 @@ constexpr std::pair<int, int> placeOf(Size base, Size layer, Gravity gravity, in
             row(dy, (base.height - layer.height) / 2 + dy, base.height - layer.height - dy)};
 }
 
-/** imagemagick's -compose names, one file each in `library/backend/transforms/composite/blend/` */
+/**
+ * how -composite mixes src into the dst under it. every formula is over straight
+ * colours from 0 to 1.
+ */
 enum class Compose {
+    /** @ref Haio::Transforms::Blend<Compose::Over> */
     Over,
+    /** @ref Haio::Transforms::Blend<Compose::Multiply> */
     Multiply,
+    /** @ref Haio::Transforms::Blend<Compose::Screen> */
     Screen,
+    /** @ref Haio::Transforms::Blend<Compose::Overlay> */
     Overlay,
+    /** @ref Haio::Transforms::Blend<Compose::Darken> */
     Darken,
+    /** @ref Haio::Transforms::Blend<Compose::Lighten> */
     Lighten,
+    /** @ref Haio::Transforms::Blend<Compose::ColorDodge> */
     ColorDodge,
+    /** @ref Haio::Transforms::Blend<Compose::ColorBurn> */
     ColorBurn,
+    /** @ref Haio::Transforms::Blend<Compose::HardLight> */
     HardLight,
+    /** @ref Haio::Transforms::Blend<Compose::SoftLight> */
     SoftLight,
+    /** @ref Haio::Transforms::Blend<Compose::Difference> */
     Difference,
+    /** @ref Haio::Transforms::Blend<Compose::Exclusion> */
     Exclusion,
+    /** @ref Haio::Transforms::Blend<Compose::Plus> */
     Plus,
+    /** @ref Haio::Transforms::Blend<Compose::DstIn> */
     DstIn,
-
-    /** haio's own: black takes the colour and white stays, "qr:foo xc:red" */
+    /**
+     * @ref Haio::Transforms::Blend<Compose::Tint> @n
+     * @ref Haio::Transforms::Blend<Compose::Tint, Color::GRAYALPHA88> @n
+     * @ref Haio::Transforms::Blend<Compose::Tint, Color::GRAY8>
+     */
     Tint,
 };
 
@@ -136,7 +156,13 @@ constexpr double unionOf(double sa, double da) {
     return sa + da - sa * da;
 }
 
-/** a w3c separable blend B(Sc, Dc) */
+/**
+ * a w3c separable blend, B(dst, src) where both are opaque, and around it:
+ *
+ * @startuml{math}
+ * {: ("result"_"rgb" = ("src"_"rgb" "src"_"a" (1 - "dst"_"a") + "dst"_"rgb" "dst"_"a" (1 - "src"_"a") + "dst"_"a" "src"_"a" B("dst"_"rgb", "src"_"rgb")) / "result"_"a"), ("result"_"a" = "dst"_"a" + "src"_"a"(1 - "dst"_"a")) :}
+ * @enduml
+ */
 template <typename B>
 Image<Color::RGBA8888> blendSeparable(Image<Color::RGBA8888> base, const Image<Color::RGBA8888>& layer, int x, int y,
                                       B&& blend) {
@@ -163,13 +189,10 @@ concept Composable = requires (Image<P> b, const Image<Color::RGBA8888>& l, Comp
     { Composite<P>(std::move(b), l, c, g, x, x) } -> std::same_as<Result<Image<P>>>;
 };
 
-/**
- * the layer at x, y over the base. a pair other than rgba8888 on rgba8888 is declared
- * only where it means something else, as tint over a grey, in `blend/NAME/BASE.cpp`;
- * every other pair is converted first.
- */
+/** @cond */
 template <Compose C, Color Base = Color::RGBA8888, Color Layer = Color::RGBA8888>
 Result<Image<Color::RGBA8888>> Blend(Image<Base> base, const Image<Layer>& layer, int x, int y) = delete;
+/** @endcond */
 
 template <Compose C, Color Base = Color::RGBA8888, Color Layer = Color::RGBA8888>
 concept Blendable = requires (Image<Base> b, const Image<Layer>& l, int x) {

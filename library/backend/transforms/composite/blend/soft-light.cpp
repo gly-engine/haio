@@ -4,7 +4,13 @@
 
 namespace Haio::Transforms {
 
-/** the w3c formula */
+/**
+ * the colour where both are opaque; Haio::blendSeparable has the rest.
+ *
+ * @startuml{math}
+ * {: ("result"_"rgb" = {("dst"_"rgb" - (1 - 2 "src"_"rgb") "dst"_"rgb" (1 - "dst"_"rgb"), "if " "src"_"rgb" <= 0.5), ("dst"_"rgb" + (2 "src"_"rgb" - 1)(D("dst"_"rgb") - "dst"_"rgb"), "otherwise"):}), (D(x) = {(((16x - 12)x + 4)x, "if " x <= 0.25), (sqrt(x), "otherwise"):}), ("result"_"a" = "dst"_"a" + "src"_"a"(1 - "dst"_"a")) :}
+ * @enduml
+ */
 template <>
 Result<Image<Color::RGBA8888>> Blend<Compose::SoftLight>(Image<Color::RGBA8888> base, const Image<Color::RGBA8888>& layer, int x, int y) {
     return blendSeparable(std::move(base), layer, x, y, [](double sc, double dc) {

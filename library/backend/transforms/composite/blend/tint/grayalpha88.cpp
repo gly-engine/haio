@@ -2,7 +2,13 @@
 
 namespace Haio::Transforms {
 
-/** the same as rgba8888, the grey standing for all three channels */
+/**
+ * the same as rgba8888, the grey standing for all three channels.
+ *
+ * @startuml{math}
+ * {: ("result"_"rgb" = 1 - (1 - "dst"_"g")(1 - "src"_"rgb")), ("result"_"a" = "dst"_"a" "src"_"a") :}
+ * @enduml
+ */
 template <>
 Result<Image<Color::RGBA8888>> Blend<Compose::Tint, Color::GRAYALPHA88>(Image<Color::GRAYALPHA88> base, const Image<Color::RGBA8888>& layer, int x, int y) {
     Image<Color::RGBA8888> out{base.width, base.height,
