@@ -8,6 +8,11 @@ namespace Haio::Transforms {
  * @startuml{math}
  * {: ("res"_"rgb" = {(1, "if " "dst"_"rgb" + "src"_"rgb" >= 1), ("dst"_"rgb" / (1 - "src"_"rgb"), "otherwise"):}), ("res"_"a" = "dst"_"a" + "src"_"a"(1 - "dst"_"a")) :}
  * @enduml
+ *
+ * <center>
+ * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose colordodge -composite png:-
+ * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose colordodge -composite png:-
+ * </center>
  */
 template <>
 BlendRes Blend<Compose::ColorDodge>(BlendDst<> dst, BlendSrc src, int x, int y) {

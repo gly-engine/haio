@@ -1,0 +1,4 @@
+/* the @haio{convert} pictures sit side by side, so they get a little room between them */
+img.inline {
+    margin: 0 8px 8px 0;
+}

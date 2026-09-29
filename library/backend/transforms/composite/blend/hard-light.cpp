@@ -8,6 +8,11 @@ namespace Haio::Transforms {
  * @startuml{math}
  * {: ("res"_"rgb" = {(2 "dst"_"rgb" "src"_"rgb", "if " "src"_"rgb" <= 0.5), (1 - 2(1 - "dst"_"rgb")(1 - "src"_"rgb"), "otherwise"):}), ("res"_"a" = "dst"_"a" + "src"_"a"(1 - "dst"_"a")) :}
  * @enduml
+ *
+ * <center>
+ * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose hardlight -composite png:-
+ * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose hardlight -composite png:-
+ * </center>
  */
 template <>
 BlendRes Blend<Compose::HardLight>(BlendDst<> dst, BlendSrc src, int x, int y) {

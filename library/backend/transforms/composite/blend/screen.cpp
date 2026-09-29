@@ -8,6 +8,11 @@ namespace Haio::Transforms {
  * @startuml{math}
  * "res"_"rgba" = 1 - (1 - "dst"_"rgba")(1 - "src"_"rgba")
  * @enduml
+ *
+ * <center>
+ * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose screen -composite png:-
+ * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose screen -composite png:-
+ * </center>
  */
 template <>
 BlendRes Blend<Compose::Screen>(BlendDst<> dst, BlendSrc src, int x, int y) {

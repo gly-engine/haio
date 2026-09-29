@@ -33,14 +33,16 @@ EXTENSION_MAPPING      = h=c
 # scripts/gen_scaffold.cpp builds the lookup from them at build time
 ALIASES                = mime="^^<b>Mime type:</b>"
 ALIASES               += ext="^^<b>Extension:</b>"
-
-# build/docs holds the pages the build prints, such as the convert grammar
 INPUT                  = include library source docs build/docs
+IMAGE_PATH             = assets build/docs/assets
+# runs the @haio{convert} examples in the comments; see scripts/doxygen_filter.cpp
+INPUT_FILTER           = build/bin/doxygen_filter
 MARKDOWN_ID_STYLE      = GITHUB
 # Theme: https://jothepro.github.io/doxygen-awesome-css/
 GENERATE_TREEVIEW      = YES
 DISABLE_INDEX          = NO
 FULL_SIDEBAR           = NO
 HTML_EXTRA_STYLESHEET  = $(DOXYGEN_AWESOME_PATH)/doxygen-awesome.css \
-                         $(DOXYGEN_AWESOME_PATH)/doxygen-awesome-sidebar-only.css
+                         $(DOXYGEN_AWESOME_PATH)/doxygen-awesome-sidebar-only.css \
+                         docs/haio.css
 HTML_COLORSTYLE        = LIGHT

@@ -8,6 +8,11 @@ namespace Haio::Transforms {
  * @startuml{math}
  * {: ("res"_"rgb" = max("dst"_"rgb", "src"_"rgb")), ("res"_"a" = "dst"_"a" + "src"_"a"(1 - "dst"_"a")) :}
  * @enduml
+ *
+ * <center>
+ * @haio{convert} assets/jucagato256x256.png assets/disk256x256color.png -compose lighten -composite png:-
+ * @haio{convert} assets/jucagato256x256.png assets/disk256x256gray.png -compose lighten -composite png:-
+ * </center>
  */
 template <>
 BlendRes Blend<Compose::Lighten>(BlendDst<> dst, BlendSrc src, int x, int y) {
