@@ -38,6 +38,6 @@ inline constexpr Stages::Option fontStyle{
 inline constexpr Stages::Option textOptions[] = {textSize, fontSize, fontName, fontStyle};
 
 /** text:"ola mundo", the words after the colon being what it says */
-template <> inline constexpr Draws draws<Brush::Text>{.options = textOptions, .takes = "text", .aliases = {"label"}};
+template <> inline constexpr Draws draws<Brush::Text>{.options = textOptions, .takes = "text", .aliases = {"label"}, .composite4 = true};
 
 }

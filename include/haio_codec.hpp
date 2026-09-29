@@ -93,6 +93,8 @@ constexpr size_t strideOf(Color color) {
         case Color::CHR_NES:  break;
         case Color::ETC1:     break;
         case Color::YUV420:   break;
+        // no pixels at all
+        case Color::NIL:      break;
     }
     return 0;
 }
@@ -124,6 +126,7 @@ constexpr int alphaOffsetOf(Color color) {
         case Color::CHR_NES:  break;
         case Color::ETC1:     break;
         case Color::YUV420:   break;
+        case Color::NIL:      break;
     }
     return -1;
 }
@@ -344,6 +347,12 @@ struct Draws {
     std::span<const Stages::Option> options = {};
     std::string_view takes = {};
     std::array<std::string_view, 2> aliases = {};
+
+    /**
+     * a shape that, first of three in a -composite, is the shape rather than the
+     * background: "qr:x xc:red xc:blue" is read as "qr:x -pix_fmt nil qr:x xc:red xc:blue"
+     */
+    bool composite4 = false;
 };
 
 // "= Draws{}" for the same reason as reads above

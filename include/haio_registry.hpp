@@ -117,6 +117,15 @@ constexpr bool sizeFallsBack(Brush wanted) {
     return false;
 }
 
+/** whether a brush first of three in a -composite is its shape, declared as Draws::composite4 */
+constexpr bool composite4Of(Brush wanted) {
+    HAIO_FOR_EACH_BRUSH(e) {
+        constexpr Brush brush = std::meta::extract<Brush>(e);
+        if (brush == wanted) return Codecs::draws<brush>.composite4;
+    }
+    return false;
+}
+
 /** what a file turned out to be: the container and the colour it holds */
 struct Found {
     Format format = Format::RAW;

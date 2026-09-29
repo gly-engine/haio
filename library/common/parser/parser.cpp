@@ -99,6 +99,21 @@ private:
     std::vector<size_t> scopes_{0};
 
     /**
+     * the steps that made the first picture of each parenthesis, when a brush painted
+     * it there: from its Generate up to where the second picture starts.
+     */
+    struct Lead {
+        size_t begin = 0;
+        size_t end = 0;
+    };
+    std::vector<std::optional<Lead>> firsts_{std::nullopt};
+
+    /** a picture is about to start here, which is where the first one's steps end */
+    void starting() {
+        if (scopes_.back() == 1 && firsts_.back() && firsts_.back()->end == 0) firsts_.back()->end = command_.steps.size();
+    }
+
+    /**
      * the reason and the word to blame, put together the way imagemagick puts them:
      * "unrecognized option `-wat'". the word is also kept on its own, for whoever
      * wants to point at it.
@@ -202,7 +217,9 @@ private:
         if (scopes_.size() > deepest) {
             return refuse("parentheses nested more than " + std::to_string(deepest) + " deep", "(");
         }
+        starting();
         scopes_.push_back(0);
+        firsts_.push_back(std::nullopt);
         command_.steps.push_back(Tokens::Open());
         return true;
     }
@@ -216,6 +233,7 @@ private:
 
         const auto made = scopes_.back();
         scopes_.pop_back();
+        firsts_.pop_back();
         scopes_.back() += made;
         command_.steps.push_back(Tokens::Close());
         return true;
@@ -300,8 +318,20 @@ private:
 
         auto token = build(stage, *value, Stages::Given{*taken});
         if (!token) return refuseWhole(std::move(token.error().message), std::move(token.error().token));
+
+        // a shape first of three is the shape, over a clear copy of itself for the size
+        if (stage.merges && pictures == 3 && firsts_.back() && composite4Of(command_.steps[firsts_.back()->begin].brush)) {
+            const auto begin = command_.steps.begin() + static_cast<std::ptrdiff_t>(firsts_.back()->begin);
+            std::vector<Token> copy(begin, command_.steps.begin() + static_cast<std::ptrdiff_t>(firsts_.back()->end));
+            copy.push_back(Tokens::PixFmt(Color::NIL));
+            command_.steps.insert(begin, copy.begin(), copy.end());
+            pictures = 4;
+        }
         command_.steps.push_back(*std::move(token));
-        if (stage.merges) pictures = 1;
+        if (stage.merges) {
+            pictures = 1;
+            firsts_.back().reset();
+        }
         return true;
     }
 
@@ -417,6 +447,7 @@ private:
         if (!settings) return false;
         input.settings = *std::move(settings);
 
+        starting();
         command_.steps.push_back(Tokens::Source(Source::isRemoteUri(input.path) ? "url" : "file", input.path));
         command_.steps.push_back(Tokens::Decode(input.format, input.settings));
         command_.inputs.push_back(std::move(input));
@@ -436,6 +467,8 @@ private:
         auto settings = settingsOf(*taken, options, context);
         if (!settings) return false;
 
+        starting();
+        if (scopes_.back() == 0) firsts_.back() = Lead{command_.steps.size()};
         command_.steps.push_back(Tokens::Generate(brush, std::string(words), *std::move(settings)));
         scopes_.back()++;
         sources_++;

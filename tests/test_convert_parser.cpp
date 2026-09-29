@@ -454,6 +454,34 @@ int main() {
         assert(cmd.error);
         assert(cmd.error.token == "-composite");
     }
+    // a qr first of three is the shape, over a clear copy of itself: what made it, then -pix_fmt nil
+    {
+        auto cmd = parse({"convert", "qr:oi", "-resize", "64x64", "xc:red", "xc:blue", "-composite", "out.png"});
+        assert(!cmd.error);
+        using enum Haio::TokenKind;
+        const auto& steps = cmd.steps;
+        assert(steps.size() == 7);
+        assert(steps[0].kind == Generate && steps[0].brush == Haio::Brush::Qr);
+        assert(steps[1].kind == Resize);
+        assert(steps[2].kind == PixFmt && steps[2].color == Haio::Color::NIL);
+        assert(steps[3].kind == Generate && steps[3].brush == Haio::Brush::Qr);
+        assert(steps[4].kind == Resize);
+        assert(steps[6].kind == Composite);
+    }
+    {
+        auto cmd = parse({"convert", "a.png", "(", "text:oi", "xc:red", "xc:blue", "-composite", ")", "-composite", "out.png"});
+        assert(!cmd.error);
+        assert(transformsOf(cmd)[0].kind == Haio::TokenKind::PixFmt);
+    }
+    // anything else first, or a qr with one colour after it, is left as written
+    for (const auto& line : std::vector<std::vector<std::string>>{
+             {"convert", "a.png", "xc:red", "xc:blue", "-composite", "out.png"},
+             {"convert", "qr:oi", "xc:red", "-composite", "out.png"},
+             {"convert", "xc:white", "qr:oi", "xc:red", "-composite", "out.png"}}) {
+        auto cmd = parse(line);
+        assert(!cmd.error);
+        assert(transformsOf(cmd).size() == 1);
+    }
     {
         auto cmd = parse({"convert", "a.png", "b.png", "-compose", "Color-Dodge", "-composite", "out.png"});
         assert(!cmd.error);

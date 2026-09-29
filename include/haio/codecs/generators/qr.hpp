@@ -52,7 +52,7 @@ inline constexpr Stages::Option qrMargin{
 inline constexpr Stages::Option qrOptions[] = {Canvas::moduleSize, matrixFormat, qrLevel, qrHole, qrMargin};
 
 /** qr:"http://pudim.com.br", the words after the colon being what the code says */
-template <> inline constexpr Draws draws<Brush::Qr>{.options = qrOptions, .takes = "text"};
+template <> inline constexpr Draws draws<Brush::Qr>{.options = qrOptions, .takes = "text", .composite4 = true};
 
 }
 

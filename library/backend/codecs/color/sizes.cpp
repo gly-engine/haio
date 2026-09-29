@@ -42,6 +42,7 @@ Result<size_t> sizeOf(Color color, Size size) {
             const auto chroma = (static_cast<size_t>(size.width) / 2) * (static_cast<size_t>(size.height) / 2);
             return pixels + chroma * 2;
         }
+        case Color::NIL: return 0;
         default: break;
     }
     return std::unexpected(Error{ErrorCode::UnsupportedFormat, "unknown colour"});

@@ -156,6 +156,13 @@ enum class Color {
      * holding this, and converting to PALETTE is what unpacks it.
      */
     CHR_NES,
+
+    /**
+     * a size and no pixels. every colour becomes it by forgetting its pixels, and it
+     * becomes rgba8888 as a transparent picture, so "-pix_fmt nil" is a clear canvas
+     * as big as the picture it was, with nothing allocated until something draws.
+     */
+    NIL,
 };
 
 /**
@@ -196,6 +203,7 @@ inline constexpr ColorAlias colorAliases[] = {
     {"pal8", Color::PALETTE},
     // the p is for planar, which is the only way haio keeps it
     {"yuv420p", Color::YUV420},
+    {"null", Color::NIL},
 };
 
 
