@@ -1,10 +1,13 @@
 #include <haio.hpp>
-#include <haio_palette.hpp>
+#include <haio/implementation/wip/palette.hpp>
 
 #include <iostream>
 #include <string>
 
 using namespace Haio;
+using namespace Haio::Implementation;
+using namespace Haio::Implementation;
+using namespace Haio::Implementation::WIP;
 
 namespace {
 
@@ -96,7 +99,7 @@ auto main() -> int {
      * optional, and why pixel art wants nearest or error rather than either dither.
      */
     {
-        for (const auto how : {Dither::Nearest, Dither::Strict}) {
+        for (const auto how : {Haio::Implementation::WIP::Dither::Nearest, Haio::Implementation::WIP::Dither::Strict}) {
             const auto done = toPalette(solid(8, 8, 0xFFFFFF), blackWhite, how);
             check(done.has_value(), "a palette colour converts");
             if (done) {
@@ -104,7 +107,7 @@ auto main() -> int {
                 check(allWhite, "and stays the colour it was");
             }
         }
-        for (const auto how : {Dither::Bayer, Dither::Floyd}) {
+        for (const auto how : {Haio::Implementation::WIP::Dither::Bayer, Haio::Implementation::WIP::Dither::Floyd}) {
             const auto done = toPalette(solid(8, 8, 0xFFFFFF), blackWhite, how);
             check(done.has_value(), "a dither converts it too");
         }
@@ -113,9 +116,9 @@ auto main() -> int {
     // strict is the one that refuses rather than approximates
     {
         const auto grey = solid(4, 4, 0x808080);
-        check(!toPalette(grey, blackWhite, Dither::Strict), "strict refuses a colour that is not there");
+        check(!toPalette(grey, blackWhite, Haio::Implementation::WIP::Dither::Strict), "strict refuses a colour that is not there");
 
-        const auto near = toPalette(grey, blackWhite, Dither::Nearest);
+        const auto near = toPalette(grey, blackWhite, Haio::Implementation::WIP::Dither::Nearest);
         check(near.has_value(), "nearest takes the closest one instead");
         if (near) {
             const bool flat = std::ranges::all_of(near->data, [&](uint8_t i) { return i == near->data[0]; });
@@ -125,7 +128,7 @@ auto main() -> int {
 
     // a dither trades flatness for a pattern: the same grey becomes both colours
     {
-        const auto dithered = toPalette(solid(8, 8, 0x808080), blackWhite, Dither::Bayer);
+        const auto dithered = toPalette(solid(8, 8, 0x808080), blackWhite, Haio::Implementation::WIP::Dither::Bayer);
         check(dithered.has_value(), "bayer converts");
         if (dithered) {
             const bool mixed = std::ranges::any_of(dithered->data, [](uint8_t i) { return i == 0; })
@@ -136,14 +139,14 @@ auto main() -> int {
 
     // the palette travels with the picture, which is the point of the specialisation
     {
-        const auto made = toPalette(solid(8, 8, 0x000000), blackWhite, Dither::Nearest);
+        const auto made = toPalette(solid(8, 8, 0x000000), blackWhite, Haio::Implementation::WIP::Dither::Nearest);
         check(made && made->entries.size() == 2, "the picture carries its palette");
 
-        const auto cropped = cropImage(*made, Rect{0, 0, 4, 4});
+        const auto cropped = Haio::Implementation::cropImage(*made, Rect{0, 0, 4, 4});
         check(cropped.entries == made->entries, "and keeps it through a crop");
         check(cropped.width == 4, "which did crop it");
 
-        const auto back = Codecs::Convert<Color::PALETTE, Color::RGBA8888>(*made);
+        const auto back = Haio::Pipeline::Convert<Color::PALETTE, Color::RGBA8888>(*made);
         check(back.has_value(), "indices become colours again");
         if (back) check(back->data[0] == 0 && back->data[3] == 0xFF, "and the colour is the one indexed");
     }
@@ -151,7 +154,7 @@ auto main() -> int {
     // indices with no palette are not a picture yet
     {
         Image<Color::PALETTE> orphan{2, 2, {0, 0, 0, 0}, {}};
-        check(!Codecs::Convert<Color::PALETTE, Color::RGBA8888>(orphan),
+        check(!Haio::Pipeline::Convert<Color::PALETTE, Color::RGBA8888>(orphan),
               "indices without a palette are refused, not drawn black");
     }
 

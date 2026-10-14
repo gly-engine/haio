@@ -100,10 +100,10 @@ auto main() -> int {
         const auto png = makePng(colourType, row);
         const auto name = "colour type " + std::to_string(colourType);
 
-        const auto found = Haio::Detect(png);
+        const auto found = Haio::Pipeline::Detect<>(png);
         check(found.format == Haio::Format::PNG, name + " is detected as png");
 
-        const auto decoded = Haio::Decode(Haio::Blob{Haio::Format::RAW, Haio::Color::RGBA8888, {}, {}, png});
+        const auto decoded = Haio::Implementation::decode(Haio::Implementation::Blob{Haio::Format::RAW, Haio::Color::RGBA8888, {}, {}, png});
         check(decoded.has_value(), name + " decodes");
         if (!decoded) continue;
 

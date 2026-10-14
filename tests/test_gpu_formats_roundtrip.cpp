@@ -13,12 +13,12 @@ void require(bool ok, const char* message) {
 
 /** unwraps on the spot: anything failing here is the test failing */
 template <typename T>
-T unwrap(Haio::Result<T> result) {
+T unwrap(Haio::Implementation::Result<T> result) {
     if (!result) throw std::runtime_error(result.error().message);
     return *std::move(result);
 }
 
-Haio::Image<Haio::Color::RGBA8888> makeImage(int width, int height) {
+Haio::Implementation::Image<Haio::Color::RGBA8888> makeImage(int width, int height) {
     std::vector<uint8_t> data(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
     for (size_t i = 0; i < data.size() / 4; i++) {
         data[i * 4 + 0] = static_cast<uint8_t>((i * 37) % 256);
@@ -26,10 +26,10 @@ Haio::Image<Haio::Color::RGBA8888> makeImage(int width, int height) {
         data[i * 4 + 2] = static_cast<uint8_t>((i * 83) % 256);
         data[i * 4 + 3] = 255;
     }
-    return Haio::Image<Haio::Color::RGBA8888>{width, height, std::move(data)};
+    return Haio::Implementation::Image<Haio::Color::RGBA8888>{width, height, std::move(data)};
 }
 
-double psnr(const Haio::Image<Haio::Color::RGBA8888>& a, const Haio::Image<Haio::Color::RGBA8888>& b) {
+double psnr(const Haio::Implementation::Image<Haio::Color::RGBA8888>& a, const Haio::Implementation::Image<Haio::Color::RGBA8888>& b) {
     double sum = 0;
     for (size_t i = 0; i < a.data.size(); i++) {
         const double diff = static_cast<double>(a.data[i]) - static_cast<double>(b.data[i]);
@@ -44,10 +44,10 @@ double psnr(const Haio::Image<Haio::Color::RGBA8888>& a, const Haio::Image<Haio:
  * and one that never accepted this colour never had a pair to begin with.
  */
 template <Haio::Format Container, Haio::Color P>
-void testContainer(const Haio::Image<P>& img) {
-    if constexpr (Haio::Codecs::Encodable<Container, P> && Haio::Codecs::Decodable<Container, P>) {
-        const auto container = unwrap(Haio::Codecs::Encode<Container, P>(Haio::Image<P>{img}));
-        const auto restored = unwrap(Haio::Codecs::Decode<Container, P>(container));
+void testContainer(const Haio::Implementation::Image<P>& img) {
+    if constexpr (Haio::Implementation::Codecs::Encodable<Container, P> && Haio::Implementation::Codecs::Decodable<Container, P>) {
+        const auto container = unwrap(Haio::Pipeline::Encode<Container, P>(Haio::Implementation::Image<P>{img}));
+        const auto restored = unwrap(Haio::Pipeline::Decode<Container, P>(container));
         require(restored.width == img.width && restored.height == img.height, "container dimensions mismatch");
         require(restored.data == img.data, "container payload mismatch");
     }
@@ -58,9 +58,9 @@ void testContainer(const Haio::Image<P>& img) {
 auto main() -> int {
     try {
         const auto rgba = makeImage(8, 8);
-        const auto rgb565 = unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::RGB565>(rgba));
-        const auto rgb565Rgba = unwrap(Haio::Codecs::Convert<Haio::Color::RGB565, Haio::Color::RGBA8888>(rgb565));
-        const auto etc1 = unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::ETC1>(rgba));
+        const auto rgb565 = unwrap(Haio::Pipeline::Convert<Haio::Color::RGBA8888, Haio::Color::RGB565>(rgba));
+        const auto rgb565Rgba = unwrap(Haio::Pipeline::Convert<Haio::Color::RGB565, Haio::Color::RGBA8888>(rgb565));
+        const auto etc1 = unwrap(Haio::Pipeline::Convert<Haio::Color::RGBA8888, Haio::Color::ETC1>(rgba));
 
         require(psnr(rgba, rgb565Rgba) > 40.0, "rgb565 psnr is too low");
 
@@ -80,8 +80,8 @@ auto main() -> int {
         testContainer<Haio::Format::DDS>(rgb565);
 
         // dds carries no etc1, and that is now a pair that was never declared
-        static_assert(!Haio::Codecs::Encodable<Haio::Format::DDS, Haio::Color::ETC1>);
-        static_assert(Haio::Codecs::Encodable<Haio::Format::KTX2, Haio::Color::ETC1>);
+        static_assert(!Haio::Implementation::Codecs::Encodable<Haio::Format::DDS, Haio::Color::ETC1>);
+        static_assert(Haio::Implementation::Codecs::Encodable<Haio::Format::KTX2, Haio::Color::ETC1>);
 
         return 0;
     } catch (const std::exception& err) {

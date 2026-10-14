@@ -6,7 +6,7 @@
 
 option(HAIO_USE_FREETYPE "draw text with freetype" ON)
 
-set(HAIO_FREETYPE_BRUSHES "${CMAKE_SOURCE_DIR}/library/backend/codecs/generators/text")
+set(HAIO_FREETYPE_BRUSHES "${CMAKE_SOURCE_DIR}/library/implementation/codecs/generators/text")
 
 if(NOT HAIO_USE_FREETYPE)
     foreach(dir IN LISTS HAIO_FREETYPE_BRUSHES)

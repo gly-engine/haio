@@ -1,11 +1,11 @@
-#include <haio/internal/source/storage.hpp>
+#include <haio/implementation/source/storage.hpp>
 
 #include <cstdlib>
 #include <iostream>
 #include <string>
 
-using namespace Haio::Source;
-using Haio::Source::Origin;
+using namespace Haio::Implementation::Source;
+using Haio::Implementation::Source::Origin;
 
 namespace {
 

@@ -18,8 +18,8 @@ std::vector<uint8_t> bytesOf(std::string_view text) {
     return {text.begin(), text.end()};
 }
 
-Haio::Result<Haio::Image<Haio::Color::RGBA8888>> decode(std::vector<uint8_t> data) {
-    return Haio::Decode(Haio::Blob{Haio::Format::RAW, Haio::Color::RGBA8888, {}, {}, std::move(data)});
+Haio::Implementation::Result<Haio::Implementation::Image<Haio::Color::RGBA8888>> decode(std::vector<uint8_t> data) {
+    return Haio::Implementation::decode(Haio::Implementation::Blob{Haio::Format::RAW, Haio::Color::RGBA8888, {}, {}, std::move(data)});
 }
 
 /** the same four by two picture, once per member of the family */
@@ -71,8 +71,8 @@ auto main() -> int {
     checkAgrees("sixteen bit graymap", std::move(wide), p2);
 
     // the colour and grey pipes must not answer for each other
-    check(Haio::Detect(p6).color == Haio::Color::RGB888, "a pixmap detects as rgb888");
-    check(Haio::Detect(p5).color == Haio::Color::GRAY8, "a graymap detects as gray8");
+    check(Haio::Pipeline::Detect<>(p6).color == Haio::Color::RGB888, "a pixmap detects as rgb888");
+    check(Haio::Pipeline::Detect<>(p5).color == Haio::Color::GRAY8, "a graymap detects as gray8");
 
     // a header promising more than the file holds is refused, not read past
     check(!decode(bytesOf("P2\n4 2\n255\n0 85\n")), "a short ascii body is refused");

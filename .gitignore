@@ -2,6 +2,7 @@ build*/
 vendor/
 branchs/
 html/
+html2/
 latex/
 .DS_Store
 *.db

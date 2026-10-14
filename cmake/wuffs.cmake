@@ -22,7 +22,7 @@ haio_fetch(wuffs "${WUFFS_DOWNLOAD}" "${WUFFS_DIR}" release/c/wuffs-v0.4.c)
 
 # it is not inside a container's directory, so the codec loop never sees it, but the
 # library glob does: hand it over once and take it out of the list it came from
-set(WUFFS_SOURCE "${CMAKE_SOURCE_DIR}/library/backend/codecs/wuffs.cpp")
+set(WUFFS_SOURCE "${CMAKE_SOURCE_DIR}/library/implementation/codecs/wuffs.cpp")
 list(REMOVE_ITEM HAIO_LIB_SOURCES "${WUFFS_SOURCE}")
 list(APPEND HAIO_CODEC_SOURCES_EXTRA "${WUFFS_SOURCE}")
 set_source_files_properties("${WUFFS_SOURCE}" PROPERTIES INCLUDE_DIRECTORIES "${WUFFS_DIR}/release/c")

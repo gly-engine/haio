@@ -1,9 +1,9 @@
-#include <haio_url.hpp>
+#include <haio/util/url.hpp>
 
 #include <iostream>
 #include <string>
 
-using Haio::Url;
+using Haio::Util::Url;
 
 namespace {
 

@@ -1,45 +1,46 @@
 set(HAIO_GENERATED_DIR "${CMAKE_BINARY_DIR}/include/haio/generated")
-set(HAIO_FORMATS_HEADER "${CMAKE_SOURCE_DIR}/include/haio_formats.hpp")
+set(HAIO_FORMATS_HEADER "${CMAKE_SOURCE_DIR}/include/haio/domain.hpp")
 
 add_executable(gen_scaffold "${CMAKE_SOURCE_DIR}/scripts/gen_scaffold.cpp")
 
 # codecs: every Detect/Decode/Encode/Move/Convert/Generate a codec source specialises,
-# and the settings each one reads, declared in include/haio/codecs/ and, for the
-# brushes, include/haio/codecs/generators/
-file(GLOB_RECURSE HAIO_CODEC_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/library/backend/codecs/*.cpp")
+# and the settings each one reads, declared in include/haio/implementation/codecs/
+# and, for the brushes, include/haio/implementation/codecs/generators/
+file(GLOB_RECURSE HAIO_CODEC_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/library/implementation/codecs/*.cpp")
 # a brush whose dependency is switched off keeps its declaration and loses its colours
 if(HAIO_GENERATORS_OFF)
     list(REMOVE_ITEM HAIO_CODEC_SOURCES ${HAIO_GENERATORS_OFF})
 endif()
 file(GLOB HAIO_CODEC_HEADERS CONFIGURE_DEPENDS RELATIVE "${CMAKE_SOURCE_DIR}/include"
-     "${CMAKE_SOURCE_DIR}/include/haio/codecs/*.hpp" "${CMAKE_SOURCE_DIR}/include/haio/codecs/generators/*.hpp")
-set(HAIO_CODEC_INCLUDES --include haio_codec.hpp)
+     "${CMAKE_SOURCE_DIR}/include/haio/implementation/codecs/*.hpp"
+     "${CMAKE_SOURCE_DIR}/include/haio/implementation/codecs/generators/*.hpp")
+set(HAIO_CODEC_INCLUDES --include haio/implementation/codecs.hpp)
 set(HAIO_CODEC_HEADERS_ABSOLUTE "")
 foreach(header IN LISTS HAIO_CODEC_HEADERS)
     list(APPEND HAIO_CODEC_INCLUDES --include "${header}")
     list(APPEND HAIO_CODEC_HEADERS_ABSOLUTE "${CMAKE_SOURCE_DIR}/include/${header}")
 endforeach()
+# the verbs that are classes get theirs in codec/classes.hpp, which is all a codec's own
+# source includes to define its operator()
 add_custom_command(
-    OUTPUT "${HAIO_GENERATED_DIR}/codec.hpp"
-    COMMAND $<TARGET_FILE:gen_scaffold> "${HAIO_GENERATED_DIR}/codec.hpp"
-            --formats "${HAIO_FORMATS_HEADER}" ${HAIO_CODEC_INCLUDES} ${HAIO_CODEC_SOURCES}
+    OUTPUT "${HAIO_GENERATED_DIR}/codecs.hpp" "${HAIO_GENERATED_DIR}/codecs/classes.hpp"
+    COMMAND $<TARGET_FILE:gen_scaffold> "${HAIO_GENERATED_DIR}/codecs.hpp"
+            --formats "${HAIO_FORMATS_HEADER}" --namespace "Haio::Implementation::Codecs" --defaults "Haio::Implementation::WIP"
+            --classes "${HAIO_GENERATED_DIR}/codecs/classes.hpp" haio/generated/codecs/classes.hpp
+            ${HAIO_CODEC_INCLUDES} ${HAIO_CODEC_SOURCES}
     DEPENDS gen_scaffold "${HAIO_FORMATS_HEADER}" ${HAIO_CODEC_SOURCES} ${HAIO_CODEC_HEADERS_ABSOLUTE}
     COMMENT "scanning codecs for their capabilities"
 )
 
-# transforms: a header in include/haio/<kind>/ declares the stage the
-# command line reads, a source in library/backend/<kind>/ is one colour it runs on.
-# both are found by looking, so a new one is a new file and nothing else.
-set(HAIO_STAGE_HEADERS "")
-foreach(kind transforms)
-    string(REGEX REPLACE "s$" "" single "${kind}")
-    string(SUBSTRING "${single}" 0 1 first)
-    string(TOUPPER "${first}" first)
-    string(SUBSTRING "${single}" 1 -1 rest)
-
+# the headers in include/haio/implementation/<dir>/ and the sources in
+# library/implementation/<dir>/, both found by looking, so a new one is a new file and
+# nothing else: <output> includes every header and declares every specialisation
+function(haio_scaffold output space dir)
+    # the verbs that are classes get theirs beside it, in <output without .hpp>/classes.hpp
+    string(REGEX REPLACE "\\.hpp$" "/classes.hpp" classes "${output}")
     file(GLOB headers CONFIGURE_DEPENDS RELATIVE "${CMAKE_SOURCE_DIR}/include"
-         "${CMAKE_SOURCE_DIR}/include/haio/${kind}/*.hpp")
-    file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/library/backend/${kind}/*.cpp")
+         "${CMAKE_SOURCE_DIR}/include/haio/implementation/${dir}/*.hpp")
+    file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/library/implementation/${dir}/*.cpp")
 
     set(includes "")
     set(absolute "")
@@ -49,16 +50,23 @@ foreach(kind transforms)
     endforeach()
 
     add_custom_command(
-        OUTPUT "${HAIO_GENERATED_DIR}/${single}.hpp"
-        COMMAND $<TARGET_FILE:gen_scaffold> "${HAIO_GENERATED_DIR}/${single}.hpp"
-                --namespace "Haio::${first}${rest}s" ${includes} ${sources}
+        OUTPUT "${HAIO_GENERATED_DIR}/${output}" "${HAIO_GENERATED_DIR}/${classes}"
+        COMMAND $<TARGET_FILE:gen_scaffold> "${HAIO_GENERATED_DIR}/${output}"
+                --namespace "${space}" --classes "${HAIO_GENERATED_DIR}/${classes}" "haio/generated/${classes}"
+                ${includes} ${sources}
         DEPENDS gen_scaffold ${absolute} ${sources}
-        COMMENT "scanning ${kind} for the colours they run on"
+        COMMENT "scanning ${dir} for what it declares"
     )
-    list(APPEND HAIO_STAGE_HEADERS "${HAIO_GENERATED_DIR}/${single}.hpp")
-endforeach()
+endfunction()
 
-add_custom_target(haio_scaffold DEPENDS "${HAIO_GENERATED_DIR}/codec.hpp" ${HAIO_STAGE_HEADERS})
+# transforms: the colours each one runs on, and the blends -composite mixes with
+haio_scaffold(transforms.hpp "Haio::Implementation::Transforms" transforms)
+# stages: what the command line can name, one header each. a builder is declared in
+# its stage's header, so what this adds is only that every stage is included
+haio_scaffold(language/stages.hpp "Haio::Implementation::LanguageStage" language/stages)
+set(HAIO_STAGE_HEADERS "${HAIO_GENERATED_DIR}/transforms.hpp" "${HAIO_GENERATED_DIR}/language/stages.hpp")
+
+add_custom_target(haio_scaffold DEPENDS "${HAIO_GENERATED_DIR}/codecs.hpp" ${HAIO_STAGE_HEADERS})
 add_dependencies(${PROJECT_NAME} haio_scaffold)
 
 # the doxygen INPUT_FILTER that runs the @haio{convert} examples, and the same code as

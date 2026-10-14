@@ -5,6 +5,9 @@
 #include <vector>
 
 using namespace Haio;
+using namespace Haio::Implementation;
+using namespace Haio::Implementation;
+using namespace Haio::Implementation::WIP;
 
 namespace {
 
@@ -29,7 +32,7 @@ Image<Color::RGBA8888> pixels(std::vector<uint8_t> data) {
  * written down here as bytes, in the order the file has them.
  */
 void checkPacks(const std::string& what, Color to, Image<Color::RGBA8888> from, std::vector<uint8_t> want) {
-    const auto packed = Convert(from, to);
+    const auto packed = Haio::Pipeline::Convert<>(from, to);
     if (!packed) {
         check(false, what + " converts");
         return;
@@ -39,23 +42,23 @@ void checkPacks(const std::string& what, Color to, Image<Color::RGBA8888> from, 
 
 /** and the way back, for the values the narrower colour can hold exactly */
 void checkRoundTrip(const std::string& what, Color to, std::vector<uint8_t> data) {
-    const auto packed = Convert(pixels(data), to);
+    const auto packed = Haio::Pipeline::Convert<>(pixels(data), to);
     if (!packed) {
         check(false, what + " converts");
         return;
     }
 
     const Size size{static_cast<int>(data.size() / 4), 1};
-    const auto want = sizeOf(to, size);
+    const auto want = Haio::Implementation::sizeOf(to, size);
     check(want && *want == packed->size(), what + " is as long as its colour says");
 
     std::vector<uint8_t> back(data.size());
     bool moved = false;
     HAIO_FOR_EACH_COLOR(c) {
         constexpr Color color = std::meta::extract<Color>(c);
-        if constexpr (Codecs::Movable<color, Color::RGBA8888>) {
+        if constexpr (Haio::Implementation::Codecs::Movable<color, Color::RGBA8888>) {
             if (color != to) continue;
-            moved = Codecs::Move<color, Color::RGBA8888>(*packed, back, size).has_value();
+            moved = Haio::Pipeline::Move<color, Color::RGBA8888>(*packed, back, size).has_value();
         }
     }
     check(moved && back == data, what + " comes back as it went");
@@ -91,10 +94,10 @@ auto main() -> int {
 
     // the narrow colours are two bytes a pixel and the wide ones three or four, which
     // is what lets a crop or a resize index them
-    check(strideOf(Color::RGB555) == 2 && strideOf(Color::RGBA5551) == 2, "the fives are two bytes a pixel");
-    check(strideOf(Color::BGR888) == 3 && strideOf(Color::BGRA8888) == 4, "and the eights are three and four");
-    check(alphaOffsetOf(Color::BGRA8888) == 3, "bgra keeps its alpha in the last byte");
-    check(alphaOffsetOf(Color::BGR888) < 0, "and the one without an alpha says so");
+    check(Util::strideOf(Color::RGB555) == 2 && Util::strideOf(Color::RGBA5551) == 2, "the fives are two bytes a pixel");
+    check(Util::strideOf(Color::BGR888) == 3 && Util::strideOf(Color::BGRA8888) == 4, "and the eights are three and four");
+    check(Util::alphaOffsetOf(Color::BGRA8888) == 3, "bgra keeps its alpha in the last byte");
+    check(Util::alphaOffsetOf(Color::BGR888) < 0, "and the one without an alpha says so");
 
     // the names ffmpeg uses reach the same colours, since -pix_fmt borrowed the option
     check(colorNamed("bgr24") == Color::BGR888 && colorNamed("bgra") == Color::BGRA8888,

@@ -10,7 +10,7 @@ auto main(int argc, char* argv[]) -> int {
     }
 
     // built once, runs on anything the bytes turn out to be
-    const auto pipe = Haio::Pipe::Decode | Haio::Pipe::Encode<Haio::Format::PPM>;
+    const auto pipe = Haio::Pipeline::Decode<> | Haio::Pipeline::Encode<Haio::Format::PPM, Haio::Color::RGBA8888>;
 
     auto input = std::ifstream(argv[1], std::ios::binary);
     auto output = std::ofstream(argv[2], std::ios::binary);

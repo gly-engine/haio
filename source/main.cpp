@@ -1,84 +1,14 @@
-#include <haio_cdn.hpp>
-#include <haio_cli.hpp>
-#include <haio_platform.hpp>
-#include <haio_source.hpp>
+#include <haio.hpp>
 
-#include <cstdlib>
-#include <filesystem>
+#include <exception>
 #include <iostream>
+#include <string_view>
 
 #ifdef HAIO_USE_PROFILER
 #include <gperftools/profiler.h>
 #endif
 
 namespace {
-
-int cdnCommand(int argc, char* argv[]) {
-    std::filesystem::path configPath;
-
-    for (int i = 1; i < argc; i++) {
-        const std::string_view arg = argv[i];
-        if (arg.starts_with('-')) throw std::runtime_error("unknown cdn option: " + std::string(arg));
-        if (!configPath.empty()) throw std::runtime_error("cdn takes a single config file");
-        configPath = arg;
-    }
-
-    Haio::Cdn::Config config;
-    if (!configPath.empty()) {
-        config = Haio::Cdn::loadConfig(configPath);
-    } else if (const char* inlineToml = std::getenv("HAIO_CDN_TOML")) {
-        config = Haio::Cdn::parseConfig(inlineToml);
-    } else {
-        throw std::runtime_error("cdn needs a config file, or HAIO_CDN_TOML holding the config itself");
-    }
-
-    Haio::Platform::stopOnSignal();
-    Haio::Platform::run(Haio::Cdn::runServer(std::move(config)));
-    return 0;
-}
-
-int probeCommand(int argc, char* argv[]) {
-    if (argc < 2) {
-        std::cerr << "usage: haio probe <file>...\n";
-        return 1;
-    }
-
-    int failures = 0;
-    for (int i = 1; i < argc; i++) {
-        const std::filesystem::path path = argv[i];
-        const auto read = Haio::Source::readFile(path);
-        if (!read) {
-            std::cerr << path.string() << ": cannot open\n";
-            failures++;
-            continue;
-        }
-
-        const auto& data = *read;
-        const auto found = Haio::Detect(data);
-
-        std::cout << path.string() << ": ";
-        if (!found) {
-            std::cout << "unrecognised";
-        } else {
-            std::cout << Haio::formatName(found.format) << ' ' << Haio::colorName(found.color);
-            const Haio::Blob blob{found.format, found.color, std::string(Haio::contentTypeFor(found.format)), path.string(), data};
-            if (const auto image = Haio::Decode(blob); image) {
-                std::cout << ' ' << image->width << 'x' << image->height;
-            }
-            // without a decoder the name is all we can report
-        }
-        std::cout << ", " << data.size() << " bytes";
-
-        const auto fromName = Haio::formatFromExtension(path.string());
-        if (fromName != Haio::Format::RAW && fromName != found.format) {
-            std::cout << "  [extension says " << Haio::formatName(fromName) << ']';
-            failures++;
-        }
-        std::cout << '\n';
-    }
-
-    return failures == 0 ? 0 : 1;
-}
 
 void printHelp() {
     std::cout << "usage:\n"
@@ -112,9 +42,9 @@ auto main(int argc, char* argv[]) -> int {
         }
 
         const std::string_view command = argv[1];
-        if (command == "convert") return Haio::Cli::runCli(argc - 1, argv + 1);
-        if (command == "cdn") return cdnCommand(argc - 1, argv + 1);
-        if (command == "probe") return probeCommand(argc - 1, argv + 1);
+        if (command == "convert") return Haio::commandConvert(argc - 1, argv + 1);
+        if (command == "cdn") return Haio::commandCdn(argc - 1, argv + 1);
+        if (command == "probe") return Haio::commandProbe(argc - 1, argv + 1);
         if (command == "help" || command == "--help" || command == "-h") {
             printHelp();
             return 0;

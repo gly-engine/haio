@@ -10,10 +10,10 @@ auto main(int argc, char* argv[]) -> int {
     }
 
     // a lossy round trip: compress to etc1, bring it back, then write something viewable
-    const auto pipe = Haio::Pipe::Decode
-                    | Haio::Pipe::Convert<Haio::Color::ETC1>
-                    | Haio::Pipe::Convert<Haio::Color::RGBA8888>
-                    | Haio::Pipe::Encode<Haio::Format::PPM>;
+    const auto pipe = Haio::Pipeline::Decode<>
+                    | Haio::Pipeline::Convert<Haio::Color::RGBA8888, Haio::Color::ETC1>
+                    | Haio::Pipeline::Convert<Haio::Color::ETC1, Haio::Color::RGBA8888>
+                    | Haio::Pipeline::Encode<Haio::Format::PPM, Haio::Color::RGBA8888>;
 
     auto input = std::ifstream(argv[1], std::ios::binary);
     auto output = std::ofstream(argv[2], std::ios::binary);

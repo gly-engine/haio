@@ -8,7 +8,7 @@
 
 namespace {
 
-Haio::Image<Haio::Color::RGBA8888> makeImage(int width, int height, auto pixel) {
+Haio::Implementation::Image<Haio::Color::RGBA8888> makeImage(int width, int height, auto pixel) {
     std::vector<uint8_t> data(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
@@ -20,17 +20,17 @@ Haio::Image<Haio::Color::RGBA8888> makeImage(int width, int height, auto pixel) 
             data[offset + 3] = a;
         }
     }
-    return Haio::Image<Haio::Color::RGBA8888>{width, height, std::move(data)};
+    return Haio::Implementation::Image<Haio::Color::RGBA8888>{width, height, std::move(data)};
 }
 
-bool hasOpaqueAlpha(const Haio::Image<Haio::Color::RGBA8888>& img) {
+bool hasOpaqueAlpha(const Haio::Implementation::Image<Haio::Color::RGBA8888>& img) {
     for (size_t i = 3; i < img.data.size(); i += 4) {
         if (img.data[i] != 255) return false;
     }
     return true;
 }
 
-double psnr(const Haio::Image<Haio::Color::RGBA8888>& a, const Haio::Image<Haio::Color::RGBA8888>& b) {
+double psnr(const Haio::Implementation::Image<Haio::Color::RGBA8888>& a, const Haio::Implementation::Image<Haio::Color::RGBA8888>& b) {
     double mse = 0.0;
     size_t count = 0;
     for (size_t i = 0; i < a.data.size(); i += 4) {
@@ -55,12 +55,12 @@ void require(bool condition, const char* message) {
 auto main() -> int {
     try {
         // unwraps on the spot: anything failing here is the test failing
-        auto unwrap = []<typename T>(Haio::Result<T> r) {
+        auto unwrap = []<typename T>(Haio::Implementation::Result<T> r) {
             if (!r) throw std::runtime_error(r.error().message);
             return *std::move(r);
         };
-        auto encode = [&](Haio::Image<Haio::Color::RGBA8888> i) { return unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::ETC1>(std::move(i))); };
-        auto decode = [&](Haio::Image<Haio::Color::ETC1> i) { return unwrap(Haio::Codecs::Convert<Haio::Color::ETC1, Haio::Color::RGBA8888>(std::move(i))); };
+        auto encode = [&](Haio::Implementation::Image<Haio::Color::RGBA8888> i) { return unwrap(Haio::Pipeline::Convert<Haio::Color::RGBA8888, Haio::Color::ETC1>(std::move(i))); };
+        auto decode = [&](Haio::Implementation::Image<Haio::Color::ETC1> i) { return unwrap(Haio::Pipeline::Convert<Haio::Color::ETC1, Haio::Color::RGBA8888>(std::move(i))); };
 
         auto solid = makeImage(4, 4, [](int, int) {
             return std::tuple<uint8_t, uint8_t, uint8_t, uint8_t>{255, 0, 0, 255};
@@ -97,11 +97,11 @@ auto main() -> int {
         require(oddEtc1.data.size() == 2 * 2 * 8, "5x7 etc1 should be four blocks");
         require(oddRoundtrip.width == 5 && oddRoundtrip.height == 7, "odd roundtrip should keep logical dimensions");
 
-        require(!Haio::Codecs::Convert<Haio::Color::ETC1, Haio::Color::RGBA8888>(Haio::Image<Haio::Color::ETC1>{0, 4, std::vector<uint8_t>(8)}),
+        require(!Haio::Pipeline::Convert<Haio::Color::ETC1, Haio::Color::RGBA8888>(Haio::Implementation::Image<Haio::Color::ETC1>{0, 4, std::vector<uint8_t>(8)}),
                 "decode with zero width should fail");
-        require(!Haio::Codecs::Convert<Haio::Color::ETC1, Haio::Color::RGBA8888>(Haio::Image<Haio::Color::ETC1>{4, 4, std::vector<uint8_t>(7)}),
+        require(!Haio::Pipeline::Convert<Haio::Color::ETC1, Haio::Color::RGBA8888>(Haio::Implementation::Image<Haio::Color::ETC1>{4, 4, std::vector<uint8_t>(7)}),
                 "decode with invalid data size should fail");
-        static_assert(!Haio::Codecs::Convertible<Haio::Color::RGB888, Haio::Color::ETC1>,
+        static_assert(!Haio::Implementation::Codecs::Convertible<Haio::Color::RGB888, Haio::Color::ETC1>,
                       "rgb888 to etc1 is not a declared pair");
 
         return 0;

@@ -5,6 +5,9 @@
 #include <vector>
 
 using namespace Haio;
+using namespace Haio::Implementation;
+using namespace Haio::Implementation;
+using namespace Haio::Implementation::WIP;
 
 namespace {
 
@@ -41,7 +44,7 @@ Blob blobOf(std::vector<uint8_t> data) {
 
 /** what the runtime path gives back: full colour, whatever the file held */
 Result<Image<Color::RGBA8888>> decode(std::vector<uint8_t> data) {
-    return Decode(blobOf(std::move(data)));
+    return Haio::Implementation::decode(blobOf(std::move(data)));
 }
 
 bool pixelIs(const Image<Color::RGBA8888>& image, int x, int y, int r, int g, int b, int a = 255) {
@@ -54,12 +57,12 @@ bool pixelIs(const Image<Color::RGBA8888>& image, int x, int y, int r, int g, in
 
 auto main() -> int {
     // a file this small is not a tga, whatever its first bytes happen to be
-    check(!Detect(std::vector<uint8_t>{0, 0, 2, 0}), "eighteen bytes are the least a tga can be");
+    check(!Haio::Pipeline::Detect<>(std::vector<uint8_t>{0, 0, 2, 0}), "eighteen bytes are the least a tga can be");
     {
         auto broken = header(2, 2, 2, 24, 0x20);
         broken[1] = 7;   // a colour map type nobody defined
         broken.resize(broken.size() + 12);
-        check(!Detect(broken), "a header that disagrees with itself is not recognised");
+        check(!Haio::Pipeline::Detect<>(broken), "a header that disagrees with itself is not recognised");
     }
 
     /**
@@ -70,7 +73,7 @@ auto main() -> int {
         auto file = header(2, 2, 2, 24, 0);
         append(file, {0, 0, 255, 0, 255, 0});         // bottom row: red, green
         append(file, {255, 0, 0, 0, 0, 255});         // the row above it: blue, red
-        const auto found = Detect(file);
+        const auto found = Haio::Pipeline::Detect<>(file);
         check(found.format == Format::TGA && found.color == Color::BGR888, "24 bits a pixel is bgr888");
 
         const auto image = decode(file);
@@ -99,7 +102,7 @@ auto main() -> int {
     {
         auto file = header(2, 1, 1, 32, 0x28);
         append(file, {10, 20, 30, 40});
-        const auto found = Detect(file);
+        const auto found = Haio::Pipeline::Detect<>(file);
         check(found.format == Format::TGA && found.color == Color::BGRA8888, "32 bits a pixel is bgra8888");
 
         const auto image = decode(file);
@@ -114,13 +117,13 @@ auto main() -> int {
         // 0 11111 00000 00000 in the format's own A1R5G5B5: red, with the top bit clear
         auto opaque = header(2, 1, 1, 16, 0x21);
         append(opaque, {0x00, 0x7c});
-        check(Detect(opaque).color == Color::RGBA5551, "an attribute bit makes it rgba5551");
+        check(Haio::Pipeline::Detect<>(opaque).color == Color::RGBA5551, "an attribute bit makes it rgba5551");
         const auto lit = decode(opaque);
         check(lit && pixelIs(*lit, 0, 0, 255, 0, 0, 0), "and the top bit, which is clear, is the alpha");
 
         auto plain = header(2, 1, 1, 16, 0x20);
         append(plain, {0x00, 0x7c});
-        check(Detect(plain).color == Color::RGB555, "without one it is rgb555");
+        check(Haio::Pipeline::Detect<>(plain).color == Color::RGB555, "without one it is rgb555");
         const auto flat = decode(plain);
         check(flat && pixelIs(*flat, 0, 0, 255, 0, 0, 255), "and every pixel is opaque");
     }
@@ -150,10 +153,10 @@ auto main() -> int {
         append(file, {0, 255, 0});
         append(file, {0, 0, 255});
         append(file, {2, 0});
-        const auto found = Detect(file);
+        const auto found = Haio::Pipeline::Detect<>(file);
         check(found.format == Format::TGA && found.color == Color::PALETTE, "a mapped tga is a palette");
 
-        const auto indexed = Codecs::Decode<Format::TGA, Color::PALETTE>(blobOf(file));
+        const auto indexed = Haio::Pipeline::Decode<Format::TGA, Color::PALETTE>(blobOf(file));
         check(indexed && indexed->entries.size() == 3, "it carries the colours it indexes");
         check(indexed && indexed->data[0] == 2 && indexed->data[1] == 0, "and one index per pixel");
 
@@ -166,7 +169,7 @@ auto main() -> int {
     {
         auto file = header(3, 2, 1, 8, 0x20);
         append(file, {0, 128});
-        check(Detect(file).color == Color::GRAY8, "a grey tga is gray8");
+        check(Haio::Pipeline::Detect<>(file).color == Color::GRAY8, "a grey tga is gray8");
         const auto image = decode(file);
         check(image && pixelIs(*image, 1, 0, 128, 128, 128), "and it comes back as a level of grey");
     }
@@ -180,11 +183,11 @@ auto main() -> int {
                                                     0, 0, 255, 0,     255, 255, 255, 255}};
         for (const auto colour : {Color::BGRA8888, Color::BGR888, Color::RGB555, Color::RGBA5551}) {
             const auto name = std::string(colorName(colour));
-            const auto written = Encode(picture, Format::TGA, colour);
+            const auto written = Haio::Pipeline::Encode<>(picture, Format::TGA, colour);
             check(written.has_value(), "a tga holding " + name + " is written");
             if (!written) continue;
 
-            const auto found = Detect(written->data);
+            const auto found = Haio::Pipeline::Detect<>(written->data);
             check(found.format == Format::TGA && found.color == colour,
                   "a tga holding " + name + " says so to the next reader");
 
@@ -196,14 +199,14 @@ auto main() -> int {
 
         // nobody named a colour, so the container's own answer is the one that keeps
         // everything the picture arrived with
-        const auto plain = Encode(picture, Format::TGA);
-        check(plain && Detect(plain->data).color == Color::BGRA8888, "a bare tga is written bgra8888");
+        const auto plain = Haio::Pipeline::Encode<>(picture, Format::TGA);
+        check(plain && Haio::Pipeline::Detect<>(plain->data).color == Color::BGRA8888, "a bare tga is written bgra8888");
 
         const auto alpha = decode(plain->data);
         check(alpha && pixelIs(*alpha, 0, 1, 0, 0, 255, 0), "which is the only one that keeps an alpha");
 
         // a container that holds one colour says no rather than quietly writing another
-        check(!Encode(picture, Format::PNG, Color::RGB565), "a png does not hold rgb565");
+        check(!Haio::Pipeline::Encode<>(picture, Format::PNG, Color::RGB565), "a png does not hold rgb565");
     }
 
     /** indices out and back, which is the only colour that carries something extra */
@@ -211,10 +214,10 @@ auto main() -> int {
         Image<Color::PALETTE> indexed{2, 1, {1, 0}};
         indexed.entries = {0x00ff0000, 0x000000ff};
 
-        const auto written = Codecs::Encode<Format::TGA, Color::PALETTE>(indexed);
+        const auto written = Haio::Pipeline::Encode<Format::TGA, Color::PALETTE>(indexed);
         check(written.has_value(), "a palette picture is written as one");
         if (written) {
-            const auto back = Codecs::Decode<Format::TGA, Color::PALETTE>(blobOf(written->data));
+            const auto back = Haio::Pipeline::Decode<Format::TGA, Color::PALETTE>(blobOf(written->data));
             check(back && back->data == indexed.data, "the indices come back as they went");
             check(back && back->entries == std::vector<uint32_t>{0xffff0000, 0xff0000ff},
                   "and so do the colours, opaque, in the order they were in");
@@ -223,7 +226,7 @@ auto main() -> int {
         // an index the palette does not reach is a broken picture, not a black pixel
         Image<Color::PALETTE> broken{1, 1, {7}};
         broken.entries = {0x00ff0000};
-        check(!Codecs::Encode<Format::TGA, Color::PALETTE>(broken), "an index past the palette is refused");
+        check(!Haio::Pipeline::Encode<Format::TGA, Color::PALETTE>(broken), "an index past the palette is refused");
     }
 
     if (failures == 0) std::cout << "codec tga: ok\n";

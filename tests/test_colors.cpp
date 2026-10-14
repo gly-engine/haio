@@ -1,4 +1,4 @@
-#include <haio_util.hpp>
+#include <haio/util.hpp>
 
 #include <iostream>
 #include <string>
@@ -14,7 +14,7 @@ void check(bool ok, const std::string& what) {
 }
 
 void is(std::string_view name, uint32_t argb) {
-    const auto found = Haio::Util::GetColorFromName(name);
+    const auto found = Haio::Util::getColorFromName(name);
     check(found && *found == argb, std::string(name) + " is the colour imagemagick gives it");
 }
 
@@ -32,7 +32,7 @@ auto main() -> int {
     // and imagemagick's own, where it parts from css: gray and grey are not the same
     is("gray", 0xFF7E7E7E);
     is("grey", 0xFFBEBEBE);
-    check(!Haio::Util::GetColorFromName("rebeccapurple"), "rebeccapurple is css's, and imagemagick 6 has none");
+    check(!Haio::Util::getColorFromName("rebeccapurple"), "rebeccapurple is css's, and imagemagick 6 has none");
 
     is("transparent", 0x00000000);
     is("none", 0x00000000);
@@ -53,7 +53,7 @@ auto main() -> int {
     is("#ff88", 0x88FFFF88);   // four digits are #rgba
 
     for (const auto* nothing : {"", "nosuch", "gray101", "gray-1", "grayx", "#ff888", "#gg0000", "fractal"}) {
-        check(!Haio::Util::GetColorFromName(nothing), std::string("\"") + nothing + "\" names no colour");
+        check(!Haio::Util::getColorFromName(nothing), std::string("\"") + nothing + "\" names no colour");
     }
 
     if (failures == 0) std::cout << "colors: ok\n";

@@ -1,4 +1,4 @@
-#include <haio/internal/source/archive.hpp>
+#include <haio/implementation/source/archive.hpp>
 
 #include <zlib.h>
 
@@ -8,7 +8,8 @@
 #include <vector>
 
 using namespace Haio;
-using namespace Haio::Source;
+using namespace Haio::Implementation;
+using namespace Haio::Implementation::Source;
 
 namespace {
 

@@ -17,8 +17,8 @@
 option(HAIO_USE_ZINT "paint barcodes and qr codes with zint" ON)
 
 set(HAIO_ZINT_BRUSHES
-    "${CMAKE_SOURCE_DIR}/library/backend/codecs/generators/code"
-    "${CMAKE_SOURCE_DIR}/library/backend/codecs/generators/qr"
+    "${CMAKE_SOURCE_DIR}/library/implementation/codecs/generators/code"
+    "${CMAKE_SOURCE_DIR}/library/implementation/codecs/generators/qr"
 )
 
 if(NOT HAIO_USE_ZINT)

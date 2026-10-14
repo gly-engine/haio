@@ -22,6 +22,10 @@ HIDE_SCOPE_NAMES       = YES
 GENERATE_RTF           = NO
 GENERATE_LATEX         = NO
 VERBATIM_HEADERS       = NO
+BRIEF_MEMBER_DESC      = NO
+COLLABORATION_GRAPH    = NO
+SORT_MEMBER_DOCS       = YES
+SORT_BRIEF_DOCS        = YES
 PREDEFINED             = DOXYGEN=
 PLANTUML_JAR_PATH      = $(PLANTUML_JAR_PATH)
 PLANTUML_CFG_FILE      =
@@ -33,7 +37,7 @@ EXTENSION_MAPPING      = h=c
 # scripts/gen_scaffold.cpp builds the lookup from them at build time
 ALIASES                = mime="^^<b>Mime type:</b>"
 ALIASES               += ext="^^<b>Extension:</b>"
-INPUT                  = include library source docs build/docs
+INPUT                  = include library source docs build/docs build/include/haio/generated
 IMAGE_PATH             = assets build/docs/assets
 # runs the @haio{convert} examples in the comments; see scripts/doxygen_filter.cpp
 INPUT_FILTER           = build/bin/doxygen_filter

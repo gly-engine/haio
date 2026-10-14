@@ -9,8 +9,9 @@
 // The same pass reads the @mime tags off the Format enumerators, so the mime lookup
 // is generated from the enum rather than kept as a second table that can drift from it.
 //
-// usage: gen_scaffold <output.hpp> [--formats haio_formats.hpp] [--namespace Haio::Codecs]
-//                     [--include haio_codec.hpp]... [source.cpp...]
+// usage: gen_scaffold <output.hpp> [--formats haio/domain.hpp]
+//                     [--namespace Haio::Implementation::Codecs]
+//                     [--include haio/implementation/codecs.hpp]... [source.cpp...]
 
 #include <algorithm>
 #include <cctype>
@@ -26,8 +27,8 @@
 namespace {
 
 /**
- * "Decode<Format::PNG, ...", "Crop<Color::RGBA8888>(", "Generate<Brush::Xc, ..." or
- * "Blend<Compose::Multiply>(":
+ * "Decode<Format::PNG, ...", "Transform<Operation::Crop, ...", "Generate<Brush::Xc, ..." or
+ * "Blend<Compose::Multiply, ...":
  * a name, specialised on one of the enums. any name will do, so a new transform needs no line here.
  */
 bool isEntryPoint(std::string_view named) {
@@ -38,36 +39,78 @@ bool isEntryPoint(std::string_view named) {
     }
     const auto rest = named.substr(open + 1);
     return rest.starts_with("Format::") || rest.starts_with("Color::") || rest.starts_with("Brush::")
-        || rest.starts_with("Compose::");
+        || rest.starts_with("Compose::") || rest.starts_with("Operation::");
 }
 
 /**
- * "Result<Image> Decode<Format::PNG>(const Image& i) {" -> the same line as a declaration.
- *
- * a definition starts at the first column with its return type, whatever that is --
- * Result<Image<Color::X>>, bool, or an alias such as BlendRes -- and the entry point
- * is the first word after a space outside any angle brackets.
+ * where the entry point starts, when the line is a definition of one: it starts at the
+ * first column with its return type, whatever that is -- Result<Image<Color::X>>,
+ * bool, or an alias such as BlendRes -- and the entry point is the first word after a
+ * space outside any angle brackets.
  */
-std::string declarationOf(std::string_view line) {
-    if (line.empty() || !std::isalpha(static_cast<unsigned char>(line[0]))) return {};
-    if (line.starts_with("template") || line.starts_with("using") || line.starts_with("namespace")) return {};
-    if (line.starts_with("constexpr ")) line.remove_prefix(10);
+size_t entryOf(std::string_view line) {
+    if (line.empty() || !std::isalpha(static_cast<unsigned char>(line[0]))) return std::string_view::npos;
+    if (line.starts_with("template") || line.starts_with("using") || line.starts_with("namespace")) return std::string_view::npos;
 
-    bool found = false;
     int depth = 0;
-    for (size_t at = 0; at < line.size() && !found; at++) {
+    for (size_t at = 0; at < line.size(); at++) {
         const char c = line[at];
         if (c == '<') depth++;
         else if (c == '>') depth--;
         else if (c == '(' && depth == 0) break;
-        else if (c == ' ' && depth == 0) found = isEntryPoint(line.substr(at + 1));
+        else if (c == ' ' && depth == 0 && isEntryPoint(line.substr(at + 1))) return at + 1;
     }
-    if (!found) return {};
+    return std::string_view::npos;
+}
+
+/**
+ * "Result<Image> Decode<Format::PNG>(const Image& i) {" -> the same line as a declaration,
+ * for the verbs that are still function templates.
+ */
+std::string declarationOf(std::string_view line) {
+    if (line.starts_with("constexpr ")) line.remove_prefix(10);
+    const auto entry = entryOf(line);
+    if (entry == std::string_view::npos) return {};
+    if (line.find("::operator()", entry) != std::string_view::npos) return {};
 
     const auto close = line.rfind(')');
     if (close == std::string_view::npos) return {};
 
     return "template <> " + std::string(line.substr(0, close + 1)) + ";";
+}
+
+/** a verb that is a class: one specialisation, and the calls it answers */
+struct Shell {
+    std::string name;
+    std::vector<std::string> members;
+};
+
+/**
+ * "bool Detect<Format::PNG, Color::RGBA8888>::operator()(Bytes data) const {" -> the
+ * specialisation it belongs to, and that call as a member declaration. the class
+ * itself is written here, since a concept can only see one that is complete: every
+ * one of them derives from the verb with no arguments, Detect<>, which is what makes
+ * it one of the family.
+ */
+bool memberOf(std::string_view line, std::vector<Shell>& shells) {
+    const auto entry = entryOf(line);
+    if (entry == std::string_view::npos) return false;
+    const auto call = line.find("::operator()", entry);
+    if (call == std::string_view::npos) return false;
+
+    const auto close = line.rfind(')');
+    if (close == std::string_view::npos || close < call) return false;
+    const auto qualifiers = line.substr(close + 1, line.find('{', close) - close - 1);
+
+    std::string member = std::string(line.substr(0, entry)) + std::string(line.substr(call + 2, close + 1 - call - 2));
+    if (qualifiers.find("const") != std::string_view::npos) member += " const";
+    member += ";";
+
+    const std::string name{line.substr(entry, call - entry)};
+    auto shell = std::ranges::find(shells, name, &Shell::name);
+    if (shell == shells.end()) shell = shells.insert(shells.end(), Shell{name, {}});
+    shell->members.push_back(std::move(member));
+    return true;
 }
 
 /** the tokens after a tag, up to the end of the comment */
@@ -134,22 +177,53 @@ std::string tableOf(const std::string& path, std::string_view tag) {
     return table.str();
 }
 
+/**
+ * only rewrite when something actually changed, so a codec edit that adds no
+ * capability does not force every translation unit to recompile
+ */
+bool writeIfChanged(const std::filesystem::path& output, const std::string& text) {
+    std::ifstream existing(output);
+    const std::string current{std::istreambuf_iterator<char>(existing), std::istreambuf_iterator<char>()};
+    if (current == text) return true;
+
+    if (output.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(output.parent_path(), ec);
+    }
+
+    std::ofstream out(output);
+    if (!out) {
+        std::cerr << "gen_scaffold: cannot write " << output.string() << '\n';
+        return false;
+    }
+    out << text;
+    return static_cast<bool>(out);
+}
+
 }
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "usage: gen_scaffold <output.hpp> [--formats haio_formats.hpp] [--namespace ns]"
-                     " [--include header]... [source.cpp...]\n";
+        std::cerr << "usage: gen_scaffold <output.hpp> [--formats haio/domain.hpp] [--namespace ns]"
+                     " [--defaults ns] [--classes classes.hpp name] [--include header]... [source.cpp...]\n";
         return 1;
     }
 
     std::vector<std::string> sources;
     std::vector<std::string> includes;
     std::string formatsHeader;
-    std::string space = "Haio::Codecs";
+    std::string space = "Haio::Implementation::Codecs";
+    std::string defaultsSpace;
+    std::string classesPath;
+    std::string classesName;
     for (int i = 2; i < argc; i++) {
         const std::string_view arg{argv[i]};
-        if (arg == "--formats" && i + 1 < argc) {
+        if (arg == "--classes" && i + 2 < argc) {
+            classesPath = argv[++i];
+            classesName = argv[++i];
+        } else if (arg == "--defaults" && i + 1 < argc) {
+            defaultsSpace = argv[++i];
+        } else if (arg == "--formats" && i + 1 < argc) {
             formatsHeader = argv[++i];
         } else if (arg == "--namespace" && i + 1 < argc) {
             space = argv[++i];
@@ -159,7 +233,7 @@ int main(int argc, char* argv[]) {
             sources.emplace_back(argv[i]);
         }
     }
-    if (includes.empty()) includes.emplace_back("haio_codec.hpp");
+    if (includes.empty()) includes.emplace_back("haio/implementation/codecs.hpp");
 
     std::ostringstream generated;
     generated << "#pragma once\n\n"
@@ -172,7 +246,7 @@ int main(int argc, char* argv[]) {
         const auto extensions = tableOf(formatsHeader, "@ext");
         if (mimes.empty() || extensions.empty()) return 1;
 
-        generated << "\nnamespace Haio {\n"
+        generated << "\nnamespace Haio::Implementation::Trash {\n"
                   << "\n/** every mime type the Format enum names; the first of a format is the one haio sends */\n"
                   << "struct FormatMime {\n"
                   << "    Format format;\n"
@@ -191,9 +265,11 @@ int main(int argc, char* argv[]) {
                   << "};\n\n}\n";
     }
 
-    // the verbs live apart from the vocabulary; see haio_codec.hpp
+    // the verbs live apart from the vocabulary; see haio/implementation/codecs.hpp
     generated << "\nnamespace " << space << " {\n";
 
+    std::vector<Shell> shells;
+    std::vector<std::string> defaults;
     for (const auto& path : sources) {
         std::ifstream source(path);
         if (!source) {
@@ -203,11 +279,13 @@ int main(int argc, char* argv[]) {
 
         std::vector<std::string> declarations;
         for (std::string line; std::getline(source, line);) {
-            // DefaultColor is a value rather than a call, so its definition is copied whole
+            // DefaultColor is a value rather than a call, so its definition is copied whole,
+            // into the namespace it lives in when that is not the verbs'
             if (line.starts_with("template <> struct DefaultColor<")) {
-                declarations.push_back(line);
+                (defaultsSpace.empty() ? declarations : defaults).push_back(line);
                 continue;
             }
+            if (memberOf(line, shells)) continue;
             if (auto declaration = declarationOf(line); !declaration.empty()) {
                 declarations.push_back(std::move(declaration));
             }
@@ -217,25 +295,39 @@ int main(int argc, char* argv[]) {
         generated << '\n';
         for (const auto& declaration : declarations) generated << declaration << '\n';
     }
+
     generated << "\n}\n";
 
-    // only rewrite when something actually changed, so a codec edit that adds no
-    // capability does not force every translation unit to recompile
-    std::ifstream existing(argv[1]);
-    const std::string current{std::istreambuf_iterator<char>(existing), std::istreambuf_iterator<char>()};
-    if (current == generated.str()) return 0;
-
-    const std::filesystem::path output = argv[1];
-    if (output.has_parent_path()) {
-        std::error_code ec;
-        std::filesystem::create_directories(output.parent_path(), ec);
+    if (!defaults.empty()) {
+        generated << "\nnamespace " << defaultsSpace << " {\n\n";
+        for (const auto& line : defaults) generated << line << '\n';
+        generated << "\n}\n";
     }
 
-    std::ofstream out(output);
-    if (!out) {
-        std::cerr << "gen_scaffold: cannot write " << output.string() << '\n';
-        return 1;
+    // a class may take its calls from more than one source, so they are written after
+    // every source is read, and apart: a source defines its operator() out of line, so
+    // it has to see its class, and it cannot see the rest of this header, which copies
+    // the DefaultColor that very source defines
+    std::ostringstream classes;
+    for (const auto& shell : shells) {
+        const auto family = shell.name.substr(0, shell.name.find('<')) + "<>";
+        classes << "\ntemplate <> class " << shell.name << " final : public " << family << " {\n"
+                << "public:\n";
+        for (const auto& member : shell.members) classes << "    " << member << '\n';
+        classes << "};\n";
     }
-    out << generated.str();
-    return out ? 0 : 1;
+
+    if (!classesPath.empty()) {
+        std::ostringstream header;
+        header << "#pragma once\n\n"
+               << "// generated by scripts/gen_scaffold.cpp -- do not edit\n\n";
+        for (const auto& named : includes) header << "#include <" << named << ">\n";
+        header << "\nnamespace " << space << " {\n" << classes.str() << "\n}\n";
+        if (!writeIfChanged(classesPath, header.str())) return 1;
+        generated << "\n#include <" << classesName << ">\n";
+    } else if (!shells.empty()) {
+        generated << "\nnamespace " << space << " {\n" << classes.str() << "\n}\n";
+    }
+
+    return writeIfChanged(argv[1], generated.str()) ? 0 : 1;
 }

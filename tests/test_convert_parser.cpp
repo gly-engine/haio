@@ -1,4 +1,4 @@
-#include <haio_cli.hpp>
+#include <haio/implementation/language/convert.hpp>
 
 #include <cassert>
 #include <string>
@@ -7,10 +7,10 @@
 namespace {
 
 /** the transforms and merges, without the sources and parentheses between them */
-std::vector<Haio::Token> transformsOf(const Haio::Cli::Command& cmd) {
-    std::vector<Haio::Token> out;
+std::vector<Haio::Implementation::Language::Token> transformsOf(const Haio::Implementation::LanguageParser::Command& cmd) {
+    std::vector<Haio::Implementation::Language::Token> out;
     for (const auto& token : cmd.steps) {
-        using enum Haio::TokenKind;
+        using enum Haio::Implementation::Language::TokenKind;
         if (token.kind != Source && token.kind != Decode && token.kind != Generate && token.kind != Open && token.kind != Close) {
             out.push_back(token);
         }
@@ -18,17 +18,17 @@ std::vector<Haio::Token> transformsOf(const Haio::Cli::Command& cmd) {
     return out;
 }
 
-Haio::Cli::Command parse(std::vector<std::string> args) {
+Haio::Implementation::LanguageParser::Command parse(std::vector<std::string> args) {
     std::vector<char*> argv;
     argv.reserve(args.size());
     for (auto& arg : args) argv.push_back(arg.data());
-    return Haio::Cli::parseArgs(static_cast<int>(argv.size()), argv.data());
+    return Haio::Implementation::LanguageParser::parseArgs(static_cast<int>(argv.size()), argv.data());
 }
 
 }
 
 int main() {
-    using enum Haio::TokenKind;
+    using enum Haio::Implementation::Language::TokenKind;
 
     {
         auto cmd = parse({"convert", "input.png", "-crop", "10x10+5+6", "output.ppm"});
@@ -63,13 +63,13 @@ int main() {
         assert(transformsOf(cmd)[0].percent == 30);
     }
     {
-        auto cmd = Haio::Cli::parseCommandLine(R"cmd(convert input.png -fx "u*v + 0.2*sin(pi*u)" output.ppm)cmd");
+        auto cmd = Haio::Implementation::LanguageParser::parseCommandLine(R"cmd(convert input.png -fx "u*v + 0.2*sin(pi*u)" output.ppm)cmd");
         assert(!cmd.error);
         assert(transformsOf(cmd)[0].kind == Fx);
         assert(transformsOf(cmd)[0].expression == "u*v + 0.2*sin(pi*u)");
     }
     {
-        auto args = Haio::Cli::lexCommandLine(R"(convert background.jpg \( foreground.png -resize 800x \) output.png)");
+        auto args = Haio::Implementation::LanguageParser::lexCommandLine(R"(convert background.jpg \( foreground.png -resize 800x \) output.png)");
         assert(args.size() == 8);
         assert(args[2] == "(");
         assert(args[5] == "800x");
@@ -83,7 +83,7 @@ int main() {
         assert(!cmd.error);
         assert(cmd.inputs.empty());
         assert(cmd.steps[0].kind == Generate);
-        assert(cmd.steps[0].brush == Haio::Brush::Xc);
+        assert(cmd.steps[0].brush == Haio::Implementation::Codecs::Brush::Xc);
         assert(cmd.steps[0].expression == "white");
         assert(cmd.steps[0].settings.size() == 1);
         assert(cmd.steps[0].settings[0].name == "size");
@@ -104,11 +104,11 @@ int main() {
         auto cmd = parse({"convert", "-size", "2x2", "RADIAL-GRADIENT:red-blue", "(", "canvas:red", ")", "-composite",
                           "(", "fractal:", ")", "-composite", "out.png"});
         assert(!cmd.error);
-        std::vector<Haio::Brush> painted;
+        std::vector<Haio::Implementation::Codecs::Brush> painted;
         for (const auto& token : cmd.steps) {
             if (token.kind == Generate) painted.push_back(token.brush);
         }
-        assert((painted == std::vector{Haio::Brush::RadialGradient, Haio::Brush::Xc, Haio::Brush::Plasma}));
+        assert((painted == std::vector{Haio::Implementation::Codecs::Brush::RadialGradient, Haio::Implementation::Codecs::Brush::Xc, Haio::Implementation::Codecs::Brush::Plasma}));
     }
     // and takes the options it declared and nothing else
     {
@@ -191,14 +191,14 @@ int main() {
     {
         auto cmd = parse({"convert", "input.png", "-filter", "Strict", "-palette", "cga", "out.png"});
         assert(!cmd.error);
-        assert(transformsOf(cmd)[0].dither == Haio::Dither::Strict);
+        assert(transformsOf(cmd)[0].dither == Haio::Implementation::WIP::Dither::Strict);
     }
 
     // a name is a name however it is written: case, spaces, dashes and underscores aside
     for (const auto* spelled : {"Code128", "code 128", "CODE-128", "code_128"}) {
         auto cmd = parse({"convert", "-format", spelled, "code:haio", "out.png"});
         assert(!cmd.error);
-        assert(cmd.steps[0].kind == Generate && cmd.steps[0].brush == Haio::Brush::Code);
+        assert(cmd.steps[0].kind == Generate && cmd.steps[0].brush == Haio::Implementation::Codecs::Brush::Code);
     }
     {
         auto cmd = parse({"convert", "-format", "pdf417", "code:haio", "out.png"});
@@ -217,7 +217,7 @@ int main() {
     {
         auto cmd = parse({"convert", "input.png", "-filter", "Point", "-resize", "8x8", "out.png"});
         assert(!cmd.error);
-        assert(transformsOf(cmd)[0].filter == Haio::ResizeFilter::Point);
+        assert(transformsOf(cmd)[0].filter == Haio::Implementation::Transforms::Transform<>::ResizeFilter::Point);
     }
     {
         auto cmd = parse({"convert", "input.png", "-filter", "lanczos", "-resize", "8x8", "out.png"});
@@ -323,15 +323,15 @@ int main() {
         assert(transformsOf(cmd).size() == 1);
         assert(transformsOf(cmd)[0].kind == Palette);
         assert(transformsOf(cmd)[0].palette == "cga");
-        assert(transformsOf(cmd)[0].dither == Haio::Dither::Bayer);
+        assert(transformsOf(cmd)[0].dither == Haio::Implementation::WIP::Dither::Bayer);
         assert(cmd.outputPath == "out.png");
     }
     {
         auto cmd = parse({"convert", "input.png", "-limit", "sort:4", "-filter", "floyd", "-palete", "cga", "out.png"});
         assert(!cmd.error);
         assert(transformsOf(cmd)[0].limit == 4);
-        assert(transformsOf(cmd)[0].limitHow == Haio::Limit::Sort);
-        assert(transformsOf(cmd)[0].dither == Haio::Dither::Floyd);
+        assert(transformsOf(cmd)[0].limitHow == Haio::Implementation::WIP::Limit::Sort);
+        assert(transformsOf(cmd)[0].dither == Haio::Implementation::WIP::Dither::Floyd);
     }
     // -filter is required by -palette, and written after it is too late
     {
@@ -353,7 +353,7 @@ int main() {
 
     // every source puts a picture on the stack, and -composite joins two of them
     {
-        auto cmd = Haio::Cli::parseCommandLine(
+        auto cmd = Haio::Implementation::LanguageParser::parseCommandLine(
             R"(convert xc:blue \( -size 1x1 xc:red \) -geometry +0+0 -composite output.png)");
         assert(!cmd.error);
         assert(cmd.inputs.empty());
@@ -361,7 +361,7 @@ int main() {
         assert(cmd.steps[2].settings[0].value == "1x1");
         assert(transformsOf(cmd).size() == 1);
         assert(transformsOf(cmd)[0].kind == Composite);
-        assert(transformsOf(cmd)[0].gravity == Haio::Gravity::NorthWest);
+        assert(transformsOf(cmd)[0].gravity == Haio::Implementation::Transforms::Transform<>::Gravity::NorthWest);
     }
     // a parenthesis is not needed for that; it only scopes what changes
     {
@@ -369,7 +369,7 @@ int main() {
                           "-composite", "out.png"});
         assert(!cmd.error);
         assert(cmd.inputs.size() == 2);
-        assert(transformsOf(cmd)[0].gravity == Haio::Gravity::SouthEast);
+        assert(transformsOf(cmd)[0].gravity == Haio::Implementation::Transforms::Transform<>::Gravity::SouthEast);
         assert(transformsOf(cmd)[0].rect.x == -3 && transformsOf(cmd)[0].rect.y == 4);
     }
     {
@@ -378,11 +378,11 @@ int main() {
         assert(!cmd.error);
         assert(cmd.inputs.size() == 3);
         assert(cmd.inputs[2].path == "c.png");
-        std::vector<Haio::TokenKind> kinds;
+        std::vector<Haio::Implementation::Language::TokenKind> kinds;
         for (const auto& token : cmd.steps) {
             if (token.kind != Source) kinds.push_back(token.kind);
         }
-        assert((kinds == std::vector<Haio::TokenKind>{Decode, Open, Decode, Open, Decode, Resize, Close, Composite,
+        assert((kinds == std::vector<Haio::Implementation::Language::TokenKind>{Decode, Open, Decode, Open, Decode, Resize, Close, Composite,
                                                         Close, Composite}));
     }
     // file: is not a prefix haio knows, so it is part of the path like any other
@@ -395,8 +395,8 @@ int main() {
     // the tokenizer is the command line's; what it hands over is plain words
     {
         const std::vector<std::string> args{"convert", "a.png", "(", "-resize=8x8", ")", "-geometry", "-3+4", "o.png"};
-        const auto words = Haio::Cli::wordsOf(args);
-        using Kind = Haio::Parser::Word::Kind;
+        const auto words = Haio::Implementation::LanguageParser::wordsOf(args);
+        using Kind = Haio::Implementation::LanguageParser::Word::Kind;
         assert(words.size() == 7);
         assert(words[0].kind == Kind::Plain);
         assert(words[1].kind == Kind::Open);
@@ -436,13 +436,13 @@ int main() {
     {
         auto cmd = parse({"convert", "qr:oi", "-negate", "out.png"});
         assert(!cmd.error);
-        assert(transformsOf(cmd)[0].kind == Haio::TokenKind::Negate);
+        assert(transformsOf(cmd)[0].kind == Haio::Implementation::Language::TokenKind::Negate);
     }
     // three are the destination and a picture tinted by the one after it
     {
         auto cmd = parse({"convert", "dog.png", "qr:oi", "xc:red", "-composite", "out.png"});
         assert(!cmd.error);
-        assert(transformsOf(cmd)[0].compose == Haio::Compose::Over);
+        assert(transformsOf(cmd)[0].compose == Haio::Implementation::Transforms::Compose::Over);
     }
     // four are the destination, a shape, and the colours of its black and of its white
     {
@@ -458,30 +458,30 @@ int main() {
     {
         auto cmd = parse({"convert", "qr:oi", "-resize", "64x64", "xc:red", "xc:blue", "-composite", "out.png"});
         assert(!cmd.error);
-        using enum Haio::TokenKind;
+        using enum Haio::Implementation::Language::TokenKind;
         const auto& steps = cmd.steps;
         assert(steps.size() == 7);
-        assert(steps[0].kind == Generate && steps[0].brush == Haio::Brush::Qr);
+        assert(steps[0].kind == Generate && steps[0].brush == Haio::Implementation::Codecs::Brush::Qr);
         assert(steps[1].kind == Resize);
         assert(steps[2].kind == PixFmt && steps[2].color == Haio::Color::NIL);
-        assert(steps[3].kind == Generate && steps[3].brush == Haio::Brush::Qr);
+        assert(steps[3].kind == Generate && steps[3].brush == Haio::Implementation::Codecs::Brush::Qr);
         assert(steps[4].kind == Resize);
         assert(steps[6].kind == Composite);
     }
     {
         auto cmd = parse({"convert", "a.png", "(", "text:oi", "xc:red", "xc:blue", "-composite", ")", "-composite", "out.png"});
         assert(!cmd.error);
-        assert(transformsOf(cmd)[0].kind == Haio::TokenKind::PixFmt);
+        assert(transformsOf(cmd)[0].kind == Haio::Implementation::Language::TokenKind::PixFmt);
     }
     // with one colour, null: is the second
     {
         auto cmd = parse({"convert", "text:oi", "xc:red", "-composite", "out.png"});
         assert(!cmd.error);
-        using enum Haio::TokenKind;
+        using enum Haio::Implementation::Language::TokenKind;
         const auto& steps = cmd.steps;
         assert(steps.size() == 6);
         assert(steps[1].kind == PixFmt && steps[1].color == Haio::Color::NIL);
-        assert(steps[4].kind == Generate && steps[4].brush == Haio::Brush::Null);
+        assert(steps[4].kind == Generate && steps[4].brush == Haio::Implementation::Codecs::Brush::Null);
         assert(steps[5].kind == Composite);
     }
     // anything else first, or a compose asked for with one colour, is left as written
@@ -496,7 +496,7 @@ int main() {
     {
         auto cmd = parse({"convert", "a.png", "b.png", "-compose", "Color-Dodge", "-composite", "out.png"});
         assert(!cmd.error);
-        assert(transformsOf(cmd)[0].compose == Haio::Compose::ColorDodge);
+        assert(transformsOf(cmd)[0].compose == Haio::Implementation::Transforms::Compose::ColorDodge);
     }
     {
         auto cmd = parse({"convert", "a.png", "b.png", "-compose", "vivid", "-composite", "out.png"});
@@ -549,7 +549,7 @@ int main() {
     {
         auto cmd = parse({"convert", "a.png", "b.png", "-pix_fmt", "grayscale", "xc:red", "-composite", "out.png"});
         assert(!cmd.error);
-        assert(transformsOf(cmd)[0].kind == Haio::TokenKind::PixFmt);
+        assert(transformsOf(cmd)[0].kind == Haio::Implementation::Language::TokenKind::PixFmt);
         assert(transformsOf(cmd)[0].color == Haio::Color::GRAY8);
         assert(!cmd.outputColor);
     }

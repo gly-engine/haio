@@ -1,13 +1,14 @@
 // Prints the convert grammar to stdout, as markdown, for doxygen to pick up: the
 // build writes it to build/docs/ebnf.md, a page in the convert topic.
 //
-// Nothing here is written down twice: the stages come from include/haio/transforms/
-// and include/haio/generators/ by reflection, and each one's rule and options come
-// from its own declaration.
+// Nothing here is written down twice: the stages come from
+// include/haio/implementation/language/stages/ and the brushes from
+// include/haio/implementation/codecs/generators/ by reflection, and each one's
+// rule and options come from its own declaration.
 //
 // usage: generate_ebnf > build/docs/ebnf.md
 
-#include <haio/grammar.hpp>
+#include <haio/implementation/language/grammar.hpp>
 
 #include <algorithm>
 #include <iostream>
@@ -16,10 +17,10 @@
 
 namespace {
 
-using Haio::Stages::Kind;
-using Haio::Stages::Option;
-using Haio::Stages::Stage;
-namespace Grammar = Haio::Grammar;
+using Haio::Implementation::LanguageStage::Kind;
+using Haio::Implementation::Option;
+using Haio::Implementation::LanguageStage::Stage;
+namespace LanguageGrammar = Haio::Implementation::LanguageGrammar;
 
 struct Line {
     std::string name;
@@ -94,7 +95,7 @@ void stageRules(const Stage& stage, std::vector<Line>& out) {
 /** every transform that merges or that does not, named rather than spelled out */
 std::string transformAlternation(bool merges) {
     std::vector<std::string> rules;
-    for (const auto* stage : Grammar::stages) {
+    for (const auto* stage : LanguageGrammar::stages) {
         if (stage->kind == Kind::Transform && stage->merges == merges) rules.emplace_back(stage->rule);
     }
     return alternation(rules);
@@ -128,21 +129,21 @@ void printOptions() {
         const auto colon = option.spellings[0].find(':') != std::string_view::npos;
         std::cout << "| `" << where << "` | `" << (colon ? "-define " : "-") << option.spellings[0]
                   << (colon ? "=" : " ") << option.takes << "` | " << (option.required ? "yes" : "no") << " | "
-                  << Haio::Stages::describe(option) << " |\n";
+                  << Haio::Util::describe(option) << " |\n";
     };
-    for (const auto* stage : Grammar::stages) {
+    for (const auto* stage : LanguageGrammar::stages) {
         for (const auto& option : stage->options) row(stage->rule, option);
     }
-    for (const auto& option : Grammar::output.options) row("output", option);
+    for (const auto& option : LanguageGrammar::output.options) row("output", option);
 
     // the codecs' own, which the input or the output takes when it is of that format
-    for (const auto& codec : Grammar::codecs) {
+    for (const auto& codec : LanguageGrammar::codecs) {
         const auto input = std::string(codec.format) + " input";
         const auto output = std::string(codec.format) + " output";
         for (const auto& option : codec.reads->decode) row(input, option);
         for (const auto& option : codec.reads->encode) row(output, option);
     }
-    for (const auto& brush : Grammar::brushes) {
+    for (const auto& brush : LanguageGrammar::brushes) {
         for (const auto& option : brush.draws->options) row(std::string(brush.name) + ":", option);
     }
     std::cout << '\n';
@@ -152,32 +153,31 @@ void printOptions() {
 
 int main() {
     std::vector<Line> lexer;
-    append(Grammar::lexerRules, lexer);
+    append(LanguageGrammar::lexerRules, lexer);
 
     std::vector<Line> command;
-    append(Grammar::structureRules, command);
+    append(LanguageGrammar::structureRules, command);
     command.push_back({"transform", transformAlternation(false)});
     command.push_back({"merge", transformAlternation(true)});
     command.push_back({"source", "{ codec-setting } , ( drawn | file-spec )"});
 
     // every codec that draws rather than reads, and what it takes after its colon
     std::vector<std::string> drawn;
-    for (const auto& brush : Grammar::brushes) {
+    for (const auto& brush : LanguageGrammar::brushes) {
         auto piece = "\"" + std::string(brush.name) + ":\"";
         if (!brush.draws->takes.empty()) piece += " , [ " + std::string(brush.draws->takes) + " ]";
         drawn.push_back(std::move(piece));
     }
     command.push_back({"drawn", alternation(drawn)});
     command.push_back({"output", "{ output-option | codec-setting } , file-spec"});
-    command.push_back({"output-option", alternation(optionsOf(Grammar::output))});
+    command.push_back({"output-option", alternation(optionsOf(LanguageGrammar::output))});
     command.push_back({"codec-setting", "\"-define\" , define-spec | codec-option"});
-    for (const auto* stage : Grammar::stages) stageRules(*stage, command);
-    append(Grammar::leafRules, command);
+    for (const auto* stage : LanguageGrammar::stages) stageRules(*stage, command);
+    append(LanguageGrammar::leafRules, command);
 
-    // an explicit page, since a markdown file that only says @ingroup is taken for
-    // a file reference rather than a page, and lands in no topic at all
-    std::cout << "@page convert_ebnf convert cli grammar\n"
-              << "@ingroup convert\n\n"
+    // an explicit page, since a markdown file with no @page is taken for a file
+    // reference rather than a page
+    std::cout << "@page convert_ebnf convert cli grammar\n\n"
               << "parser implementation: boost.spirit x3.\n\n"
               << "```ebnf\n";
     print(lexer);
@@ -188,6 +188,6 @@ int main() {
     printOptions();
 
     std::cout << "## behavior\n\n";
-    for (const auto& note : Grammar::notes) std::cout << "- " << note.text << '\n';
+    for (const auto& note : LanguageGrammar::notes) std::cout << "- " << note.text << '\n';
     return 0;
 }

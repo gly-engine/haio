@@ -1,5 +1,5 @@
-#include <haio_cache.hpp>
-#include <haio_platform.hpp>
+#include <haio/implementation/cdn/cache.hpp>
+#include <haio/implementation/platform.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -7,7 +7,8 @@
 #include <string>
 
 using namespace Haio;
-using namespace Haio::Cdn;
+using namespace Haio::Implementation;
+using namespace Haio::Implementation::Cdn;
 
 namespace {
 
@@ -32,7 +33,7 @@ std::string bodyOf(const CacheEntry& entry) {
  * lambda keeps its captures in the closure, and the closure is gone by the time a
  * spawned task first runs; parameters are copied into the frame instead.
  */
-Task<void> askFor(Cache& cache, std::string key, std::string client, Cache::Producer produce, std::string expected, int& answered) {
+Platform::Task<void> askFor(Cache& cache, std::string key, std::string client, Cache::Producer produce, std::string expected, int& answered) {
     auto got = co_await cache.fetch(key, client, produce);
     if (got && bodyOf(*got) == expected) answered++;
 }
@@ -72,7 +73,7 @@ void testFraming() {
     check(!decodeEntry({}).has_value(), "an empty entry is a miss");
 }
 
-Task<void> testMemoryStore() {
+Platform::Task<void> testMemoryStore() {
     auto store = makeMemoryStore(1024, std::chrono::seconds(60));
 
     check(!(co_await store->get("missing")).has_value(), "an unknown key misses");
@@ -106,7 +107,7 @@ Task<void> testMemoryStore() {
     check(!(co_await tiny->get("huge")).has_value(), "an oversized entry is not stored");
 }
 
-Task<void> testTtlExpires() {
+Platform::Task<void> testTtlExpires() {
     auto store = makeMemoryStore(1024, std::chrono::seconds(0));
     co_await store->put("a", entryOf("gone"));
     check(!(co_await store->get("a")).has_value(), "a zero ttl entry is already stale");
@@ -117,39 +118,39 @@ Task<void> testTtlExpires() {
  * this every caller in the burst fetches the upstream, which on an open bucket points
  * an amplifier at somebody else's server.
  */
-Task<void> testSingleFlight() {
+Platform::Task<void> testSingleFlight() {
     CacheConfig config;
     config.ttl = std::chrono::seconds(60);
     Cache cache{config, 0};
     check(cache.enabled(), "a cache with a ttl is on");
 
     int produced = 0;
-    auto slowProducer = [&produced]() -> Task<Result<CacheEntry>> {
+    auto slowProducer = [&produced]() -> Platform::Task<Result<CacheEntry>> {
         produced++;
-        co_await Platform::sleep(std::chrono::milliseconds(50));
+        co_await Interfaces::sleep(std::chrono::milliseconds(50));
         co_return entryOf("shared");
     };
 
     constexpr int callers = 8;
     int answered = 0;
     for (int i = 0; i < callers; i++) {
-        Platform::spawn(askFor(cache, "hot", "10.0.0.1", slowProducer, "shared", answered));
+        Interfaces::spawn(askFor(cache, "hot", "10.0.0.1", slowProducer, "shared", answered));
     }
 
-    co_await Platform::sleep(std::chrono::milliseconds(300));
+    co_await Interfaces::sleep(std::chrono::milliseconds(300));
 
     check(answered == callers, "every caller in the burst is answered");
     check(produced == 1, "the producer ran once for the whole burst, not " + std::to_string(produced) + " times");
 }
 
 /** a cache with no ttl configured must stay out of the way entirely */
-Task<void> testDisabledCachePassesThrough() {
+Platform::Task<void> testDisabledCachePassesThrough() {
     Cache off;
     check(!off.enabled(), "a default cache is off");
 
     int produced = 0;
     for (int i = 0; i < 3; i++) {
-        auto got = co_await off.fetch("k", "10.0.0.1", [&produced]() -> Task<Result<CacheEntry>> {
+        auto got = co_await off.fetch("k", "10.0.0.1", [&produced]() -> Platform::Task<Result<CacheEntry>> {
             produced++;
             co_return entryOf("live");
         });
@@ -159,18 +160,18 @@ Task<void> testDisabledCachePassesThrough() {
 }
 
 /** a producer that fails must not be stored, and must not poison the next caller */
-Task<void> testFailureIsNotCached() {
+Platform::Task<void> testFailureIsNotCached() {
     CacheConfig config;
     config.ttl = std::chrono::seconds(60);
     Cache cache{config, 0};
 
-    auto failing = []() -> Task<Result<CacheEntry>> {
+    auto failing = []() -> Platform::Task<Result<CacheEntry>> {
         co_return std::unexpected(Error{ErrorCode::Upstream, "upstream said no"});
     };
     auto failed = co_await cache.fetch("k", "10.0.0.1", failing);
     check(!failed, "a failed produce is reported");
 
-    auto ok = co_await cache.fetch("k", "10.0.0.1", []() -> Task<Result<CacheEntry>> {
+    auto ok = co_await cache.fetch("k", "10.0.0.1", []() -> Platform::Task<Result<CacheEntry>> {
         co_return entryOf("second try");
     });
     check(ok && bodyOf(*ok) == "second try", "the failure was not stored");
@@ -181,26 +182,26 @@ Task<void> testFailureIsNotCached() {
  * one key must still reach the producer once. otherwise turning the cache off would
  * quietly turn an amplifier back on.
  */
-Task<void> testDedupWithoutCache() {
+Platform::Task<void> testDedupWithoutCache() {
     CacheConfig config;
     config.ttl = std::chrono::seconds(0);   // keeps nothing
     Cache cache{config, 0};
     check(!cache.enabled(), "a zero ttl keeps nothing");
 
     int produced = 0;
-    auto slow = [&produced]() -> Task<Result<CacheEntry>> {
+    auto slow = [&produced]() -> Platform::Task<Result<CacheEntry>> {
         produced++;
-        co_await Platform::sleep(std::chrono::milliseconds(50));
+        co_await Interfaces::sleep(std::chrono::milliseconds(50));
         co_return entryOf("shared");
     };
 
     constexpr int callers = 6;
     int answered = 0;
     for (int i = 0; i < callers; i++) {
-        Platform::spawn(askFor(cache, "cold", "10.0.0.2", slow, "shared", answered));
+        Interfaces::spawn(askFor(cache, "cold", "10.0.0.2", slow, "shared", answered));
     }
 
-    co_await Platform::sleep(std::chrono::milliseconds(300));
+    co_await Interfaces::sleep(std::chrono::milliseconds(300));
 
     check(answered == callers, "every caller in the burst is answered");
     check(produced == 1, "one producer served the burst, not " + std::to_string(produced));
@@ -211,7 +212,7 @@ Task<void> testDedupWithoutCache() {
 }
 
 /** the store that outlives the process: sweeping and renewal are the whole point */
-Task<void> testFileStore() {
+Platform::Task<void> testFileStore() {
     const auto root = std::filesystem::temp_directory_path() / "haio_cache_test";
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
@@ -292,13 +293,13 @@ Task<void> testFileStore() {
  * the quota is about eviction, not about access: going over must still answer, and
  * must still serve what is already stored. only the storing stops.
  */
-Task<void> testPerClientQuota() {
+Platform::Task<void> testPerClientQuota() {
     CacheConfig config;
     config.ttl = std::chrono::seconds(60);
     Cache cache{config, 2};
 
     auto make = [](std::string body) {
-        return [body]() -> Task<Result<CacheEntry>> { co_return entryOf(body); };
+        return [body]() -> Platform::Task<Result<CacheEntry>> { co_return entryOf(body); };
     };
 
     for (int i = 0; i < 4; i++) {
@@ -311,7 +312,7 @@ Task<void> testPerClientQuota() {
     for (int i = 0; i < 4; i++) {
         int produced = 0;
         co_await cache.fetch("k" + std::to_string(i), "10.0.0.9",
-                             [&produced]() -> Task<Result<CacheEntry>> {
+                             [&produced]() -> Platform::Task<Result<CacheEntry>> {
                                  produced++;
                                  co_return entryOf("again");
                              });
@@ -329,7 +330,7 @@ Task<void> testPerClientQuota() {
     Cache free{open, 0};
     for (int i = 0; i < 5; i++) co_await free.fetch("f" + std::to_string(i), "10.0.0.11", make("x"));
     int producedAgain = 0;
-    co_await free.fetch("f4", "10.0.0.11", [&producedAgain]() -> Task<Result<CacheEntry>> {
+    co_await free.fetch("f4", "10.0.0.11", [&producedAgain]() -> Platform::Task<Result<CacheEntry>> {
         producedAgain++;
         co_return entryOf("x");
     });
@@ -342,7 +343,7 @@ auto main() -> int {
     testKeyNormalisation();
     testFraming();
 
-    Platform::run([]() -> Task<void> {
+    Interfaces::run([]() -> Platform::Task<void> {
         co_await testMemoryStore();
         co_await testTtlExpires();
         co_await testDisabledCachePassesThrough();

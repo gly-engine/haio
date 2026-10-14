@@ -73,8 +73,8 @@ auto main() -> int {
         const auto src = makeRgba(pixels);
         std::vector<uint8_t> dst(pixels * 3, 0xAA);
 
-        const auto moved = Haio::Codecs::Move<Haio::Color::RGBA8888, Haio::Color::RGB888>(
-            src, dst, Haio::Size{1, static_cast<int>(pixels)});
+        const auto moved = Haio::Pipeline::Move<Haio::Color::RGBA8888, Haio::Color::RGB888>(
+            src, dst, Haio::Implementation::Size{1, static_cast<int>(pixels)});
 
         check(moved.has_value(), "move of " + std::to_string(pixels) + " pixels reports success");
         check(dst == oracle(src, pixels), "move of " + std::to_string(pixels) + " pixels matches scalar");
@@ -85,8 +85,8 @@ auto main() -> int {
         const size_t pixels = 1021;  // prime, so every path ends on a ragged tail
         const auto src = makeRgba(pixels);
         std::vector<uint8_t> dst(pixels * 3, 0xAA);
-        const auto moved = Haio::Codecs::Move<Haio::Color::RGBA8888, Haio::Color::RGB888>(
-            src, dst, Haio::Size{1021, 1});
+        const auto moved = Haio::Pipeline::Move<Haio::Color::RGBA8888, Haio::Color::RGB888>(
+            src, dst, Haio::Implementation::Size{1021, 1});
         check(moved.has_value(), "move of 1021 pixels reports success");
         check(dst == oracle(src, pixels), "move of 1021 pixels matches scalar");
     }
@@ -95,7 +95,7 @@ auto main() -> int {
     {
         const auto src = makeRgba(4);
         std::vector<uint8_t> dst(11);
-        const auto moved = Haio::Codecs::Move<Haio::Color::RGBA8888, Haio::Color::RGB888>(src, dst, Haio::Size{4, 1});
+        const auto moved = Haio::Pipeline::Move<Haio::Color::RGBA8888, Haio::Color::RGB888>(src, dst, Haio::Implementation::Size{4, 1});
         check(!moved, "a short destination is refused");
     }
 

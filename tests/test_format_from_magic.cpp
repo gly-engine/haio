@@ -21,8 +21,8 @@ void testEachDetectorMatchesOnlyItself() {
 
     // a codec switched off with -DHAIO_CODEC_<NAME>=OFF stops recognising its own bytes
     for (const auto& sample : samples) {
-        const auto found = Haio::Detect(sample.data);
-        if (Haio::detectable(sample.format, sample.color)) {
+        const auto found = Haio::Pipeline::Detect<>(sample.data);
+        if (Haio::Implementation::detectable(sample.format, sample.color)) {
             assert(found.format == sample.format && found.color == sample.color);
         } else {
             assert(!found);
@@ -32,19 +32,19 @@ void testEachDetectorMatchesOnlyItself() {
 
 void testDetectIsPerFormat() {
     // headerless colours declare no Detect at all, so asking is a compile error
-    static_assert(!Haio::Codecs::Detectable<Haio::Format::RAW, Haio::Color::ETC1>);
-    static_assert(Haio::Codecs::Detectable<Haio::Format::PNG, Haio::Color::RGBA8888>);
+    static_assert(!Haio::Implementation::Codecs::Detectable<Haio::Format::RAW, Haio::Color::ETC1>);
+    static_assert(Haio::Implementation::Codecs::Detectable<Haio::Format::PNG, Haio::Color::RGBA8888>);
     // recognised with no decoder behind it
-    static_assert(Haio::Codecs::Detectable<Haio::Format::PNG, Haio::Color::GRAY8>);
-    static_assert(!Haio::Codecs::Decodable<Haio::Format::PNG, Haio::Color::GRAY8>);
+    static_assert(Haio::Implementation::Codecs::Detectable<Haio::Format::PNG, Haio::Color::GRAY8>);
+    static_assert(!Haio::Implementation::Codecs::Decodable<Haio::Format::PNG, Haio::Color::GRAY8>);
 }
 
 
 
 void testTruncatedInputIsNotAMatch() {
-    assert(!Haio::Detect({}));
-    assert(!Haio::Detect(std::vector<uint8_t>{0x89, 'P'}));
-    assert(!Haio::Detect(bytes("!<arc")));
+    assert(!Haio::Pipeline::Detect<>({}));
+    assert(!Haio::Pipeline::Detect<>(std::vector<uint8_t>{0x89, 'P'}));
+    assert(!Haio::Pipeline::Detect<>(bytes("!<arc")));
 }
 
 /**
@@ -53,50 +53,50 @@ void testTruncatedInputIsNotAMatch() {
  * is simply not recognised rather than named by a second mechanism.
  */
 void testJpegIsACodecLikeAnyOther() {
-    const auto found = Haio::Detect(std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xe0});
+    const auto found = Haio::Pipeline::Detect<>(std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xe0});
     assert(found);
     assert(found.format == Haio::Format::JPEG);
     assert(found.color == Haio::Color::YUV420);
 
     // a jpeg is yuv, and that is the only pair it has: asking for any other is a
     // compile error rather than a silent conversion inside the codec
-    static_assert(Haio::Codecs::Detectable<Haio::Format::JPEG, Haio::Color::YUV420>);
-    static_assert(Haio::Codecs::Decodable<Haio::Format::JPEG, Haio::Color::YUV420>);
-    static_assert(Haio::Codecs::Encodable<Haio::Format::JPEG, Haio::Color::YUV420>);
-    static_assert(!Haio::Codecs::Decodable<Haio::Format::JPEG, Haio::Color::RGBA8888>);
-    static_assert(!Haio::Codecs::Encodable<Haio::Format::JPEG, Haio::Color::RGBA8888>);
+    static_assert(Haio::Implementation::Codecs::Detectable<Haio::Format::JPEG, Haio::Color::YUV420>);
+    static_assert(Haio::Implementation::Codecs::Decodable<Haio::Format::JPEG, Haio::Color::YUV420>);
+    static_assert(Haio::Implementation::Codecs::Encodable<Haio::Format::JPEG, Haio::Color::YUV420>);
+    static_assert(!Haio::Implementation::Codecs::Decodable<Haio::Format::JPEG, Haio::Color::RGBA8888>);
+    static_assert(!Haio::Implementation::Codecs::Encodable<Haio::Format::JPEG, Haio::Color::RGBA8888>);
 
     // and yuv reaches the rest of haio by converting, where anybody can see it happen
-    static_assert(Haio::Codecs::Convertible<Haio::Color::YUV420, Haio::Color::RGBA8888>);
-    static_assert(Haio::Codecs::Convertible<Haio::Color::RGBA8888, Haio::Color::YUV420>);
+    static_assert(Haio::Implementation::Codecs::Convertible<Haio::Color::YUV420, Haio::Color::RGBA8888>);
+    static_assert(Haio::Implementation::Codecs::Convertible<Haio::Color::RGBA8888, Haio::Color::YUV420>);
 
     // four bytes of magic is a jpeg to Detect and nothing to a decoder
-    assert(!Haio::Decode(Haio::Blob{Haio::Format::RAW, Haio::Color::RGBA8888, {}, {},
+    assert(!Haio::Implementation::decode(Haio::Implementation::Blob{Haio::Format::RAW, Haio::Color::RGBA8888, {}, {},
                                     {0xff, 0xd8, 0xff, 0xe0}}));
 
-    const auto gif = Haio::Detect(bytes("GIF89a...."));
+    const auto gif = Haio::Pipeline::Detect<>(bytes("GIF89a...."));
     assert(gif);
     assert(gif.format == Haio::Format::GIF);
     assert(gif.color == Haio::Color::RGBA8888);
 
     // formats haio has no detector for are simply unrecognised
-    assert(!Haio::Detect(bytes("BM______")));
+    assert(!Haio::Pipeline::Detect<>(bytes("BM______")));
 }
 
 /** the file name names a container, and a container may answer to several spellings */
 void testExtensionsResolveThroughTheirAliases() {
-    assert(Haio::formatFromExtension("a.jpg") == Haio::Format::JPEG);
-    assert(Haio::formatFromExtension("a.jpeg") == Haio::Format::JPEG);
-    assert(Haio::formatFromExtension("a.pgm") == Haio::Format::PPM);
-    assert(Haio::formatFromExtension("a.pbm") == Haio::Format::PPM);
-    assert(Haio::formatFromExtension("a.PNG") == Haio::Format::PNG);
-    assert(Haio::formatFromExtension("a.xyz") == Haio::Format::RAW);
-    assert(Haio::formatFromExtension("noextension") == Haio::Format::RAW);
+    assert(Haio::Implementation::formatFromExtension("a.jpg") == Haio::Format::JPEG);
+    assert(Haio::Implementation::formatFromExtension("a.jpeg") == Haio::Format::JPEG);
+    assert(Haio::Implementation::formatFromExtension("a.pgm") == Haio::Format::PPM);
+    assert(Haio::Implementation::formatFromExtension("a.pbm") == Haio::Format::PPM);
+    assert(Haio::Implementation::formatFromExtension("a.PNG") == Haio::Format::PNG);
+    assert(Haio::Implementation::formatFromExtension("a.xyz") == Haio::Format::RAW);
+    assert(Haio::Implementation::formatFromExtension("noextension") == Haio::Format::RAW);
 
     // the first spelling is the one haio writes, and it round trips
     for (const auto format : {Haio::Format::JPEG, Haio::Format::PPM, Haio::Format::PNG}) {
-        const auto ext = Haio::extensionFor(format);
-        assert(Haio::formatFromExtension("a." + std::string(ext)) == format);
+        const auto ext = Haio::Implementation::extensionFor(format);
+        assert(Haio::Implementation::formatFromExtension("a." + std::string(ext)) == format);
     }
 }
 
