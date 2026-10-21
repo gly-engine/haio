@@ -98,7 +98,7 @@ void testTwoLayersAreLossless() {
 
     // order, command, posx, posy, then the canvas size both layers scale up to
     assert(members[1].name == "1A00000804.ppm");
-    assert(members[2].name == "2B00000804.ppm");
+    assert(members[2].name == "2C00000804.ppm");
 
     const auto even = readPpm(members[1]);
     const auto odd = readPpm(members[2]);

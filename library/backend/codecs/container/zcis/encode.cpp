@@ -25,7 +25,7 @@ constexpr int base62PairMax = 62 * 62 - 1;
  * (and rowLayers) if the table is meant literally.
  */
 constexpr char baseCommand = 'A';
-constexpr char refineCommand = 'B';
+constexpr char refineCommand = 'C';
 
 constexpr std::string_view indexMemberName = "000000000000.txt";
 
