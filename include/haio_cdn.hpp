@@ -7,8 +7,10 @@
 #include <chrono>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <set>
 #include <string_view>
+#include <vector>
 
 /**
  * @defgroup cdn CDN
@@ -269,6 +271,35 @@ struct Config {
      */
     std::set<std::string> declared;
 };
+
+/**
+ * how the body is written on the wire, asked with "?encoding=", for clients that cannot
+ * take every byte as it is.
+ *
+ * the ginga in some televisions hands a tcp read to lua as a c string, so everything
+ * after a zero byte in each read is lost and a zcis with a black pixel never arrives
+ * whole. cobs costs at most a byte in 254 whatever the picture holds, a black one
+ * included; base64 and hex cost a third and double, for clients that need text.
+ *
+ * | encoding | the bytes                                                   |
+ * |----------|-------------------------------------------------------------|
+ * | `cobs`   | consistent overhead byte stuffing, with no delimiter after it |
+ * | `base64` | rfc 4648, with padding                                      |
+ * | `hex`    | two lowercase digits a byte                                 |
+ *
+ * in cobs every block starts with a code: the code minus one bytes follow it, and a
+ * zero comes after them unless the code is 255 or the block is the last one.
+ *
+ * the response says which one it is in `x-encoding`. it is not content-encoding on
+ * purpose: that header is for compression a client undoes on its own, and one that
+ * met "base64" there would fail the response rather than hand the text over.
+ */
+enum class BodyEncoding { Identity, Cobs, Base64, Hex };
+
+/** the encoding a query names, or nothing for a name haio does not write */
+std::optional<BodyEncoding> bodyEncodingNamed(std::string_view name);
+std::string_view bodyEncodingName(BodyEncoding encoding);
+std::vector<uint8_t> encodeBody(const std::vector<uint8_t>& body, BodyEncoding encoding);
 
 Config parseConfig(std::string_view text);
 Config loadConfig(const std::filesystem::path& path);

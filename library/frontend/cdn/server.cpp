@@ -304,8 +304,23 @@ std::optional<Haio::Error> checkSize(const Haio::Cdn::Config& config, const std:
     return std::nullopt;
 }
 
+/** what "?encoding=" asks the body to be written as, refused when haio does not write it */
+Haio::Result<Haio::Cdn::BodyEncoding> encodingAsked(std::string_view query) {
+    const auto values = Haio::parseQueryMap(query);
+    const auto it = values.find("encoding");
+    if (it == values.end()) return Haio::Cdn::BodyEncoding::Identity;
+
+    const auto named = Haio::Cdn::bodyEncodingNamed(it->second);
+    if (!named) HAIO_FAIL(InvalidInput, "unknown encoding: " + it->second);
+    return *named;
+}
+
 /** the fetch and the conversion behind it, which is exactly what an entry saves */
 Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config& config, Haio::Source::Archives& archives, Route route) {
+    // asked before the fetch, so a misspelt encoding costs nothing upstream
+    const auto encoding = encodingAsked(route.query);
+    if (!encoding) co_return std::unexpected(encoding.error());
+
     auto fetched = co_await Haio::Cdn::fetchBucket(config, archives, route.bucket, route.path);
     if (!fetched) co_return std::unexpected(fetched.error());
     auto blob = *std::move(fetched);
@@ -340,6 +355,11 @@ Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config&
         auto converted = Haio::runPipeline(std::move(blob), pipeline);
         if (!converted) co_return std::unexpected(converted.error());
         blob = *std::move(converted);
+    }
+
+    // encoded before it is stored: the query is in the key, so the entry is this answer
+    if (*encoding != Haio::Cdn::BodyEncoding::Identity) {
+        blob.data = Haio::Cdn::encodeBody(blob.data, *encoding);
     }
 
     co_return Haio::Cdn::CacheEntry{
@@ -409,6 +429,11 @@ Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, Htt
     if (compressible) res.headers.emplace_back("vary", "Accept-Encoding");
     if (encoding == Encoding::Gzip) res.headers.emplace_back("content-encoding", "gzip");
     if (encoding == Encoding::Deflate) res.headers.emplace_back("content-encoding", "deflate");
+
+    // produce already refused a bad name, so only a good one can reach here
+    if (const auto asked = encodingAsked(route.query); asked && *asked != Haio::Cdn::BodyEncoding::Identity) {
+        res.headers.emplace_back("x-encoding", std::string(Haio::Cdn::bodyEncodingName(*asked)));
+    }
     co_return res;
 }
 
