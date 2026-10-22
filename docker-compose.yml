@@ -1,0 +1,12 @@
+services:
+  haio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: haio:local
+    working_dir: /workspace
+    volumes:
+      - .:/workspace:ro
+    ports:
+      - "8080:8080"
+    command: ["cdn", "docker/haio-cdn.toml"]

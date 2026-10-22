@@ -30,4 +30,6 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /app/build/bin/haio /bin/haio
 
+WORKDIR /workspace
+
 ENTRYPOINT ["/bin/haio"]
