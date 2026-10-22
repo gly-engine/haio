@@ -153,6 +153,29 @@ void testLayersRebuildEveryHeight() {
     }
 }
 
+void testYuvIsOneCommittedImage() {
+    std::vector<uint8_t> planes(8 * 4 + 4 * 2 * 2);
+    for (size_t i = 0; i < planes.size(); i++) planes[i] = static_cast<uint8_t>(i);
+
+    const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS, Haio::Color::YUV420>(
+        Haio::Image<Haio::Color::YUV420>{8, 4, planes});
+    assert(encoded);
+    const auto members = readArchive(encoded->data);
+
+    assert(members.size() == 2);
+    assert(members[0].name == "0000000000.txt");
+    assert(members[1].name == "1A00000804.y4m");
+
+    const std::string header = "YUV4MPEG2 W8 H4 F1:1 Ip A1:1 C420jpeg XCOLORRANGE=FULL\nFRAME\n";
+    const auto& body = members[1].body;
+    assert(std::string(body.begin(), body.begin() + static_cast<std::ptrdiff_t>(header.size())) == header);
+    assert(std::vector<uint8_t>(body.begin() + static_cast<std::ptrdiff_t>(header.size()), body.end()) == planes);
+
+    const auto truncated = Haio::Codecs::Encode<Haio::Format::ZCIS, Haio::Color::YUV420>(
+        Haio::Image<Haio::Color::YUV420>{8, 4, std::vector<uint8_t>(3)});
+    assert(!truncated);
+}
+
 void testRejectsOversizedCanvas() {
     const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS>(makeImage(3844, 2));
     assert(!encoded);
@@ -164,6 +187,7 @@ void testFormatWiring() {
     assert(Haio::formatFromExtension("photo.zcis") == Haio::Format::ZCIS);
     assert(Haio::formatName(Haio::Format::ZCIS) == "zcis");
     static_assert(Haio::Codecs::Encodable<Haio::Format::ZCIS, Haio::Color::RGBA8888>);
+    static_assert(Haio::Codecs::Encodable<Haio::Format::ZCIS, Haio::Color::YUV420>);
     static_assert(!Haio::Codecs::Decodable<Haio::Format::ZCIS, Haio::Color::RGBA8888>);
 }
 
@@ -173,6 +197,7 @@ int main() {
     testTwoLayersAreLossless();
     testSingleRowDropsTheRefineLayer();
     testLayersRebuildEveryHeight();
+    testYuvIsOneCommittedImage();
     testRejectsOversizedCanvas();
     testFormatWiring();
     return 0;

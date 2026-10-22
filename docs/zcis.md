@@ -110,7 +110,15 @@ Interleaving the two layers rebuilds the source exactly, so the split costs noth
 valid preview at half the bytes, line-doubled vertically. An image one pixel tall has no second
 row to preview with, and emits row 1 as the base layer only.
 
-The same split holds for a future `4:2:0` payload: each layer keeps `W/2 x H/4` chroma, so
+With `-pix_fmt yuv420` (`?pix_fmt=yuv420` on the cdn) the picture is one committed `4:2:0`
+image instead, half the bytes of the rgb layers, and needs an even width and height:
+
+| member | stored | target | content |
+| :--- | :---: | :---: | :--- |
+| `0000000000.txt` | | | `0 0 <width> <height>\r\n` |
+| `1A0000WWHH.y4m` | `W x H` | `W x H` | full range `C420jpeg` frame |
+
+The same split holds for a future interlaced `4:2:0` payload: each layer keeps `W/2 x H/4` chroma, so
 both halves stay decodable on their own and together they restore the original chroma plane
 untouched. That needs `height` to be a multiple of 4.
 
