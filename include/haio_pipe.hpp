@@ -72,7 +72,7 @@ inline constexpr auto Convert = Stage{[]<Color From>(Image<From> src) -> Result<
 template <Format F>
 inline constexpr auto Encode = Stage{[]<Color P>(Image<P> src) -> Result<Blob>
     requires Codecs::Encodable<F, P> {
-    return Codecs::Encode<F, P>(std::move(src));
+    return Codecs::encode<F, P>(std::move(src), {});
 }};
 
 /** the result type follows whatever the chain ends in, image or blob */

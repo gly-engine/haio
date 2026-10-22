@@ -80,7 +80,9 @@ auto main() -> int {
     check(ditherNamed("nearest").has_value(), "nearest is a filter");
     check(ditherNamed("bayer").has_value(), "bayer is a filter");
     check(ditherNamed("floyd").has_value(), "floyd is a filter");
-    check(ditherNamed("error").has_value(), "error is a filter");
+    check(ditherNamed("strict").has_value(), "strict is a filter");
+    check(ditherNamed("Bayer").has_value(), "in any case");
+    check(!ditherNamed("error").has_value(), "and strict has no other name");
     check(!ditherNamed("point").has_value(), "and something else is not");
 
     const std::vector<uint32_t> blackWhite = {0x000000, 0xFFFFFF};

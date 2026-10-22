@@ -1,14 +1,10 @@
 #include <haio_cache.hpp>
 
-#include <boost/asio/use_awaitable.hpp>
-
 #include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <system_error>
 #include <vector>
-
-namespace asio = boost::asio;
 
 namespace {
 
@@ -32,7 +28,7 @@ public:
         held_ = measure();
     }
 
-    asio::awaitable<std::optional<Haio::Cdn::CacheEntry>> get(const std::string& key) override {
+    Haio::Task<std::optional<Haio::Cdn::CacheEntry>> get(const std::string& key) override {
         const auto path = root_ / key;
 
         std::error_code ec;
@@ -60,7 +56,7 @@ public:
         co_return entry;
     }
 
-    asio::awaitable<void> put(const std::string& key, const Haio::Cdn::CacheEntry& entry) override {
+    Haio::Task<void> put(const std::string& key, const Haio::Cdn::CacheEntry& entry) override {
         const auto raw = Haio::Cdn::encodeEntry(entry);
         if (raw.size() > maxUsage_) co_return;   // one entry that cannot fit never evicts the rest
 

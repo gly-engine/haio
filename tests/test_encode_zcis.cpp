@@ -93,15 +93,15 @@ void testTwoLayersAreLossless() {
     const auto members = readArchive(encoded->data);
     assert(members.size() == 3);
 
-    assert(members[0].name == "000000000000.txt");
+    assert(members[0].name == "0000000000.txt");
     assert(std::string(members[0].body.begin(), members[0].body.end()) == "0 0 8 4\r\n");
 
     // order, command, posx, posy, then the canvas size both layers scale up to
     assert(members[1].name == "1A00000804.ppm");
-    assert(members[2].name == "2B00000804.ppm");
+    assert(members[2].name == "2C00000804.ppm");
 
-    const auto even = readPpm(members[1]);
-    const auto odd = readPpm(members[2]);
+    const auto odd = readPpm(members[1]);
+    const auto even = readPpm(members[2]);
     assert(even.width == 8 && even.height == 2);
     assert(odd.width == 8 && odd.height == 2);
 
@@ -124,9 +124,56 @@ void testSingleRowDropsTheRefineLayer() {
     const auto members = readArchive(encoded->data);
 
     assert(members.size() == 2);
-    assert(members[0].name == "000000000000.txt");
+    assert(members[0].name == "0000000000.txt");
     assert(members[1].name == "1A00000801.ppm");
     assert(readPpm(members[1]).height == 1);
+}
+
+void testLayersRebuildEveryHeight() {
+    for (int height = 2; height <= 9; height++) {
+        const auto source = makeImage(3, height);
+        const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS>(source);
+        assert(encoded);
+        const auto members = readArchive(encoded->data);
+        assert(members.size() == 3);
+
+        const auto base = readPpm(members[1]);
+        const auto refine = readPpm(members[2]);
+        for (int y = 0; y < height; y++) {
+            const auto& layer = y % 2 == 0 ? refine : base;
+            const int row = y * layer.height / height;
+            for (int x = 0; x < source.width; x++) {
+                const auto src = (static_cast<size_t>(y) * 3 + static_cast<size_t>(x)) * 4;
+                const auto dst = (static_cast<size_t>(row) * 3 + static_cast<size_t>(x)) * 3;
+                for (size_t channel = 0; channel < 3; channel++) {
+                    assert(layer.rgb[dst + channel] == source.data[src + channel]);
+                }
+            }
+        }
+    }
+}
+
+void testYuvIsOneCommittedImage() {
+    std::vector<uint8_t> planes(8 * 4 + 4 * 2 * 2);
+    for (size_t i = 0; i < planes.size(); i++) planes[i] = static_cast<uint8_t>(i);
+
+    const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS, Haio::Color::YUV420>(
+        Haio::Image<Haio::Color::YUV420>{8, 4, planes});
+    assert(encoded);
+    const auto members = readArchive(encoded->data);
+
+    assert(members.size() == 2);
+    assert(members[0].name == "0000000000.txt");
+    assert(members[1].name == "1A00000804.y4m");
+
+    const std::string header = "YUV4MPEG2 W8 H4 F1:1 Ip A1:1 C420jpeg XCOLORRANGE=FULL\nFRAME\n";
+    const auto& body = members[1].body;
+    assert(std::string(body.begin(), body.begin() + static_cast<std::ptrdiff_t>(header.size())) == header);
+    assert(std::vector<uint8_t>(body.begin() + static_cast<std::ptrdiff_t>(header.size()), body.end()) == planes);
+
+    const auto truncated = Haio::Codecs::Encode<Haio::Format::ZCIS, Haio::Color::YUV420>(
+        Haio::Image<Haio::Color::YUV420>{8, 4, std::vector<uint8_t>(3)});
+    assert(!truncated);
 }
 
 void testRejectsOversizedCanvas() {
@@ -140,6 +187,7 @@ void testFormatWiring() {
     assert(Haio::formatFromExtension("photo.zcis") == Haio::Format::ZCIS);
     assert(Haio::formatName(Haio::Format::ZCIS) == "zcis");
     static_assert(Haio::Codecs::Encodable<Haio::Format::ZCIS, Haio::Color::RGBA8888>);
+    static_assert(Haio::Codecs::Encodable<Haio::Format::ZCIS, Haio::Color::YUV420>);
     static_assert(!Haio::Codecs::Decodable<Haio::Format::ZCIS, Haio::Color::RGBA8888>);
 }
 
@@ -148,6 +196,8 @@ void testFormatWiring() {
 int main() {
     testTwoLayersAreLossless();
     testSingleRowDropsTheRefineLayer();
+    testLayersRebuildEveryHeight();
+    testYuvIsOneCommittedImage();
     testRejectsOversizedCanvas();
     testFormatWiring();
     return 0;

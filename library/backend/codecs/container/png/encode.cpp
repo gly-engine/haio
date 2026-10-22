@@ -1,4 +1,5 @@
 #include <haio_codec.hpp>
+#include <haio/codecs/png.hpp>
 
 #include <spng.h>
 
@@ -27,7 +28,9 @@ namespace Haio::Codecs {
  * @{
  */
 template <>
-Result<Blob> Encode<Format::PNG, Color::RGBA8888>(Image<Color::RGBA8888> img) {
+Result<Blob> Encode<Format::PNG, Color::RGBA8888>(Image<Color::RGBA8888> img, const Settings& settings) {
+    HAIO_TRY(level, settingInt(settings, pngCompressionLevel));
+
     const auto expected = static_cast<size_t>(img.width) * static_cast<size_t>(img.height) * 4;
     if (img.width <= 0 || img.height <= 0 || img.data.size() != expected) {
         HAIO_FAIL(InvalidInput, "invalid rgba8888 image for png encode");
@@ -37,6 +40,7 @@ Result<Blob> Encode<Format::PNG, Color::RGBA8888>(Image<Color::RGBA8888> img) {
     if (!ctx) HAIO_FAIL(InvalidInput, "failed to create png writer");
 
     HAIO_CHECK(checkSpng(spng_set_option(ctx.get(), SPNG_ENCODE_TO_BUFFER, 1), "failed to configure png writer"));
+    HAIO_CHECK(checkSpng(spng_set_option(ctx.get(), SPNG_IMG_COMPRESSION_LEVEL, level), "failed to set png compression level"));
 
     spng_ihdr ihdr{};
     ihdr.width = static_cast<uint32_t>(img.width);
