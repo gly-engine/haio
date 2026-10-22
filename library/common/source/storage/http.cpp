@@ -38,6 +38,12 @@ Haio::Result<Haio::Url> parseEndpoint(const std::string& endpoint, std::string_v
     return *std::move(url);
 }
 
+Haio::Result<Haio::Url> parseOpen(std::string_view scheme, std::string_view rest) {
+    const auto slash = rest.find('/');
+    const auto path = slash == std::string_view::npos ? std::string_view{} : rest.substr(slash);
+    return parseEndpoint(std::string(scheme) + "://" + std::string(rest.substr(0, slash)), path);
+}
+
 /**
  * an open origin reads the upstream off the path: "https://\*" leaves only the host
  * to the url, "//\*" leaves the scheme as well.
@@ -50,7 +56,7 @@ Haio::Result<Haio::Url> parseEndpoint(const std::string& endpoint, std::string_v
 Haio::Result<Haio::Url> openTarget(const Haio::Source::Origin& origin, std::string_view path) {
     if (!origin.scheme.empty()) {
         if (path.empty()) HAIO_FAIL(InvalidInput, "open bucket expects /cdn/" + origin.name + "/<host>/<path>");
-        return parseEndpoint(origin.scheme + "://" + std::string(path), {});
+        return parseOpen(origin.scheme, path);
     }
 
     const auto slash = path.find('/');
@@ -62,7 +68,7 @@ Haio::Result<Haio::Url> openTarget(const Haio::Source::Origin& origin, std::stri
     if (scheme != "http" && scheme != "https") {
         HAIO_FAIL(InvalidInput, "open bucket expects a http or https scheme, got: " + std::string(scheme));
     }
-    return parseEndpoint(std::string(scheme) + "://" + std::string(path.substr(slash + 1)), {});
+    return parseOpen(scheme, path.substr(slash + 1));
 }
 
 }
