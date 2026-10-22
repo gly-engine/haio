@@ -1,20 +1,19 @@
 #include <haio_codec.hpp>
-#include <haio_codecs.hpp>
+#include <haio/generated/codec.hpp>
 #include <haio_convert.hpp>
+#include <haio/codecs/jpeg.hpp>
 
 #include <turbojpeg.h>
+
+#include <cstddef>
+#include <memory>
+#include <vector>
 
 namespace {
 
 struct Handle {
     tjhandle raw = nullptr;
     ~Handle() { if (raw) tj3Destroy(raw); }
-};
-
-/** what turbojpeg allocates is freed by turbojpeg, whatever happens in between */
-struct Owned {
-    uint8_t* raw = nullptr;
-    ~Owned() { if (raw) tj3Free(raw); }
 };
 
 }
@@ -29,25 +28,36 @@ namespace Haio::Codecs {
  * container change.
  */
 template <>
-Result<Blob> Encode<Format::JPEG, Color::YUV420>(Image<Color::YUV420> img) {
+Result<Blob> Encode<Format::JPEG, Color::YUV420>(Image<Color::YUV420> img, const Settings& settings) {
+    HAIO_TRY(quality, settingInt(settings, jpegQuality));
+
     const Size size{img.width, img.height};
     HAIO_TRY(expected, sizeOf(Color::YUV420, size));
     if (img.data.size() != expected) HAIO_FAIL(InvalidInput, "invalid yuv420 image for jpeg encode");
 
-    Handle handle{tj3Init(TJINIT_COMPRESS)};
+    thread_local Handle handle{tj3Init(TJINIT_COMPRESS)};
     if (!handle.raw) HAIO_FAIL(Internal, "cannot start the jpeg encoder");
 
     tj3Set(handle.raw, TJPARAM_SUBSAMP, TJSAMP_420);
-    tj3Set(handle.raw, TJPARAM_QUALITY, 90);
+    tj3Set(handle.raw, TJPARAM_QUALITY, quality);
+    tj3Set(handle.raw, TJPARAM_NOREALLOC, 1);
 
-    Owned out;
-    size_t written = 0;
-    if (tj3CompressFromYUV8(handle.raw, img.data.data(), img.width, 1, img.height, &out.raw, &written) != 0) {
+    const size_t capacity = tj3JPEGBufSize(img.width, img.height, TJSAMP_420);
+    if (capacity == 0) HAIO_FAIL(Internal, "cannot size the jpeg buffer");
+
+    const auto buffer = std::make_unique_for_overwrite<uint8_t[]>(capacity);
+    uint8_t* dst = buffer.get();
+    size_t written = capacity;
+
+    if (tj3CompressFromYUV8(handle.raw, img.data.data(), img.width, 1, img.height, &dst, &written) != 0) {
         HAIO_FAIL(Internal, "the jpeg could not be encoded");
     }
 
-    return Blob{Format::JPEG, Color::YUV420, "image/jpeg", {},
-                std::vector<uint8_t>(out.raw, out.raw + written)};
+    if (dst != buffer.get()) {
+        HAIO_FAIL(Internal, "jpeg encoder ignored the buffer we gave it");
+    }
+
+    return Blob{Format::JPEG, Color::YUV420, "image/jpeg", {}, std::vector<uint8_t>(dst, dst + written)};
 }
 
 }

@@ -3,7 +3,10 @@
 #include "haio_common.hpp"
 #include "haio_formats.hpp"
 #include "haio_object.hpp"
+#include "haio/stage.hpp"
 
+#include <array>
+#include <charconv>
 #include <expected>
 #include <meta>
 #include <optional>
@@ -31,6 +34,34 @@ struct Error {
 template <typename T>
 using Result = std::expected<T, Error>;
 
+/** a setting a codec reads, by the name it declared, with the value still as written */
+struct Setting {
+    std::string name;
+    std::string value;
+};
+
+using Settings = std::vector<Setting>;
+
+inline const Setting* settingNamed(const Settings& settings, std::string_view name) {
+    for (const auto& setting : settings) {
+        if (setting.name == name) return &setting;
+    }
+    return nullptr;
+}
+
+/**
+ * a whole number, read by the declaration that asked for it: its name, its bounds and
+ * what it is when nobody says all come from the one Option, so a codec cannot
+ * disagree with its own help text. the command line already checked it; this checks
+ * again for whatever else hands settings in.
+ */
+inline Result<int> settingInt(const Settings& settings, const Stages::Option& option) {
+    const auto* setting = settingNamed(settings, option.name());
+    const std::string_view text = setting ? std::string_view{setting->value} : option.fallback;
+    if (const auto why = Stages::refusal(option, text)) return std::unexpected(Error{ErrorCode::InvalidInput, *why});
+    return *Stages::Detail::wholeNumber(text);
+}
+
 /** pixels in memory. it has a colour and no container, because it is not a file yet */
 template <Color P>
 struct Image {
@@ -55,12 +86,15 @@ constexpr size_t strideOf(Color color) {
         case Color::BGR888:   return 3;
         case Color::BGRA8888: return 4;
         case Color::GRAY8:    return 1;
+        case Color::GRAYALPHA88: return 2;
         // one byte per pixel, so a crop or a resize can index it like any other
         case Color::PALETTE:  return 1;
         // tiled and planar, so no pixel has an address of its own
         case Color::CHR_NES:  break;
         case Color::ETC1:     break;
         case Color::YUV420:   break;
+        // no pixels at all
+        case Color::NIL:      break;
     }
     return 0;
 }
@@ -87,10 +121,12 @@ constexpr int alphaOffsetOf(Color color) {
         // is nothing here to clear on its own
         case Color::RGBA5551: break;
         case Color::GRAY8:    break;
+        case Color::GRAYALPHA88: return 1;
         // tiled and planar, so no pixel has an address of its own
         case Color::CHR_NES:  break;
         case Color::ETC1:     break;
         case Color::YUV420:   break;
+        case Color::NIL:      break;
     }
     return -1;
 }
@@ -125,6 +161,9 @@ struct Blob {
     std::string contentType = "application/octet-stream";
     std::string path;
     std::vector<uint8_t> data;
+
+    /** RAW only: how big the pixels are, since bare pixels have nowhere to say */
+    Size size;
 };
 
 /**
@@ -151,6 +190,21 @@ template <Format F> struct DefaultColor;
 template <Format F, Color P = DefaultColor<F>::value> bool             Detect(Bytes)       = delete;
 template <Format F, Color P = DefaultColor<F>::value> Result<Image<P>> Decode(const Blob&) = delete;
 template <Format F, Color P>                          Result<Blob>     Encode(Image<P>)    = delete;
+
+/**
+ * the same two, for a codec that reads settings: the jpeg quality, the png
+ * compression level, the size of a canvas. a codec defines one form or the other for
+ * a pair, never both, and the concepts below accept either.
+ */
+template <Format F, Color P> Result<Image<P>> Decode(const Blob&, const Settings&) = delete;
+template <Format F, Color P> Result<Blob>     Encode(Image<P>, const Settings&)    = delete;
+
+/**
+ * a picture painted out of nothing by a Brush, in the colour it is painted in: the
+ * words are what came after its colon on the command line, "red-blue" for
+ * "gradient:red-blue", and the settings its options, -size among them.
+ */
+template <Brush B, Color P> Result<Image<P>> Generate(std::string_view words, const Settings&) = delete;
 
 /**
  * @name Convert
@@ -187,6 +241,12 @@ template <Color From, Color To> Result<void> Move(Bytes src, std::span<uint8_t> 
  */
 
 /**
+ * @defgroup generate Generate
+ * every brush this build can paint with, and the colours it paints in. a brush reads
+ * no bytes, which is what keeps it out of @ref decode.
+ */
+
+/**
  * @defgroup encode Encode
  * every pair this build can write out. the colour is the one stored inside the
  * container, not the one the caller happens to hold.
@@ -219,12 +279,23 @@ template <Format F, Color P> concept Detectable = requires (Bytes d)      { { De
  * @ingroup decode
  * can this pair be read into pixels, asked of the pair rather than answered by hand.
  */
-template <Format F, Color P> concept Decodable  = requires (const Blob& b) { { Decode<F, P>(b) } -> std::same_as<Result<Image<P>>>; };
+template <Format F, Color P> concept DecodesPlain    = requires (const Blob& b) { { Decode<F, P>(b) } -> std::same_as<Result<Image<P>>>; };
+template <Format F, Color P> concept DecodesSettings = requires (const Blob& b, const Settings& s) { { Decode<F, P>(b, s) } -> std::same_as<Result<Image<P>>>; };
+template <Format F, Color P> concept Decodable  = DecodesPlain<F, P> || DecodesSettings<F, P>;
 /**
  * @ingroup encode
  * can an image of this colour be written into this container, asked of the pair rather than answered by hand.
  */
-template <Format F, Color P> concept Encodable  = requires (Image<P> i)    { { Encode<F, P>(std::move(i)) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept EncodesPlain    = requires (Image<P> i) { { Encode<F, P>(std::move(i)) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept EncodesSettings = requires (Image<P> i, const Settings& s) { { Encode<F, P>(std::move(i), s) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P>;
+/**
+ * @ingroup generate
+ * can this brush paint in this colour, asked of the pair rather than answered by hand.
+ */
+template <Brush B, Color P> concept Generatable = requires (std::string_view w, const Settings& s) {
+    { Generate<B, P>(w, s) } -> std::same_as<Result<Image<P>>>;
+};
 /**
  * @ingroup move
  * is there a loop from one colour to the other, asked of the pair rather than answered by hand.
@@ -235,6 +306,58 @@ template <Color From, Color To> concept Movable = requires (Bytes s, std::span<u
  * is there a whole image conversion from one colour to the other, asked of the pair rather than answered by hand.
  */
 template <Color From, Color To> concept Convertible = requires (Image<From> i) { { Convert<From, To>(std::move(i)) } -> std::same_as<Result<Image<To>>>; };
+
+/**
+ * a decode or an encode with settings in hand, whichever form the codec wrote. one
+ * that reads none is handed none: the command line has already refused any setting a
+ * codec did not declare, so there is nothing here to drop on the floor.
+ */
+template <Format F, Color P>
+    requires Decodable<F, P>
+Result<Image<P>> decode(const Blob& blob, const Settings& settings) {
+    if constexpr (DecodesSettings<F, P>) return Decode<F, P>(blob, settings);
+    else return Decode<F, P>(blob);
+}
+
+template <Format F, Color P>
+    requires Encodable<F, P>
+Result<Blob> encode(Image<P> image, const Settings& settings) {
+    if constexpr (EncodesSettings<F, P>) return Encode<F, P>(std::move(image), settings);
+    else return Encode<F, P>(std::move(image));
+}
+
+/**
+ * what a codec reads off the command line, declared in `include/haio/codecs/NAME.hpp`
+ * beside nothing else. an option whose name has a colon in it, as png's
+ * "png:compression-level" does, is reached through -define the way imagemagick does.
+ */
+struct Reads {
+    std::span<const Stages::Option> decode = {};
+    std::span<const Stages::Option> encode = {};
+};
+
+template <Format F> inline constexpr Reads reads = Reads{};
+
+/**
+ * what a brush takes on the command line, declared beside it in
+ * include/haio/codecs/generators/: its options, what the words after its colon are,
+ * and any other name it answers to, as xc does to canvas.
+ */
+struct Draws {
+    std::span<const Stages::Option> options = {};
+    std::string_view takes = {};
+    std::array<std::string_view, 2> aliases = {};
+
+    /**
+     * a shape that, first in a -composite, is the shape rather than the background:
+     * "qr:x xc:red xc:blue" is read as "qr:x -pix_fmt nil qr:x xc:red xc:blue", and
+     * "qr:x xc:red" as "qr:x xc:red null:" before that
+     */
+    bool composite4 = false;
+};
+
+// "= Draws{}" for the same reason as reads above
+template <Brush B> inline constexpr Draws draws = Draws{};
 
 }
 
@@ -264,6 +387,23 @@ template <Color From, Color To> concept Convertible = requires (Image<From> i) {
 
 #define HAIO_FOR_EACH_COLOR(e) \
     template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^Haio::Color)))
+
+#define HAIO_FOR_EACH_BRUSH(e) \
+    template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^Haio::Brush)))
+
+/** the enumerator is RadialGradient, the name people type is radial-gradient */
+consteval std::string_view kebabOf(std::meta::info enumerator) {
+    std::string out;
+    for (const char c : std::meta::identifier_of(enumerator)) {
+        if (c >= 'A' && c <= 'Z') {
+            if (!out.empty()) out += '-';
+            out += static_cast<char>(c - 'A' + 'a');
+        } else {
+            out += c;
+        }
+    }
+    return std::define_static_string(out);
+}
 
 /** the enumerator is PNG, the name people type is png */
 consteval std::string_view lowerOf(std::meta::info enumerator) {

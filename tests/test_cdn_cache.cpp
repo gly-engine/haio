@@ -1,17 +1,11 @@
 #include <haio_cache.hpp>
-
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/detached.hpp>
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/steady_timer.hpp>
-#include <boost/asio/use_awaitable.hpp>
+#include <haio_platform.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
 
-namespace asio = boost::asio;
 using namespace Haio;
 using namespace Haio::Cdn;
 
@@ -31,6 +25,16 @@ CacheEntry entryOf(std::string body) {
 
 std::string bodyOf(const CacheEntry& entry) {
     return {entry.data.begin(), entry.data.end()};
+}
+
+/**
+ * one caller in a burst. it is a function and not a lambda because a coroutine
+ * lambda keeps its captures in the closure, and the closure is gone by the time a
+ * spawned task first runs; parameters are copied into the frame instead.
+ */
+Task<void> askFor(Cache& cache, std::string key, std::string client, Cache::Producer produce, std::string expected, int& answered) {
+    auto got = co_await cache.fetch(key, client, produce);
+    if (got && bodyOf(*got) == expected) answered++;
 }
 
 /** the key is what decides whether two requests are the same request */
@@ -68,7 +72,7 @@ void testFraming() {
     check(!decodeEntry({}).has_value(), "an empty entry is a miss");
 }
 
-asio::awaitable<void> testMemoryStore() {
+Task<void> testMemoryStore() {
     auto store = makeMemoryStore(1024, std::chrono::seconds(60));
 
     check(!(co_await store->get("missing")).has_value(), "an unknown key misses");
@@ -102,7 +106,7 @@ asio::awaitable<void> testMemoryStore() {
     check(!(co_await tiny->get("huge")).has_value(), "an oversized entry is not stored");
 }
 
-asio::awaitable<void> testTtlExpires() {
+Task<void> testTtlExpires() {
     auto store = makeMemoryStore(1024, std::chrono::seconds(0));
     co_await store->put("a", entryOf("gone"));
     check(!(co_await store->get("a")).has_value(), "a zero ttl entry is already stale");
@@ -113,44 +117,39 @@ asio::awaitable<void> testTtlExpires() {
  * this every caller in the burst fetches the upstream, which on an open bucket points
  * an amplifier at somebody else's server.
  */
-asio::awaitable<void> testSingleFlight(asio::any_io_executor executor) {
+Task<void> testSingleFlight() {
     CacheConfig config;
     config.ttl = std::chrono::seconds(60);
-    Cache cache{config, 0, executor};
+    Cache cache{config, 0};
     check(cache.enabled(), "a cache with a ttl is on");
 
     int produced = 0;
-    auto slowProducer = [&produced, executor]() -> asio::awaitable<Result<CacheEntry>> {
+    auto slowProducer = [&produced]() -> Task<Result<CacheEntry>> {
         produced++;
-        asio::steady_timer wait(executor, std::chrono::milliseconds(50));
-        co_await wait.async_wait(asio::use_awaitable);
+        co_await Platform::sleep(std::chrono::milliseconds(50));
         co_return entryOf("shared");
     };
 
     constexpr int callers = 8;
     int answered = 0;
     for (int i = 0; i < callers; i++) {
-        asio::co_spawn(executor, [&]() -> asio::awaitable<void> {
-            auto got = co_await cache.fetch("hot", "10.0.0.1", slowProducer);
-            if (got && bodyOf(*got) == "shared") answered++;
-        }, asio::detached);
+        Platform::spawn(askFor(cache, "hot", "10.0.0.1", slowProducer, "shared", answered));
     }
 
-    asio::steady_timer settle(executor, std::chrono::milliseconds(300));
-    co_await settle.async_wait(asio::use_awaitable);
+    co_await Platform::sleep(std::chrono::milliseconds(300));
 
     check(answered == callers, "every caller in the burst is answered");
     check(produced == 1, "the producer ran once for the whole burst, not " + std::to_string(produced) + " times");
 }
 
 /** a cache with no ttl configured must stay out of the way entirely */
-asio::awaitable<void> testDisabledCachePassesThrough() {
+Task<void> testDisabledCachePassesThrough() {
     Cache off;
     check(!off.enabled(), "a default cache is off");
 
     int produced = 0;
     for (int i = 0; i < 3; i++) {
-        auto got = co_await off.fetch("k", "10.0.0.1", [&produced]() -> asio::awaitable<Result<CacheEntry>> {
+        auto got = co_await off.fetch("k", "10.0.0.1", [&produced]() -> Task<Result<CacheEntry>> {
             produced++;
             co_return entryOf("live");
         });
@@ -160,18 +159,18 @@ asio::awaitable<void> testDisabledCachePassesThrough() {
 }
 
 /** a producer that fails must not be stored, and must not poison the next caller */
-asio::awaitable<void> testFailureIsNotCached(asio::any_io_executor executor) {
+Task<void> testFailureIsNotCached() {
     CacheConfig config;
     config.ttl = std::chrono::seconds(60);
-    Cache cache{config, 0, executor};
+    Cache cache{config, 0};
 
-    auto failing = []() -> asio::awaitable<Result<CacheEntry>> {
+    auto failing = []() -> Task<Result<CacheEntry>> {
         co_return std::unexpected(Error{ErrorCode::Upstream, "upstream said no"});
     };
     auto failed = co_await cache.fetch("k", "10.0.0.1", failing);
     check(!failed, "a failed produce is reported");
 
-    auto ok = co_await cache.fetch("k", "10.0.0.1", []() -> asio::awaitable<Result<CacheEntry>> {
+    auto ok = co_await cache.fetch("k", "10.0.0.1", []() -> Task<Result<CacheEntry>> {
         co_return entryOf("second try");
     });
     check(ok && bodyOf(*ok) == "second try", "the failure was not stored");
@@ -182,31 +181,26 @@ asio::awaitable<void> testFailureIsNotCached(asio::any_io_executor executor) {
  * one key must still reach the producer once. otherwise turning the cache off would
  * quietly turn an amplifier back on.
  */
-asio::awaitable<void> testDedupWithoutCache(asio::any_io_executor executor) {
+Task<void> testDedupWithoutCache() {
     CacheConfig config;
     config.ttl = std::chrono::seconds(0);   // keeps nothing
-    Cache cache{config, 0, executor};
+    Cache cache{config, 0};
     check(!cache.enabled(), "a zero ttl keeps nothing");
 
     int produced = 0;
-    auto slow = [&produced, executor]() -> asio::awaitable<Result<CacheEntry>> {
+    auto slow = [&produced]() -> Task<Result<CacheEntry>> {
         produced++;
-        asio::steady_timer wait(executor, std::chrono::milliseconds(50));
-        co_await wait.async_wait(asio::use_awaitable);
+        co_await Platform::sleep(std::chrono::milliseconds(50));
         co_return entryOf("shared");
     };
 
     constexpr int callers = 6;
     int answered = 0;
     for (int i = 0; i < callers; i++) {
-        asio::co_spawn(executor, [&]() -> asio::awaitable<void> {
-            auto got = co_await cache.fetch("cold", "10.0.0.2", slow);
-            if (got && bodyOf(*got) == "shared") answered++;
-        }, asio::detached);
+        Platform::spawn(askFor(cache, "cold", "10.0.0.2", slow, "shared", answered));
     }
 
-    asio::steady_timer settle(executor, std::chrono::milliseconds(300));
-    co_await settle.async_wait(asio::use_awaitable);
+    co_await Platform::sleep(std::chrono::milliseconds(300));
 
     check(answered == callers, "every caller in the burst is answered");
     check(produced == 1, "one producer served the burst, not " + std::to_string(produced));
@@ -217,7 +211,7 @@ asio::awaitable<void> testDedupWithoutCache(asio::any_io_executor executor) {
 }
 
 /** the store that outlives the process: sweeping and renewal are the whole point */
-asio::awaitable<void> testFileStore() {
+Task<void> testFileStore() {
     const auto root = std::filesystem::temp_directory_path() / "haio_cache_test";
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
@@ -298,13 +292,13 @@ asio::awaitable<void> testFileStore() {
  * the quota is about eviction, not about access: going over must still answer, and
  * must still serve what is already stored. only the storing stops.
  */
-asio::awaitable<void> testPerClientQuota(asio::any_io_executor executor) {
+Task<void> testPerClientQuota() {
     CacheConfig config;
     config.ttl = std::chrono::seconds(60);
-    Cache cache{config, 2, executor};
+    Cache cache{config, 2};
 
     auto make = [](std::string body) {
-        return [body]() -> asio::awaitable<Result<CacheEntry>> { co_return entryOf(body); };
+        return [body]() -> Task<Result<CacheEntry>> { co_return entryOf(body); };
     };
 
     for (int i = 0; i < 4; i++) {
@@ -317,7 +311,7 @@ asio::awaitable<void> testPerClientQuota(asio::any_io_executor executor) {
     for (int i = 0; i < 4; i++) {
         int produced = 0;
         co_await cache.fetch("k" + std::to_string(i), "10.0.0.9",
-                             [&produced]() -> asio::awaitable<Result<CacheEntry>> {
+                             [&produced]() -> Task<Result<CacheEntry>> {
                                  produced++;
                                  co_return entryOf("again");
                              });
@@ -332,10 +326,10 @@ asio::awaitable<void> testPerClientQuota(asio::any_io_executor executor) {
     // no quota configured means no limit
     CacheConfig open;
     open.ttl = std::chrono::seconds(60);
-    Cache free{open, 0, executor};
+    Cache free{open, 0};
     for (int i = 0; i < 5; i++) co_await free.fetch("f" + std::to_string(i), "10.0.0.11", make("x"));
     int producedAgain = 0;
-    co_await free.fetch("f4", "10.0.0.11", [&producedAgain]() -> asio::awaitable<Result<CacheEntry>> {
+    co_await free.fetch("f4", "10.0.0.11", [&producedAgain]() -> Task<Result<CacheEntry>> {
         producedAgain++;
         co_return entryOf("x");
     });
@@ -348,19 +342,16 @@ auto main() -> int {
     testKeyNormalisation();
     testFraming();
 
-    asio::io_context io;
-    asio::co_spawn(io, [&]() -> asio::awaitable<void> {
-        const auto executor = co_await asio::this_coro::executor;
+    Platform::run([]() -> Task<void> {
         co_await testMemoryStore();
         co_await testTtlExpires();
         co_await testDisabledCachePassesThrough();
-        co_await testFailureIsNotCached(executor);
-        co_await testSingleFlight(executor);
-        co_await testPerClientQuota(executor);
+        co_await testFailureIsNotCached();
+        co_await testSingleFlight();
+        co_await testPerClientQuota();
         co_await testFileStore();
-        co_await testDedupWithoutCache(executor);
-    }, asio::detached);
-    io.run();
+        co_await testDedupWithoutCache();
+    }());
 
     if (failures == 0) std::cout << "cdn cache: ok\n";
     return failures == 0 ? 0 : 1;

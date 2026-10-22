@@ -25,8 +25,12 @@ if(HAIO_USE_SPNG)
     set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     haio_fetch(spng "${SPNG_DOWNLOAD}" "${SPNG_DIR}" CMakeLists.txt)
     add_subdirectory("${SPNG_DIR}" "${CMAKE_BINARY_DIR}/spng" EXCLUDE_FROM_ALL)
+    
+    target_include_directories(${PROJECT_NAME} PRIVATE "${SPNG_DIR}/spng")
+    target_link_libraries(${PROJECT_NAME} PRIVATE spng_static)
 
     list(APPEND HAIO_CODEC_LIBRARIES spng_static)
 else()
     list(REMOVE_ITEM HAIO_CODEC_SOURCES_THIS "${HAIO_CODEC_DIR}/encode.cpp")
 endif()
+

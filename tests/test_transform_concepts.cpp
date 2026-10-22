@@ -60,7 +60,7 @@ auto main() -> int {
     check(cropped.data[0] == 3 && cropped.data[1] == 4 && cropped.data[2] == 5, "the first row lands at the right offset");
     check(cropped.data[6] == 15 && cropped.data[7] == 16 && cropped.data[8] == 17, "the second row lands at the right offset");
 
-    const auto small = Haio::resizeImage(wide, Haio::Size{2, 1});
+    const auto small = Haio::resizeNearest(wide, Haio::Size{2, 1});
     check(small.width == 2 && small.height == 1, "a resize honours the size asked for");
     check(small.data.size() == 2 * 1 * 3, "a resize of rgb888 is three bytes a pixel");
 

@@ -1,9 +1,7 @@
 #pragma once
 
 #include "haio.hpp"
-
-#include <boost/asio/any_io_executor.hpp>
-#include <boost/asio/awaitable.hpp>
+#include "haio_task.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -44,8 +42,8 @@ public:
      * nobody wants ages out. the window is therefore since the last read, not since
      * the write: a popular creative is never rebuilt on a clock.
      */
-    virtual boost::asio::awaitable<std::optional<CacheEntry>> get(const std::string& key) = 0;
-    virtual boost::asio::awaitable<void> put(const std::string& key, const CacheEntry& entry) = 0;
+    virtual Task<std::optional<CacheEntry>> get(const std::string& key) = 0;
+    virtual Task<void> put(const std::string& key, const CacheEntry& entry) = 0;
 };
 
 /**
@@ -65,7 +63,8 @@ std::optional<CacheEntry> decodeEntry(std::span<const uint8_t> raw);
 
 std::unique_ptr<CacheStore> makeMemoryStore(size_t maxUsage, std::chrono::seconds ttl);
 std::unique_ptr<CacheStore> makeFileStore(std::filesystem::path root, std::chrono::seconds ttl, size_t maxUsage);
-std::unique_ptr<CacheStore> makeRedisStore(std::string url, std::chrono::seconds ttl, size_t maxUsage, boost::asio::any_io_executor executor);
+/** desktop only: redis is reached with asio, so it lives in library/platform/desktop */
+std::unique_ptr<CacheStore> makeRedisStore(std::string url, std::chrono::seconds ttl, size_t maxUsage);
 
 /**
  * the store, plus the part that keeps one key from being produced many times at once.
@@ -76,7 +75,7 @@ std::unique_ptr<CacheStore> makeRedisStore(std::string url, std::chrono::seconds
  */
 class Cache {
 public:
-    using Producer = std::function<boost::asio::awaitable<Result<CacheEntry>>()>;
+    using Producer = std::function<Task<Result<CacheEntry>>()>;
 
     Cache() = default;
     /**
@@ -84,7 +83,7 @@ public:
      * limit on a caller and not on the store. it is passed rather than copied into
      * CacheConfig so that the number lives in exactly one place.
      */
-    Cache(CacheConfig config, size_t maxEntriesByIp, boost::asio::any_io_executor executor);
+    Cache(CacheConfig config, size_t maxEntriesByIp);
 
     /** true when entries are kept; deduplication happens either way */
     bool enabled() const;
@@ -97,7 +96,7 @@ public:
      * stop one caller from filling the cache with keys nobody else will ask for, and
      * evicting everyone else's entries on the way.
      */
-    boost::asio::awaitable<Result<CacheEntry>> fetch(std::string key, std::string client, Producer produce);
+    Task<Result<CacheEntry>> fetch(std::string key, std::string client, Producer produce);
 
 private:
     struct Impl;
