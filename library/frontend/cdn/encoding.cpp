@@ -22,14 +22,6 @@ std::string_view bodyEncodingName(BodyEncoding encoding) {
 
 namespace {
 
-/**
- * each zero is replaced by the distance to the next one, so a zero costs nothing and
- * only a run of 254 bytes without one costs a byte more. the code is written ahead of
- * its block, which is why its place is kept and counted up as the block grows.
- *
- * a full block is only followed by a new one when there is something left to put in
- * it, so the output matches the reference encoder byte for byte.
- */
 std::vector<uint8_t> encodeCobs(const std::vector<uint8_t>& body) {
     std::vector<uint8_t> out;
     out.reserve(body.size() + body.size() / 254 + 1);

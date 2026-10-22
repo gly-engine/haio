@@ -23,7 +23,6 @@ std::string text(const std::vector<uint8_t>& body) {
     return {body.begin(), body.end()};
 }
 
-/** what the lua side does: a block at a time, a zero after it unless it is full or last */
 std::vector<uint8_t> decodeCobs(const std::vector<uint8_t>& body) {
     std::vector<uint8_t> out;
     size_t index = 0;
@@ -35,7 +34,6 @@ std::vector<uint8_t> decodeCobs(const std::vector<uint8_t>& body) {
     return out;
 }
 
-/** the examples on the wikipedia page for cobs, which most encoders are checked against */
 void checkCobs(const std::vector<uint8_t>& plain, const std::vector<uint8_t>& encoded, const std::string& what) {
     check(encodeBody(plain, BodyEncoding::Cobs) == encoded, "cobs encodes " + what);
     check(decodeCobs(encoded) == plain, "cobs decodes " + what);

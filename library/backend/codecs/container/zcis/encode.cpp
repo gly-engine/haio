@@ -19,15 +19,11 @@ constexpr int base62PairMax = 62 * 62 - 1;
  * zcis splits the canvas into two layers of alternating rows, so that each layer
  * stays a decodable image on its own and both together rebuild the original
  * without losing a pixel.
- *
- * @note ZCIS.md marks "B" with the vertical bar glyph, which reads as alternating
- * columns; the row split described here is the "C" glyph. Flip these two constants
- * (and rowLayers) if the table is meant literally.
  */
 constexpr char baseCommand = 'A';
 constexpr char refineCommand = 'C';
 
-constexpr std::string_view indexMemberName = "000000000000.txt";
+constexpr std::string_view indexMemberName = "0000000000.txt";
 
 std::string base62Pair(int value) {
     return {base62[static_cast<size_t>(value) / 62], base62[static_cast<size_t>(value) % 62]};
@@ -104,12 +100,16 @@ Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img) {
         auto payload = Encode<Format::PPM, Color::RGBA8888>(Image<Color::RGBA8888>{layer});
         if (!payload) return payload.error();
 
-        const auto name = std::string(1, base62[static_cast<size_t>(order++)]) + command + target + ".ppm/";
+        const auto name = std::string(1, base62[static_cast<size_t>(order++)]) + command + target + ".ppm";
         return appendMember(out, name, payload->data);
     };
 
-    HAIO_CHECK(appendLayer(baseCommand, selectRows(img, 0)));
-    HAIO_CHECK(appendLayer(refineCommand, selectRows(img, 1)));
+    if (img.height == 1) {
+        HAIO_CHECK(appendLayer(baseCommand, selectRows(img, 0)));
+    } else {
+        HAIO_CHECK(appendLayer(baseCommand, selectRows(img, 1)));
+        HAIO_CHECK(appendLayer(refineCommand, selectRows(img, 0)));
+    }
 
     return Blob{Format::ZCIS, Color::RGBA8888, "image/x-zcis", {}, std::move(out)};
 }

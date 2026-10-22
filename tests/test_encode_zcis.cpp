@@ -93,15 +93,15 @@ void testTwoLayersAreLossless() {
     const auto members = readArchive(encoded->data);
     assert(members.size() == 3);
 
-    assert(members[0].name == "000000000000.txt");
+    assert(members[0].name == "0000000000.txt");
     assert(std::string(members[0].body.begin(), members[0].body.end()) == "0 0 8 4\r\n");
 
     // order, command, posx, posy, then the canvas size both layers scale up to
     assert(members[1].name == "1A00000804.ppm");
     assert(members[2].name == "2C00000804.ppm");
 
-    const auto even = readPpm(members[1]);
-    const auto odd = readPpm(members[2]);
+    const auto odd = readPpm(members[1]);
+    const auto even = readPpm(members[2]);
     assert(even.width == 8 && even.height == 2);
     assert(odd.width == 8 && odd.height == 2);
 
@@ -124,9 +124,33 @@ void testSingleRowDropsTheRefineLayer() {
     const auto members = readArchive(encoded->data);
 
     assert(members.size() == 2);
-    assert(members[0].name == "000000000000.txt");
+    assert(members[0].name == "0000000000.txt");
     assert(members[1].name == "1A00000801.ppm");
     assert(readPpm(members[1]).height == 1);
+}
+
+void testLayersRebuildEveryHeight() {
+    for (int height = 2; height <= 9; height++) {
+        const auto source = makeImage(3, height);
+        const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS>(source);
+        assert(encoded);
+        const auto members = readArchive(encoded->data);
+        assert(members.size() == 3);
+
+        const auto base = readPpm(members[1]);
+        const auto refine = readPpm(members[2]);
+        for (int y = 0; y < height; y++) {
+            const auto& layer = y % 2 == 0 ? refine : base;
+            const int row = y * layer.height / height;
+            for (int x = 0; x < source.width; x++) {
+                const auto src = (static_cast<size_t>(y) * 3 + static_cast<size_t>(x)) * 4;
+                const auto dst = (static_cast<size_t>(row) * 3 + static_cast<size_t>(x)) * 3;
+                for (size_t channel = 0; channel < 3; channel++) {
+                    assert(layer.rgb[dst + channel] == source.data[src + channel]);
+                }
+            }
+        }
+    }
 }
 
 void testRejectsOversizedCanvas() {
@@ -148,6 +172,7 @@ void testFormatWiring() {
 int main() {
     testTwoLayersAreLossless();
     testSingleRowDropsTheRefineLayer();
+    testLayersRebuildEveryHeight();
     testRejectsOversizedCanvas();
     testFormatWiring();
     return 0;
