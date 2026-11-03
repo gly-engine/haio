@@ -30,7 +30,6 @@ enum class TokenKind {
     Open,    /**< a parenthesis: what comes after it, until Close, sees only its own pictures */
     Close,
     Encode,
-
     Deliver
 };
 
@@ -75,6 +74,7 @@ struct Token {
     Settings settings;
 
     BodyEncoding encoding = BodyEncoding::Identity;
+    std::string name;
 };
 
 /** a conversion described at runtime, which is what a url query builds */
@@ -104,7 +104,6 @@ Token Fx(std::string expression);
 Token Open();
 Token Close();
 Token Encode(Format format, std::optional<Color> color = std::nullopt, Settings settings = {});
-
 Token Deliver(BodyEncoding encoding, std::string name = {});
 }
 

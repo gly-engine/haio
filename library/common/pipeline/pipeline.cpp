@@ -119,7 +119,7 @@ Token Encode(Format format, std::optional<Color> color, Settings settings) {
 Token Deliver(BodyEncoding encoding, std::string name) {
     Token token{TokenKind::Deliver};
     token.encoding = encoding;
-    token.path = std::move(name);
+    token.name = std::move(name);
     return token;
 }
 }

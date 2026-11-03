@@ -398,7 +398,7 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
 
             case TokenKind::Deliver:
                 outputEncoding = token.encoding;
-                if (!token.path.empty()) outputName = token.path;
+                if (!token.name.empty()) outputName = token.name;
                 break;
         }
         if (failure) return std::unexpected(*failure);
