@@ -254,6 +254,8 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
     Format outputFormat = Format::RAW;
     std::optional<Color> outputColor;
     Settings encodeSettings;
+    BodyEncoding outputEncoding = BodyEncoding::Identity;
+    std::string outputName;
 
     /** the next input, decoded and put on top */
     auto decode = [&](const Settings& settings) -> std::optional<Error> {
@@ -393,16 +395,27 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
                 outputColor = token.color;
                 encodeSettings = token.settings;
                 break;
+
+            case TokenKind::Deliver:
+                outputEncoding = token.encoding;
+                if (!token.path.empty()) outputName = token.path;
+                break;
         }
         if (failure) return std::unexpected(*failure);
     }
+
+    auto finish = [&](Blob blob) -> Result<Blob> {
+        if (!outputName.empty()) blob.path = outputName;
+        if (outputEncoding != BodyEncoding::Identity) blob.data = encodeBody(blob.data, outputEncoding);
+        return blob;
+    };
 
     /**
      * no container asked for and nothing decoded: the cdn's untouched file, which is
      * what a pipeline with nothing to do hands back.
      */
     if (outputFormat == Format::RAW && !outputColor && stack.empty() && nextInput == 0 && inputs.size() == 1) {
-        return std::move(inputs.front());
+        return finish(std::move(inputs.front()));
     }
 
     if (auto failed = decodeLazily()) return std::unexpected(*failed);
@@ -424,8 +437,8 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
         auto pixels = Convert(picture.current(), to);
         if (!pixels) return std::unexpected(pixels.error());
 
-        return Blob{Format::RAW, to, std::string(contentTypeFor(Format::RAW)), path, std::move(pixels->data),
-                    Size{pixels->width, pixels->height}};
+        return finish(Blob{Format::RAW, to, std::string(contentTypeFor(Format::RAW)), path, std::move(pixels->data),
+                           Size{pixels->width, pixels->height}});
     }
 
     /**
@@ -445,8 +458,9 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
 
     auto encoded = asIndices ? Encode(*std::move(picture.indexed), outputFormat, encodeSettings)
                              : Encode(picture.current(), outputFormat, outputColor, encodeSettings);
-    if (encoded) encoded->path = path;
-    return encoded;
+    if (!encoded) return encoded;
+    encoded->path = path;
+    return finish(*std::move(encoded));
 }
 
 }

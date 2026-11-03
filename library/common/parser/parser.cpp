@@ -58,7 +58,7 @@ struct Pending {
 
 class Reader {
 public:
-    explicit Reader(std::span<const Word> words) : words_(words) {}
+    Reader(std::span<const Word> words, Options options) : words_(words), options_(options) {}
 
     Parsed run() {
         if (words_.size() <= 1) return fail("missing an image filename", words_.empty() ? "" : words_.front().text);
@@ -81,6 +81,7 @@ public:
 
 private:
     std::span<const Word> words_;
+    Options options_;
     size_t at_ = 0;
     Parsed command_;
     std::vector<Pending> pending_;
@@ -438,13 +439,25 @@ private:
 
         Input input;
         input.path = std::string(word);
-        if (prefixed && knownFormat(prefixed->prefix)) {
+        input.bucket = Source::isRemoteUri(input.path) ? "url" : "file";
+
+        if (options_.bucketPrefix) {
+            if (!prefixed) {
+                return refuseWhole("a source needs a bucket, as assets:" + std::string(word), std::string(word));
+            }
             if (prefixed->value.empty()) return refuse("missing an image filename", std::string(word));
+            input.bucket = prefixed->prefix;
             input.path = prefixed->value;
-            input.formatName = prefixed->prefix;
-            input.format = *knownFormat(prefixed->prefix);
+            input.format = formatFromPathOrRaw(input.path);
+        } else {
+            if (prefixed && knownFormat(prefixed->prefix)) {
+                if (prefixed->value.empty()) return refuse("missing an image filename", std::string(word));
+                input.path = prefixed->value;
+                input.formatName = prefixed->prefix;
+                input.format = *knownFormat(prefixed->prefix);
+            }
+            if (input.formatName.empty()) input.format = formatFromPathOrRaw(input.path);
         }
-        if (input.formatName.empty()) input.format = formatFromPathOrRaw(input.path);
 
         const auto& reads = readsOf(input.format);
         const auto codec = codecStage(Grammar::input, reads.decode);
@@ -456,7 +469,7 @@ private:
         input.settings = *std::move(settings);
 
         starting();
-        command_.steps.push_back(Tokens::Source(Source::isRemoteUri(input.path) ? "url" : "file", input.path));
+        command_.steps.push_back(Tokens::Source(input.bucket, input.path));
         command_.steps.push_back(Tokens::Decode(input.format, input.settings));
         command_.inputs.push_back(std::move(input));
         scopes_.back()++;
@@ -492,13 +505,14 @@ private:
      * on it.
      */
     bool output(std::string_view word) {
-        if (scopes_.size() > 1) return refuse("unbalanced parenthesis", std::string(word));
-        if (scopes_.back() == 0) return refuse("no images defined", std::string(word));
+        const auto blamed = options_.outputNamed.empty() ? std::string(word) : std::string{};
+
+        if (scopes_.size() > 1) return refuse("unbalanced parenthesis", blamed);
+        if (scopes_.back() == 0) return refuse("no images defined", blamed);
         // imagemagick would write one file per picture; haio writes one, so the rest
         // have to have been joined into it
         if (scopes_.back() > 1) {
-            return refuse(std::to_string(scopes_.back()) + " images and one output, join them with -composite",
-                          std::string(word));
+            return refuse(std::to_string(scopes_.back()) + " images and one output, join them with -composite", blamed);
         }
         hasOutput_ = true;
 
@@ -521,8 +535,17 @@ private:
 
         const auto& reads = readsOf(command_.outputFormat);
         const auto codec = codecStage(Grammar::output, reads.encode);
-        const auto taken = take(codec.stage, contextOf(command_.outputFormat, word), word);
+        const auto named = options_.outputNamed.empty() ? contextOf(command_.outputFormat, word)
+                                                        : std::string(options_.outputNamed);
+        const auto taken = take(codec.stage, named, word);
         if (!taken) return false;
+
+        for (const auto& one : *taken) {
+            if (one.option->name() == Grammar::outputEncoding.name()) {
+                command_.outputEncoding = *Stages::enumNamed<BodyEncoding>(one.value);
+            }
+            if (one.option->name() == Grammar::outputName.name()) command_.outputName = one.value;
+        }
 
         /**
          * the colour stored inside the output, which is not the same question as the
@@ -533,7 +556,7 @@ private:
             command_.outputColor = command_.steps.back().color;
         }
 
-        auto settings = settingsOf(*taken, reads.encode, contextOf(command_.outputFormat, word));
+        auto settings = settingsOf(*taken, reads.encode, named);
         if (!settings) return false;
         command_.outputSettings = *std::move(settings);
 
@@ -544,8 +567,8 @@ private:
 
 } // namespace
 
-Parsed parse(std::span<const Word> words) {
-    return Reader(words).run();
+Parsed parse(std::span<const Word> words, Options options) {
+    return Reader(words, options).run();
 }
 
 } // namespace Haio::Parser

@@ -56,6 +56,7 @@ struct Error {
  * reads nothing and so is a Generate step rather than an Input.
  */
 struct Input {
+    std::string bucket;
     std::string path;
     std::string formatName;
     Format format = Format::RAW;
@@ -85,9 +86,18 @@ struct Parsed {
 
     /** which colour to store inside the output, when a -pix_fmt right before it named one */
     std::optional<Color> outputColor;
+
+    BodyEncoding outputEncoding = BodyEncoding::Identity;
+    std::string outputName;
 };
 
-Parsed parse(std::span<const Word> words);
+struct Options {
+    bool bucketPrefix = false;
+
+    std::string_view outputNamed;
+};
+
+Parsed parse(std::span<const Word> words, Options options = {});
 
 /**
  * the pipeline the words describe, ready for runPipeline with one blob per input.

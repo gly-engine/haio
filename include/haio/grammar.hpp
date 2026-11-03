@@ -95,8 +95,22 @@ inline constexpr Stages::Option outputFormat{
     .help = "the container to write, whatever the output is called",
 };
 
+inline constexpr Stages::Option outputEncoding{
+    .spellings = {"encoding"}, .takes = "name",
+    .help = "how the bytes are written, for a client that cannot take every one of them",
+    .shape = Stages::Shape::Name, .names = Stages::namesOf<BodyEncoding>(),
+    .fallback = "identity", .called = "body encoding",
+};
+
+inline constexpr Stages::Option outputName{
+    .spellings = {"name"}, .takes = "text",
+    .help = "what the answer is called, when it should not be the source's name",
+};
+
 inline constexpr Stages::Option outputOptions[] = {
     outputFormat,
+    outputEncoding,
+    outputName,
 };
 
 inline constexpr Stages::Stage output{
@@ -206,7 +220,7 @@ inline constexpr std::array leafRules = {
     Rule{"rect", R"(integer , "," , integer , "," , integer , "," , integer)"},
     Rule{"offset", "signed-integer , signed-integer"},
     Rule{"integer", "digit , { digit }"},
-    Rule{"signed-integer", R"(( "+" | "-" ) , integer)"},
+    Rule{"signed-integer", R"(( "+" | "-" | " " ) , integer)"},
 };
 
 inline constexpr std::array notes = {
@@ -226,6 +240,7 @@ inline constexpr std::array notes = {
     Note{"`-pix_fmt nil` keeps a picture's size and forgets its pixels, which is a clear canvas as big as it was."},
     Note{"a parenthesis only scopes the stack: what is inside sees only the pictures made inside, and they join the stack around it at the `)`. options do not cross it."},
     Note{"the output takes exactly one picture, so two left on the stack is an error rather than two files."},
+    Note{"a space is a plus in a geometry, so `-crop 4x4 2 1` is `-crop 4x4+2+1` and `-geometry 3 4` is `-geometry +3+4`. a url writes a plus as a space, and reading it back is what lets `?crop=4x4+2+1` name the same rectangle a command line names. a minus is still a minus, so a sign still says which way the offset goes."},
     Note{"`-fx` is parsed but currently rejected during pipeline construction."},
     Note{"naming a colour a container cannot store is an error rather than a silent conversion."},
     Note{"`-pix_fmt` moves the picture on top into that colour, and written right before the output it is also the colour stored inside it."},

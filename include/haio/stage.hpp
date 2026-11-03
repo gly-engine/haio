@@ -145,6 +145,17 @@ constexpr std::optional<E> enumNamed(std::string_view name) {
     return std::nullopt;
 }
 
+template <typename E>
+constexpr std::string_view enumName(E value) {
+    static constexpr auto names = namesOf<E>();
+    size_t at = 0;
+    template for (constexpr auto e : std::define_static_array(std::meta::enumerators_of(^^E))) {
+        if (std::meta::extract<E>(e) == value) return names[at];
+        at++;
+    }
+    return {};
+}
+
 /** "from 1 to 100", "one of point, box", "WxH": what the shape asks for, in words */
 inline std::string shapeOf(const Option& option) {
     switch (option.shape) {

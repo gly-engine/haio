@@ -167,6 +167,25 @@ struct Blob {
 };
 
 /**
+ * how the bytes travel once the picture is encoded, for a client that cannot take
+ * every one of them. the ginga in some televisions hands a tcp read to lua as a c
+ * string, so everything after a zero byte is lost and a zcis with a black pixel never
+ * arrives whole.
+ *
+ * | encoding | the bytes                                                     |
+ * |----------|---------------------------------------------------------------|
+ * | `cobs`   | consistent overhead byte stuffing, with no delimiter after it |
+ * | `base64` | rfc 4648, with padding                                        |
+ * | `hex`    | two lowercase digits a byte                                   |
+ *
+ * the names the line accepts are the enumerators, lowered.
+ */
+enum class BodyEncoding { Identity, Cobs, Base64, Hex };
+
+/** the body as that encoding writes it; Identity hands the same bytes back */
+std::vector<uint8_t> encodeBody(const std::vector<uint8_t>& body, BodyEncoding encoding);
+
+/**
  * the verbs. they live apart from the vocabulary above because the runtime facade in
  * haio_registry.hpp offers Decode(const Blob&) and Detect(Bytes) with the very same
  * parameter lists: without a namespace between them, Decode(blob) and

@@ -148,9 +148,10 @@ Config parseConfig(std::string_view text) {
             else if (key == "max_requests_by_ip") config.security.maxRequestsByIp = parseCount(key, value);
             else if (key == "allow_unzip") config.security.allowUnzip = parseFlag(key, value);
             else if (key == "max_unzip") config.security.maxUnzip = parseCount(key, value) * 1024 * 1024;
+            else if (key == "max_sources") config.security.maxSources = parseCount(key, value);
             else throw unknownKey("security", key, {"timeout", "max_size_pixel", "max_size_percent",
                                                    "max_cache_entries_by_ip", "max_requests_by_ip",
-                                                   "allow_unzip", "max_unzip"});
+                                                   "allow_unzip", "max_unzip", "max_sources"});
             continue;
         }
 
