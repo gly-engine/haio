@@ -51,7 +51,10 @@ Result<Blob> Pack<Format::ZCIS, Color::RGBA8888>(std::vector<Image<Color::RGBA88
         layout.canvas.height,
         std::vector<uint8_t>(static_cast<size_t>(layout.canvas.width) * static_cast<size_t>(layout.canvas.height) * 4),
     };
-    for (size_t at = 0; at < images.size(); at++) blit(canvas, images[at], layout.rects[at]);
+    for (size_t at = 0; at < images.size(); at++) {
+        blit(canvas, images[at], layout.rects[at]);
+        images[at].data = std::vector<uint8_t>{};
+    }
 
     return Zcis::writeCanvas(canvas, layout.rects);
 }
