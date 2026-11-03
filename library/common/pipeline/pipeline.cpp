@@ -44,10 +44,11 @@ Token Crop(Rect rect) {
     return token;
 }
 
-Token Resize(Size size, ResizeFilter filter) {
+Token Resize(Size size, ResizeFilter filter, bool exact) {
     Token token{TokenKind::Resize};
     token.size = size;
     token.filter = filter;
+    token.exact = exact;
     return token;
 }
 

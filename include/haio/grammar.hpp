@@ -226,6 +226,9 @@ inline constexpr std::array leafRules = {
     Rule{"palette-spec", R"(palette-name , [ ":" , range , { "," , range } ])"},
     Rule{"range", R"(integer , [ ".." , integer ])"},
     Rule{"size", R"(integer , ( "x" | "X" ) , integer | integer , ( "%" | "pct" ))"},
+    Rule{"resize-geometry", R"(side , ( "x" | "X" | ":" ) , side , [ "!" ]
+| integer , ( "%" | "pct" ))"},
+    Rule{"side", R"([ [ "-" ] , integer ])"},
     Rule{"crop-geometry", R"(integer , ( "x" | "X" ) , integer , [ signed-integer , signed-integer ] | rect)"},
     Rule{"rect", R"(integer , "," , integer , "," , integer , "," , integer)"},
     Rule{"offset", "signed-integer , signed-integer"},

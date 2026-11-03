@@ -54,6 +54,13 @@ struct Token {
 
     /** Resize only: a share of the incoming picture, when the size was written as one */
     int percent = 0;
+
+    /**
+     * Resize only: both sides as written, rather than the largest that fits inside
+     * them. a side of size that is not positive is worked out from the other and the
+     * picture's shape, rounded up to a multiple of its negative, so -2 keeps it even.
+     */
+    bool exact = false;
     ResizeFilter filter = ResizeFilter::Point;   /**< and how the pixels are picked */
     int radius = 0;
 
@@ -96,7 +103,7 @@ Token Generate(Brush brush, std::string words, Settings settings = {});
 Token DecodeAuto();
 Token Decode(Format format, Settings settings = {});
 Token Crop(Rect rect);
-Token Resize(Size size, ResizeFilter filter = ResizeFilter::Point);
+Token Resize(Size size, ResizeFilter filter = ResizeFilter::Point, bool exact = false);
 Token ResizeByPercent(int percent, ResizeFilter filter = ResizeFilter::Point);
 Token Radius(int radius);
 Token Negate();
