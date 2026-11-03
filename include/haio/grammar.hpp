@@ -107,8 +107,18 @@ inline constexpr Stages::Option outputName{
     .help = "what the answer is called, when it should not be the source's name",
 };
 
+/**
+ * the container that holds several pictures at once, when the line makes more than
+ * one. only a format that can say where each of them is answers to it.
+ */
+inline constexpr Stages::Option outputPack{
+    .spellings = {"pack"}, .takes = "format-name",
+    .help = "a container for several pictures, as zcis",
+};
+
 inline constexpr Stages::Option outputOptions[] = {
     outputFormat,
+    outputPack,
     outputEncoding,
     outputName,
 };

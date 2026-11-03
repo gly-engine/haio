@@ -254,6 +254,7 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
     Format outputFormat = Format::RAW;
     std::optional<Color> outputColor;
     Settings encodeSettings;
+    Format outputPack = Format::RAW;
     BodyEncoding outputEncoding = BodyEncoding::Identity;
     std::string outputName;
 
@@ -396,6 +397,10 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
                 encodeSettings = token.settings;
                 break;
 
+            case TokenKind::Pack:
+                outputPack = token.format;
+                break;
+
             case TokenKind::Deliver:
                 outputEncoding = token.encoding;
                 if (!token.name.empty()) outputName = token.name;
@@ -419,6 +424,23 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
     }
 
     if (auto failed = decodeLazily()) return std::unexpected(*failed);
+
+    /**
+     * every picture left, handed to the container whole. this is the one way out that
+     * does not want exactly one, and the container is what says where each of them
+     * ended up.
+     */
+    if (outputPack != Format::RAW) {
+        std::vector<AnyImage> images;
+        images.reserve(stack.size());
+        for (auto& picture : stack) images.push_back(picture.current());
+
+        auto packed = Pack(std::move(images), outputPack);
+        if (!packed) return std::unexpected(packed.error());
+        packed->path = path;
+        return finish(*std::move(packed));
+    }
+
     if (stack.size() != 1) {
         return std::unexpected(Error{ErrorCode::InvalidInput, std::to_string(stack.size())
                                                                   + " pictures and one output; join them with -composite"});

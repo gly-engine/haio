@@ -30,6 +30,9 @@ enum class TokenKind {
     Open,    /**< a parenthesis: what comes after it, until Close, sees only its own pictures */
     Close,
     Encode,
+
+    /** several pictures into one container that can say where each of them is */
+    Pack,
     Deliver
 };
 
@@ -104,6 +107,7 @@ Token Fx(std::string expression);
 Token Open();
 Token Close();
 Token Encode(Format format, std::optional<Color> color = std::nullopt, Settings settings = {});
+Token Pack(Format format);
 Token Deliver(BodyEncoding encoding, std::string name = {});
 }
 

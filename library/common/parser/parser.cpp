@@ -509,10 +509,22 @@ private:
 
         if (scopes_.size() > 1) return refuse("unbalanced parenthesis", blamed);
         if (scopes_.back() == 0) return refuse("no images defined", blamed);
-        // imagemagick would write one file per picture; haio writes one, so the rest
-        // have to have been joined into it
-        if (scopes_.back() > 1) {
-            return refuse(std::to_string(scopes_.back()) + " images and one output, join them with -composite", blamed);
+
+        if (const auto* pack = waiting(Grammar::outputPack)) {
+            const auto known = knownFormat(pack->value);
+            if (!known) return refuse("no encode delegate for this image format", pack->value);
+            if (!packable(*known)) {
+                return refuseWhole("a " + pack->value + " cannot say where each picture is, so it cannot pack",
+                                   pack->value);
+            }
+            command_.outputPack = *known;
+            command_.outputPackName = pack->value;
+        }
+
+        // one output takes one picture, and the rest have to have been joined into it
+        if (scopes_.back() > 1 && command_.outputPack == Format::RAW) {
+            return refuse(std::to_string(scopes_.back())
+                              + " images and one output, join them with -composite or -pack", blamed);
         }
         hasOutput_ = true;
 

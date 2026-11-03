@@ -219,6 +219,14 @@ template <Format F, Color P> Result<Image<P>> Decode(const Blob&, const Settings
 template <Format F, Color P> Result<Blob>     Encode(Image<P>, const Settings&)    = delete;
 
 /**
+ * several pictures written into one container, which only a container that can say
+ * where each of them is may do. how they are laid out is the container's own: an
+ * atlas and an index for zcis, numbered members for an archive, array layers for a
+ * texture. a format that defines none of these cannot pack, and says so by itself.
+ */
+template <Format F, Color P> Result<Blob> Pack(std::vector<Image<P>>) = delete;
+
+/**
  * a picture painted out of nothing by a Brush, in the colour it is painted in: the
  * words are what came after its colon on the command line, "red-blue" for
  * "gradient:red-blue", and the settings its options, -size among them.
@@ -308,6 +316,10 @@ template <Format F, Color P> concept Decodable  = DecodesPlain<F, P> || DecodesS
 template <Format F, Color P> concept EncodesPlain    = requires (Image<P> i) { { Encode<F, P>(std::move(i)) } -> std::same_as<Result<Blob>>; };
 template <Format F, Color P> concept EncodesSettings = requires (Image<P> i, const Settings& s) { { Encode<F, P>(std::move(i), s) } -> std::same_as<Result<Blob>>; };
 template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P>;
+/** can several pictures of this colour be written into this container at once */
+template <Format F, Color P> concept Packable = requires (std::vector<Image<P>> v) {
+    { Pack<F, P>(std::move(v)) } -> std::same_as<Result<Blob>>;
+};
 /**
  * @ingroup generate
  * can this brush paint in this colour, asked of the pair rather than answered by hand.

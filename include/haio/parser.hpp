@@ -89,6 +89,13 @@ struct Parsed {
 
     BodyEncoding outputEncoding = BodyEncoding::Identity;
     std::string outputName;
+
+    /**
+     * the container several pictures go into, when -pack named one. RAW is nobody
+     * asking, and then the line owes exactly one picture as it always did.
+     */
+    Format outputPack = Format::RAW;
+    std::string outputPackName;
 };
 
 struct Options {

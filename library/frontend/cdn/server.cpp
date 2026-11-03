@@ -63,7 +63,7 @@ Haio::Format preferredFormat(const Haio::Parser::Parsed& parsed, const std::vect
 }
 
 bool nothingToDo(const Haio::Parser::Parsed& parsed, const std::vector<Haio::Blob>& blobs) {
-    if (blobs.size() != 1 || parsed.outputColor) return false;
+    if (blobs.size() != 1 || parsed.outputColor || parsed.outputPack != Haio::Format::RAW) return false;
 
     const bool named = parsed.outputFormat != Haio::Format::RAW || !parsed.outputFormatName.empty();
     if (named && parsed.outputFormat != blobs.front().format) return false;
@@ -302,7 +302,9 @@ Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config&
         for (const auto& step : parsed.steps) pipeline |= step;
     }
 
-    if (!pipeline.tokens().empty()) {
+    if (parsed.outputPack != Haio::Format::RAW) {
+        pipeline |= Haio::Tokens::Pack(parsed.outputPack);
+    } else if (!pipeline.tokens().empty()) {
         const bool named = parsed.outputFormat != Haio::Format::RAW || !parsed.outputFormatName.empty();
         const auto format = named          ? parsed.outputFormat
                           : parsed.outputColor ? Haio::Format::RAW
