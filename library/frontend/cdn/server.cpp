@@ -27,13 +27,11 @@ struct Route {
     std::string query;
 };
 
-Route parseRoute(std::string_view target) {
+std::optional<Route> parseRoute(std::string_view target) {
     const auto parsed = target.starts_with('/') && !target.starts_with("//") ? Haio::Url::parse(target) : std::nullopt;
     if (!parsed || !parsed->scheme.empty()) throw std::runtime_error("invalid request target: " + std::string(target));
 
-    if (parsed->path != "/cdn" && parsed->path != "/cdn/") {
-        throw std::runtime_error("expected /cdn?<bucket>:<path>, as /cdn?assets:logo.png");
-    }
+    if (parsed->path != "/cdn" && parsed->path != "/cdn/") return std::nullopt;
     return Route{parsed->hasQuery ? parsed->query : std::string{}};
 }
 
@@ -268,10 +266,7 @@ std::optional<Haio::Error> checkSize(const Haio::Cdn::Config& config, const std:
 /** the fetch and the conversion behind it, which is exactly what an entry saves */
 Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config& config, Haio::Source::Archives& archives, Route route) {
     const auto words = Haio::Cdn::wordsOf(route.query);
-    if (words.empty()) {
-        co_return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput,
-                                              "expected /cdn?<bucket>:<path>, as /cdn?assets:logo.png"});
-    }
+    if (words.empty()) co_return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, "nothing asked for"});
 
     const auto parsed = Haio::Parser::parse(words, {.bucketPrefix = true, .outputNamed = "the answer"});
     if (parsed.error) co_return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, parsed.error.message});
@@ -351,7 +346,7 @@ Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, Htt
         co_return res;
     }
 
-    Route route;
+    std::optional<Route> route;
     try {
         route = parseRoute(req.target);
     } catch (const std::exception& err) {
@@ -359,10 +354,13 @@ Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, Htt
         co_return makeText(400, std::string(err.what()) + "\n");
     }
 
+    if (!route) co_return makeText(404, "not found\n");
+    if (route->query.empty()) co_return makeText(200, "ok\n");
+
     // the key leaves the method out on purpose, so a HEAD finds what a GET stored
-    const auto key = Haio::Cdn::cacheKey(route.query);
+    const auto key = Haio::Cdn::cacheKey(route->query);
     auto entry = co_await shared->cache.fetch(key, req.client, [shared, route]() {
-        return produce(shared->config, *shared->archives, route);
+        return produce(shared->config, *shared->archives, *route);
     });
     if (!entry) co_return makeError(entry.error());
 
