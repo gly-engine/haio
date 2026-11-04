@@ -353,7 +353,7 @@ inline Result<std::vector<uint8_t>> Convert(const Image<Color::RGBA8888>& image,
  * Codecs::Encode, with nothing but this bridge between it and a string.
  */
 inline Result<Blob> Encode(AnyImage image, Format to, std::optional<Color> as = std::nullopt,
-                           const Settings& settings = {}) {
+                           const Settings& settings = {}, const Metadata& meta = {}) {
     const auto wanted = as ? as : encodeColorFor(to);
     if (!wanted) {
         return std::unexpected(Error{ErrorCode::UnsupportedFormat,
@@ -378,7 +378,7 @@ inline Result<Blob> Encode(AnyImage image, Format to, std::optional<Color> as = 
                 auto converted = Convert(std::move(image), color);
                 out = converted ? Codecs::encode<format, color>(
                                       Image<color>{converted->width, converted->height, std::move(converted->data)},
-                                      settings)
+                                      settings, meta)
                                 : Result<Blob>{std::unexpected(converted.error())};
             }
         }

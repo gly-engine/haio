@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <map>
 #include <stdexcept>
 #include <vector>
 
@@ -58,7 +59,7 @@ struct Pending {
 
 class Reader {
 public:
-    explicit Reader(std::span<const Word> words) : words_(words) {}
+    Reader(std::span<const Word> words, Options options) : words_(words), options_(options) {}
 
     Parsed run() {
         if (words_.size() <= 1) return fail("missing an image filename", words_.empty() ? "" : words_.front().text);
@@ -81,6 +82,7 @@ public:
 
 private:
     std::span<const Word> words_;
+    Options options_;
     size_t at_ = 0;
     Parsed command_;
     std::vector<Pending> pending_;
@@ -307,8 +309,8 @@ private:
 
         auto& pictures = scopes_.back();
         if (pictures == 0) return refuse("no images defined", dashed.spelling);
-        if (stage.merges && pictures == 1) return refuse("image sequence is required", dashed.spelling);
-        if (stage.merges && pictures > 4) return refuse("image sequence is too long", dashed.spelling);
+        if (stage.merges && pictures < stage.merges.fewest) return refuse("image sequence is required", dashed.spelling);
+        if (stage.merges && pictures > stage.merges.most) return refuse("image sequence is too long", dashed.spelling);
 
         const auto taken = take(stage, stage.name(), dashed.spelling);
         if (!taken) return false;
@@ -319,7 +321,7 @@ private:
         auto token = build(stage, *value, Stages::Given{*taken});
         if (!token) return refuseWhole(std::move(token.error().message), std::move(token.error().token));
 
-        const bool shapeFirst = stage.merges && firsts_.back() && composite4Of(command_.steps[firsts_.back()->begin].brush);
+        const bool shapeFirst = token->kind == TokenKind::Composite && firsts_.back() && composite4Of(command_.steps[firsts_.back()->begin].brush);
 
         // a shape and one colour over it is that colour on nothing, which is two colours with null: the second
         if (shapeFirst && pictures == 2 && token->compose == Compose::Over) {
@@ -438,13 +440,27 @@ private:
 
         Input input;
         input.path = std::string(word);
-        if (prefixed && knownFormat(prefixed->prefix)) {
-            if (prefixed->value.empty()) return refuse("missing an image filename", std::string(word));
-            input.path = prefixed->value;
-            input.formatName = prefixed->prefix;
-            input.format = *knownFormat(prefixed->prefix);
+        input.bucket = Source::isRemoteUri(input.path) ? "url" : "file";
+
+        if (options_.bucketPrefix) {
+            if (!prefixed) {
+                return refuseWhole("a source needs a bucket, as assets:" + std::string(word), std::string(word));
+            }
+            std::string_view path = prefixed->value;
+            if (path.starts_with("//")) path.remove_prefix(2);
+            if (path.empty()) return refuse("missing an image filename", std::string(word));
+            input.bucket = prefixed->prefix;
+            input.path = std::string(path);
+            input.format = formatFromPathOrRaw(input.path);
+        } else {
+            if (prefixed && knownFormat(prefixed->prefix)) {
+                if (prefixed->value.empty()) return refuse("missing an image filename", std::string(word));
+                input.path = prefixed->value;
+                input.formatName = prefixed->prefix;
+                input.format = *knownFormat(prefixed->prefix);
+            }
+            if (input.formatName.empty()) input.format = formatFromPathOrRaw(input.path);
         }
-        if (input.formatName.empty()) input.format = formatFromPathOrRaw(input.path);
 
         const auto& reads = readsOf(input.format);
         const auto codec = codecStage(Grammar::input, reads.decode);
@@ -456,7 +472,7 @@ private:
         input.settings = *std::move(settings);
 
         starting();
-        command_.steps.push_back(Tokens::Source(Source::isRemoteUri(input.path) ? "url" : "file", input.path));
+        command_.steps.push_back(Tokens::Source(input.bucket, input.path));
         command_.steps.push_back(Tokens::Decode(input.format, input.settings));
         command_.inputs.push_back(std::move(input));
         scopes_.back()++;
@@ -492,13 +508,15 @@ private:
      * on it.
      */
     bool output(std::string_view word) {
-        if (scopes_.size() > 1) return refuse("unbalanced parenthesis", std::string(word));
-        if (scopes_.back() == 0) return refuse("no images defined", std::string(word));
-        // imagemagick would write one file per picture; haio writes one, so the rest
-        // have to have been joined into it
+        const auto blamed = options_.outputNamed.empty() ? std::string(word) : std::string{};
+
+        if (scopes_.size() > 1) return refuse("unbalanced parenthesis", blamed);
+        if (scopes_.back() == 0) return refuse("no images defined", blamed);
+
+        // one output takes one picture, and the rest have to have been joined into it
         if (scopes_.back() > 1) {
-            return refuse(std::to_string(scopes_.back()) + " images and one output, join them with -composite",
-                          std::string(word));
+            return refuse(std::to_string(scopes_.back())
+                              + " images and one output, join them with -composite or -grid", blamed);
         }
         hasOutput_ = true;
 
@@ -521,8 +539,17 @@ private:
 
         const auto& reads = readsOf(command_.outputFormat);
         const auto codec = codecStage(Grammar::output, reads.encode);
-        const auto taken = take(codec.stage, contextOf(command_.outputFormat, word), word);
+        const auto named = options_.outputNamed.empty() ? contextOf(command_.outputFormat, word)
+                                                        : std::string(options_.outputNamed);
+        const auto taken = take(codec.stage, named, word);
         if (!taken) return false;
+
+        for (const auto& one : *taken) {
+            if (one.option->name() == Grammar::outputEncoding.name()) {
+                command_.outputEncoding = *Stages::enumNamed<BodyEncoding>(one.value);
+            }
+            if (one.option->name() == Grammar::outputName.name()) command_.outputName = one.value;
+        }
 
         /**
          * the colour stored inside the output, which is not the same question as the
@@ -533,7 +560,7 @@ private:
             command_.outputColor = command_.steps.back().color;
         }
 
-        auto settings = settingsOf(*taken, reads.encode, contextOf(command_.outputFormat, word));
+        auto settings = settingsOf(*taken, reads.encode, named);
         if (!settings) return false;
         command_.outputSettings = *std::move(settings);
 
@@ -544,8 +571,118 @@ private:
 
 } // namespace
 
-Parsed parse(std::span<const Word> words) {
-    return Reader(words).run();
+namespace {
+
+using Sets = std::map<std::string, std::string, std::less<>>;
+
+constexpr std::string_view setPrefix = "option:";
+
+bool isNameChar(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+}
+
+std::string substituted(std::string_view text, const Sets& sets) {
+    std::string out;
+    for (size_t at = 0; at < text.size();) {
+        if (text[at] != '@') {
+            out += text[at++];
+            continue;
+        }
+
+        size_t end = at + 1;
+        while (end < text.size() && isNameChar(text[end])) end++;
+
+        const auto name = text.substr(at + 1, end - at - 1);
+        const auto found = name.empty() ? sets.end() : sets.find(name);
+        out += found == sets.end() ? std::string(text.substr(at, end - at)) : found->second;
+        at = end;
+    }
+    return out;
+}
+
+std::optional<Error> declare(Sets& sets, std::string_view written, std::string_view spelling) {
+    const auto refused = [&](std::string why) {
+        return Error{std::move(why), std::string(written)};
+    };
+
+    if (!written.starts_with(setPrefix)) {
+        return refused(std::string(spelling) + " takes option:name=value, and this one has no option: in front");
+    }
+
+    const auto rest = written.substr(setPrefix.size());
+    const auto equals = rest.find('=');
+    if (equals == std::string_view::npos) {
+        return refused(std::string(spelling) + " takes option:name=value, and this one has no value");
+    }
+
+    const auto name = rest.substr(0, equals);
+    if (name.empty() || !std::ranges::all_of(name, isNameChar)) {
+        return refused("a set names its variable in a to z and 0 to 9, and this one is " + Stages::quoted(std::string(name)));
+    }
+    if (sets.contains(name)) {
+        return refused("the variable " + Stages::quoted(std::string(name)) + " was already set, and a set is not written twice");
+    }
+
+    sets.emplace(name, rest.substr(equals + 1));
+    return std::nullopt;
+}
+
+}
+
+Expanded expand(std::span<const Word> words) {
+    Expanded out;
+    Sets sets;
+    bool preamble = true;
+
+    for (size_t at = 0; at < words.size(); at++) {
+        const auto& word = words[at];
+        if (word.kind != Word::Kind::Named || word.name != "set") {
+            preamble = false;
+            out.words.push_back(word);
+            continue;
+        }
+
+        if (!preamble) {
+            out.error = Error{"a set comes before everything else, and this one does not", word.text};
+            return out;
+        }
+
+        std::string_view written;
+        if (word.value) {
+            written = *word.value;
+        } else if (at + 1 < words.size()) {
+            written = words[++at].text;
+        } else {
+            out.error = Error{word.spelling + " takes option:name=value, and nothing came after it", word.text};
+            return out;
+        }
+
+        if (auto refusal = declare(sets, written, word.spelling)) {
+            out.error = *refusal;
+            return out;
+        }
+    }
+
+    if (sets.empty()) return out;
+
+    for (auto& word : out.words) {
+        if (word.kind == Word::Kind::Named) {
+            if (word.value) word.value = substituted(*word.value, sets);
+        } else {
+            word.text = substituted(word.text, sets);
+        }
+    }
+    return out;
+}
+
+Parsed parse(std::span<const Word> words, Options options) {
+    auto expanded = expand(words);
+    if (expanded.error) {
+        Parsed out;
+        out.error = expanded.error;
+        return out;
+    }
+    return Reader(expanded.words, options).run();
 }
 
 } // namespace Haio::Parser

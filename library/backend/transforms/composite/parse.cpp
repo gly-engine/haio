@@ -9,7 +9,7 @@ namespace {
 
 /** "+10", "-3": a sign, always written, and a whole number after it */
 std::optional<int> signedPart(std::string_view text, size_t& at) {
-    if (at >= text.size() || (text[at] != '+' && text[at] != '-')) return std::nullopt;
+    if (at >= text.size() || (text[at] != '+' && text[at] != '-' && text[at] != ' ')) return std::nullopt;
     const bool negative = text[at] == '-';
     const auto* first = text.data() + at + 1;
     int value = 0;

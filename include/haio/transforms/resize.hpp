@@ -51,9 +51,9 @@ inline constexpr Option resizeOptions[] = {
 inline constexpr Stage resize{
     .spellings = {"resize"},
     .rule = "resize",
-    .takes = "size",
+    .takes = "resize-geometry",
     .options = resizeOptions,
-    .help = "resize, to WxH or to a share such as 30% or 30pct",
+    .help = "resize, to fit WxH, to WxH! exactly, to 100x or x100 keeping its shape, or to a share such as 30pct",
 };
 
 template <> Built build<&resize>(std::string_view value, const Given& given);

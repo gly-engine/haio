@@ -1,7 +1,9 @@
 #pragma once
 
 #include "haio.hpp"
+#include "haio/parser.hpp"
 #include "haio_cache.hpp"
+#include "haio_platform.hpp"
 #include "haio_source.hpp"
 
 #include <chrono>
@@ -27,6 +29,68 @@
  */
 
 /**
+ * @defgroup cdn_query Query
+ * @ingroup cdn
+ * what to serve, written as a line rather than as a path.
+ *
+ * the path says only that this is the cdn. the query is the conversion, one word per
+ * "&", and the order they are written in is the order they happen:
+ *
+ * @code
+ * /cdn?assets:logo.png
+ * /cdn?assets:logo.png&resize=64x64&format=png
+ * /cdn?text:ola+mundo&format=png
+ * @endcode
+ *
+ * these are the same words Haio::Parser reads for the command line, so a request and
+ * a `haio convert` line are the same conversion by construction rather than by two
+ * parsers agreeing with each other. anything the one can say, the other can.
+ *
+ * ## Query Words
+ *
+ * | written           | is                                             |
+ * | ----------------- | ---------------------------------------------- |
+ * | `assets:logo.png` | a source: a bucket's name, then the path in it |
+ * | `text:oi`         | a source a brush paints, which reads nothing   |
+ * | `resize=64x64`    | a stage, or an option for the stage after it   |
+ * | `negate`          | a stage that takes no value                    |
+ * | `begin` … `end`   | a parenthesis, and `(` … `)` means the same    |
+ *
+ * a source always carries a bucket: there is no bucket that is assumed, so nothing is
+ * served by accident. where a word has both a ":" and an "=", whichever comes first
+ * decides what it is -- "text:a=b" is a brush painting "a=b", and
+ * "define=png:compression-level=9" is an option whose value has a colon in it.
+ *
+ * a "+" is a space, the way a form writes one, so "?text:ola+mundo" paints two words
+ * and "%20" says the same thing. the one value that spelled a plus on purpose is a
+ * geometry, and those read a space as the plus it came from: "?crop=4x4+2+1" is the
+ * rectangle a command line calls "4x4+2+1". a plus that has to stay one is "%2B".
+ *
+ * ## Query Order
+ *
+ * an option belongs to the stage written after it, exactly as "-filter bayer -palette
+ * cga" does on a command line. so "?size=8x8&xc:red" paints an eight by eight red,
+ * and "?xc:red&size=8x8" has nothing left to take the size and is refused.
+ *
+ * the order of the stages is the order of the work, which is why the query is read as
+ * words and not as a map: "crop then resize" and "resize then crop" are two different
+ * pictures, and a map would have thrown that away.
+ *
+ * ## Query Answer
+ *
+ * `format=` says what container to write; without it the answer keeps the one the
+ * first source arrived in, and a brush that arrived in none is written as png.
+ *
+ * `name=` says what the answer is called, in `content-disposition` and in whatever an
+ * encoding writes into the bytes; without it the first source's own name is used.
+ * `encoding=` says how the bytes are written, for a client that cannot take every one
+ * of them; see @ref Haio::BodyEncoding.
+ *
+ * asking for the format a file already is, with nothing else to do to it, hands back
+ * the stored bytes rather than a re-encode that merely has the same pixels.
+ */
+
+/**
  * @defgroup cdn_bucket Bucket
  * @ingroup cdn
  * where the bytes come from. the scheme of the url picks the reader, so there is no
@@ -48,8 +112,8 @@
  * inside an archive inside that one:
  *
  * @code
- * /cdn/assets/pack.zip/logo.png
- * /cdn/assets/foo.ipk/data.tar.gz/assets/icon80x80.png
+ * /cdn?assets:pack.zip/logo.png
+ * /cdn?assets:foo.ipk/data.tar.gz/assets/icon80x80.png
  * @endcode
  *
  * the first segment named like an archive (`.zip`, `.ipk`, `.deb`, `.tar`, `.tgz`,
@@ -183,13 +247,16 @@
  * max_requests_by_ip = 10        # per second, as a leaky bucket
  * allow_unzip = false            # whether a path may reach inside an archive
  * max_unzip = 64                 # in mb, one extracted file and the archives kept
+ * max_sources = 4                # how many files one request may ask for, zero is every
  * @endcode
  *
  * ## Security Defaults
  *
  * each has a default and the server starts without them. the two counted per address
  * default to no limit on purpose: a number picked blind shuts out an office behind
- * one NAT. either way the server says at startup which ones it chose for itself.
+ * one NAT, and max_sources does the same, since how many pictures one answer is made
+ * of is the deployment's business. either way the server says at startup which ones
+ * it chose for itself.
  *
  * ## Security Why
  *
@@ -202,6 +269,7 @@
  * | `max_requests_by_ip`      | a flood                                          |
  * | `allow_unzip`             | work on behalf of whoever wrote the file         |
  * | `max_unzip`               | a small archive that expands into a large one    |
+ * | `max_sources`             | one short url turning into many upstream fetches |
  *
  * over the cache quota the answer is still produced and still correct, it is simply
  * not stored: the limit is on eviction, not on access.
@@ -252,6 +320,8 @@ struct SecurityConfig {
      * take altogether. megabytes in the config.
      */
     size_t maxUnzip = 64u << 20;
+
+    size_t maxSources = 0;
 };
 
 struct Config {
@@ -273,37 +343,21 @@ struct Config {
 };
 
 /**
- * how the body is written on the wire, asked with "?encoding=", for clients that cannot
- * take every byte as it is.
- *
- * the ginga in some televisions hands a tcp read to lua as a c string, so everything
- * after a zero byte in each read is lost and a zcis with a black pixel never arrives
- * whole. cobs costs at most a byte in 254 whatever the picture holds, a black one
- * included; base64 and hex cost a third and double, for clients that need text.
- *
- * | encoding | the bytes                                                   |
- * |----------|-------------------------------------------------------------|
- * | `cobs`   | consistent overhead byte stuffing, with no delimiter after it |
- * | `base64` | rfc 4648, with padding                                      |
- * | `hex`    | two lowercase digits a byte                                 |
- *
- * in cobs every block starts with a code: the code minus one bytes follow it, and a
- * zero comes after them unless the code is 255 or the block is the last one.
- *
- * the response says which one it is in `x-encoding`. it is not content-encoding on
- * purpose: that header is for compression a client undoes on its own, and one that
- * met "base64" there would fail the response rather than hand the text over.
+ * the response says which Haio::BodyEncoding the body is in with `x-encoding`. it is
+ * not content-encoding on purpose: that header is for compression a client undoes on
+ * its own, and one that met "base64" there would fail the response rather than hand
+ * the text over.
  */
-enum class BodyEncoding { Identity, Cobs, Base64, Hex };
 
-/** the encoding a query names, or nothing for a name haio does not write */
-std::optional<BodyEncoding> bodyEncodingNamed(std::string_view name);
-std::string_view bodyEncodingName(BodyEncoding encoding);
-std::vector<uint8_t> encodeBody(const std::vector<uint8_t>& body, BodyEncoding encoding);
+/** the query as the words Haio::Parser reads, one per "&", in the order written */
+std::vector<Parser::Word> wordsOf(std::string_view query);
 
 Config parseConfig(std::string_view text);
 Config loadConfig(const std::filesystem::path& path);
 Task<Result<Blob>> fetchBucket(const Config& config, Source::Archives& archives, std::string bucket, std::string path);
+
+/** the cdn as one function, with the cache, the limiter and the archives made once behind it */
+Platform::HttpHandler makeHandler(Config config);
 
 /** listens until the platform's loop is stopped, and throws if it cannot listen at all */
 Task<void> runServer(Config config);

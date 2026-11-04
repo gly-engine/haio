@@ -41,17 +41,21 @@ Task<void> askFor(Cache& cache, std::string key, std::string client, Cache::Prod
 void testKeyNormalisation() {
     // the query spells a pipeline, so its order is meaning and not decoration: two
     // orders are two pictures and must never share an entry
-    check(cacheKey("b", "/a.png", "crop=1,1,2,2&resize=10") != cacheKey("b", "/a.png", "resize=10&crop=1,1,2,2"),
+    check(cacheKey("b:a.png&crop=1,1,2,2&resize=10") != cacheKey("b:a.png&resize=10&crop=1,1,2,2"),
           "query order changes the key, because it changes the result");
-    check(cacheKey("b", "/a.png", "w=10") == cacheKey("b", "/a.png", "w=10"),
+    check(cacheKey("b:a.png&resize=10") == cacheKey("b:a.png&resize=10"),
           "the same query gives the same key");
-    check(cacheKey("b", "/a.png", "w=10") != cacheKey("b", "/a.png", "w=11"),
+    check(cacheKey("b:a.png&resize=10") != cacheKey("b:a.png&resize=11"),
           "a different value is a different key");
-    check(cacheKey("b", "/a.png", "") != cacheKey("c", "/a.png", ""),
-          "the bucket is part of the key");
-    check(cacheKey("b", "/a.png", "") != cacheKey("b", "/b.png", ""),
-          "the path is part of the key");
-    check(cacheKey("b", "/a.png", "").size() == 32, "the key is an md5 in hex");
+    check(cacheKey("b:a.png") != cacheKey("c:a.png"), "the bucket is part of the key");
+    check(cacheKey("b:a.png") != cacheKey("b:b.png"), "the path is part of the key");
+
+    // the whole request is in the query now, so what is asked of the bytes counts too
+    check(cacheKey("b:a.png") != cacheKey("b:a.png&encoding=cobs"), "and so is the encoding");
+    check(cacheKey("b:a.png") != cacheKey("b:a.png&name=icone.png"),
+          "and the name, which an encoding may write into the bytes");
+
+    check(cacheKey("b:a.png").size() == 32, "the key is an md5 in hex");
 }
 
 /** an entry crosses a socket or a disk as bytes, and has to come back unchanged */
