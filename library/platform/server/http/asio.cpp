@@ -91,7 +91,7 @@ Haio::Task<void> session(tcp::socket socket, std::shared_ptr<const Haio::Platfor
     beast::flat_buffer buffer;
     try {
         for (;;) {
-            const auto req = co_await Haio::Platform::Desktop::await(readRequest(socket, buffer));
+            const auto req = co_await Haio::Platform::Asio::await(readRequest(socket, buffer));
             const bool close = req.need_eof();
             const bool headOnly = req.method() == http::verb::head;
 
@@ -102,7 +102,7 @@ Haio::Task<void> session(tcp::socket socket, std::shared_ptr<const Haio::Platfor
                 res.content_length(size);
             }
             res.keep_alive(!close);
-            co_await Haio::Platform::Desktop::await(writeResponse(socket, res));
+            co_await Haio::Platform::Asio::await(writeResponse(socket, res));
             if (close) break;
         }
     } catch (const boost::system::system_error& err) {
@@ -125,7 +125,7 @@ Haio::Task<void> session(tcp::socket socket, std::shared_ptr<const Haio::Platfor
 namespace Haio::Platform {
 
 Task<void> serveHttp(HttpServerOptions options, HttpHandler handler) {
-    auto acceptor = co_await Desktop::await(bind(options.host, options.port));
+    auto acceptor = co_await Asio::await(bind(options.host, options.port));
     if (options.ready) options.ready();
 
     // shared by every session rather than copied into each one
@@ -133,7 +133,7 @@ Task<void> serveHttp(HttpServerOptions options, HttpHandler handler) {
     const auto sharedHandler = std::make_shared<const HttpHandler>(std::move(handler));
 
     for (;;) {
-        auto socket = co_await Desktop::await(accept(acceptor));
+        auto socket = co_await Asio::await(accept(acceptor));
         spawn(session(std::move(socket), sharedOptions, sharedHandler));
     }
 }

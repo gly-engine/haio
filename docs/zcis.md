@@ -122,11 +122,34 @@ The same split holds for a future interlaced `4:2:0` payload: each layer keeps `
 both halves stay decodable on their own and together they restore the original chroma plane
 untouched. That needs `height` to be a multiple of 4.
 
+### What `haio convert a.png b.png -pack zcis out.zcis` emits today
+
+The pictures are laid out on one canvas and that canvas is written exactly as a single
+one is, so the two layers and their progressive split are unchanged. What differs is the
+index, which gains a line per picture saying where to cut it back out:
+
+| member | content |
+| :--- | :--- |
+| `0000000000.txt` | `0 0 32 32\r\n32 0 32 32\r\n` — one line per picture, in the order given |
+| `1A0000WWHH.ppm` | the whole canvas, rows 2, 4, 6… |
+| `2C0000WWHH.ppm` | the whole canvas, rows 1, 3, 5… |
+
+The grid unit is the smallest picture, each side rounded up on its own to a multiple of
+eight; a bigger picture spans as many cells as it needs. They are placed tallest first,
+filling a row until it runs out of width and starting another underneath. What is left
+between them stays transparent, so a cut never picks up its neighbour.
+
+Packing is offered only by a container that can say where each picture is, which today
+is zcis alone: `-pack png` is refused rather than silently dropping the index.
+
 ### Open items
 
 - **Commands `b`, `d` and `e` are not emitted**, so there is no erase masking and no
   vertical or stippled refinement yet. Only `A` and `C` are emitted.
-- **`POSX` and `POSY` are always zero** — no tiling, one image per container.
+- **`POSX` and `POSY` are always zero.** Packing puts several pictures in one container
+  through the index rather than through the chunks, so every chunk still covers the
+  whole canvas. Per-picture chunks, which is what those two fields are for, would make
+  the stream arrive a picture at a time instead of all of them at once.
 - **No decoder.** Nothing in this repository reads a `.zcis` back; `haio convert x.zcis y.png`
   fails with `unsupported decode format: zcis`.
 - The `POSY` row of the filename table is labelled `HH` instead of `YY`.

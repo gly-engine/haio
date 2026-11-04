@@ -46,7 +46,7 @@ asio::awaitable<boost::system::error_code> exec(redis::connection& connection, c
 class RedisStore final : public Haio::Cdn::CacheStore {
 public:
     RedisStore(const std::string& url, std::chrono::seconds ttl, size_t maxUsage)
-        : ttl_(ttl), maxUsage_(maxUsage), connection_(std::make_shared<redis::connection>(Haio::Platform::Desktop::io().get_executor())) {
+        : ttl_(ttl), maxUsage_(maxUsage), connection_(std::make_shared<redis::connection>(Haio::Platform::Asio::io().get_executor())) {
         const auto parsed = Haio::Url::parse(url);
         if (!parsed || parsed->scheme.empty()) throw std::runtime_error("redis cache url is not a url: " + url);
 
@@ -76,7 +76,7 @@ public:
         request.push("ZADD", index(), std::to_string(stamp()), key);
 
         redis::response<std::optional<std::string>, redis::ignore_t, redis::ignore_t> reply;
-        const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, request, reply));
+        const auto error = co_await Haio::Platform::Asio::await(exec(*connection_, request, reply));
         if (error) {
             warnOnce(error.message());
             co_return std::nullopt;
@@ -103,7 +103,7 @@ public:
 
         redis::response<redis::ignore_t, redis::ignore_t, redis::ignore_t,
                         redis::ignore_t, redis::ignore_t> reply;
-        const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, request, reply));
+        const auto error = co_await Haio::Platform::Asio::await(exec(*connection_, request, reply));
         if (error) {
             warnOnce(error.message());
             co_return;
@@ -149,7 +149,7 @@ private:
         listing.push("ZRANGE", index(), "0", "-1");
 
         redis::response<std::vector<std::string>> listed;
-        if (const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, listing, listed)); error) {
+        if (const auto error = co_await Haio::Platform::Asio::await(exec(*connection_, listing, listed)); error) {
             warnOnce(error.message());
             co_return;
         }
@@ -162,7 +162,7 @@ private:
         for (const auto& key : keys) measuring.push("EXISTS", prefixed(key));
 
         redis::generic_response present;
-        if (const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, measuring, present)); error) {
+        if (const auto error = co_await Haio::Platform::Asio::await(exec(*connection_, measuring, present)); error) {
             warnOnce(error.message());
             co_return;
         }
@@ -171,7 +171,7 @@ private:
         for (const auto& key : keys) weighing.push("HGET", sizes(), key);
 
         redis::generic_response weights;
-        if (const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, weighing, weights)); error) {
+        if (const auto error = co_await Haio::Platform::Asio::await(exec(*connection_, weighing, weights)); error) {
             warnOnce(error.message());
             co_return;
         }
@@ -215,7 +215,7 @@ private:
         if (!dropped) co_return;
 
         redis::generic_response ignored;
-        if (const auto error = co_await Haio::Platform::Desktop::await(exec(*connection_, dropping, ignored)); error) {
+        if (const auto error = co_await Haio::Platform::Asio::await(exec(*connection_, dropping, ignored)); error) {
             warnOnce(error.message());
         }
         co_return;

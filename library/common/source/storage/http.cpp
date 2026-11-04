@@ -55,13 +55,13 @@ Haio::Result<Haio::Url> parseOpen(std::string_view scheme, std::string_view rest
  */
 Haio::Result<Haio::Url> openTarget(const Haio::Source::Origin& origin, std::string_view path) {
     if (!origin.scheme.empty()) {
-        if (path.empty()) HAIO_FAIL(InvalidInput, "open bucket expects /cdn/" + origin.name + "/<host>/<path>");
+        if (path.empty()) HAIO_FAIL(InvalidInput, "open bucket expects " + origin.name + ":<host>/<path>");
         return parseOpen(origin.scheme, path);
     }
 
     const auto slash = path.find('/');
     if (slash == std::string_view::npos) {
-        HAIO_FAIL(InvalidInput, "open bucket expects /cdn/" + origin.name + "/<scheme>/<host>/<path>");
+        HAIO_FAIL(InvalidInput, "open bucket expects " + origin.name + ":<scheme>/<host>/<path>");
     }
 
     const auto scheme = path.substr(0, slash);

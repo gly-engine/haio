@@ -167,6 +167,25 @@ struct Blob {
 };
 
 /**
+ * how the bytes travel once the picture is encoded, for a client that cannot take
+ * every one of them. the ginga in some televisions hands a tcp read to lua as a c
+ * string, so everything after a zero byte is lost and a zcis with a black pixel never
+ * arrives whole.
+ *
+ * | encoding | the bytes                                                     |
+ * |----------|---------------------------------------------------------------|
+ * | `cobs`   | consistent overhead byte stuffing, with no delimiter after it |
+ * | `base64` | rfc 4648, with padding                                        |
+ * | `hex`    | two lowercase digits a byte                                   |
+ *
+ * the names the line accepts are the enumerators, lowered.
+ */
+enum class BodyEncoding { Identity, Cobs, Base64, Hex };
+
+/** the body as that encoding writes it; Identity hands the same bytes back */
+std::vector<uint8_t> encodeBody(const std::vector<uint8_t>& body, BodyEncoding encoding);
+
+/**
  * the verbs. they live apart from the vocabulary above because the runtime facade in
  * haio_registry.hpp offers Decode(const Blob&) and Detect(Bytes) with the very same
  * parameter lists: without a namespace between them, Decode(blob) and
@@ -198,6 +217,14 @@ template <Format F, Color P>                          Result<Blob>     Encode(Im
  */
 template <Format F, Color P> Result<Image<P>> Decode(const Blob&, const Settings&) = delete;
 template <Format F, Color P> Result<Blob>     Encode(Image<P>, const Settings&)    = delete;
+
+/**
+ * the way in for a container that keeps what a picture knows about itself besides
+ * its pixels, as zcis keeps the cuts in its index. one that defines it may still
+ * define the plain form too, for a picture that knows nothing; this one wins when
+ * both are there.
+ */
+template <Format F, Color P> Result<Blob> Encode(Image<P>, const Metadata&) = delete;
 
 /**
  * a picture painted out of nothing by a Brush, in the colour it is painted in: the
@@ -288,7 +315,8 @@ template <Format F, Color P> concept Decodable  = DecodesPlain<F, P> || DecodesS
  */
 template <Format F, Color P> concept EncodesPlain    = requires (Image<P> i) { { Encode<F, P>(std::move(i)) } -> std::same_as<Result<Blob>>; };
 template <Format F, Color P> concept EncodesSettings = requires (Image<P> i, const Settings& s) { { Encode<F, P>(std::move(i), s) } -> std::same_as<Result<Blob>>; };
-template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P>;
+template <Format F, Color P> concept EncodesMetadata = requires (Image<P> i, const Metadata& m) { { Encode<F, P>(std::move(i), m) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P> || EncodesMetadata<F, P>;
 /**
  * @ingroup generate
  * can this brush paint in this colour, asked of the pair rather than answered by hand.
@@ -321,8 +349,9 @@ Result<Image<P>> decode(const Blob& blob, const Settings& settings) {
 
 template <Format F, Color P>
     requires Encodable<F, P>
-Result<Blob> encode(Image<P> image, const Settings& settings) {
-    if constexpr (EncodesSettings<F, P>) return Encode<F, P>(std::move(image), settings);
+Result<Blob> encode(Image<P> image, const Settings& settings, const Metadata& meta = {}) {
+    if constexpr (EncodesMetadata<F, P>) return Encode<F, P>(std::move(image), meta);
+    else if constexpr (EncodesSettings<F, P>) return Encode<F, P>(std::move(image), settings);
     else return Encode<F, P>(std::move(image));
 }
 

@@ -25,6 +25,10 @@ std::expected<Pipeline, Error> build(const Parsed& parsed) {
         pipeline |= token;
     }
     pipeline |= Tokens::Encode(parsed.outputFormat, parsed.outputColor, parsed.outputSettings);
+
+    if (parsed.outputEncoding != BodyEncoding::Identity || !parsed.outputName.empty()) {
+        pipeline |= Tokens::Deliver(parsed.outputEncoding, parsed.outputName);
+    }
     return pipeline;
 }
 

@@ -1,24 +1,6 @@
-#include <haio_cdn.hpp>
+#include <haio_codec.hpp>
 
-namespace Haio::Cdn {
-
-std::optional<BodyEncoding> bodyEncodingNamed(std::string_view name) {
-    if (name.empty() || name == "identity") return BodyEncoding::Identity;
-    if (name == "cobs") return BodyEncoding::Cobs;
-    if (name == "base64") return BodyEncoding::Base64;
-    if (name == "hex") return BodyEncoding::Hex;
-    return std::nullopt;
-}
-
-std::string_view bodyEncodingName(BodyEncoding encoding) {
-    switch (encoding) {
-        case BodyEncoding::Identity: return "identity";
-        case BodyEncoding::Cobs: return "cobs";
-        case BodyEncoding::Base64: return "base64";
-        case BodyEncoding::Hex: return "hex";
-    }
-    return "identity";
-}
+namespace Haio {
 
 namespace {
 

@@ -57,6 +57,11 @@ enum class Format {
      * @ext zcis
      */
     ZCIS,
+    /**
+     * @mime image/webp
+     * @ext webp
+     */
+    WEBP,
 
     /**
      * not files but pictures drawn with escape codes, for looking at one without

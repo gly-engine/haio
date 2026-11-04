@@ -13,13 +13,13 @@
 
 /**
  * the seam between asio and everything above it, and the only header that knows
- * both. nothing outside library/platform/desktop includes it.
+ * both. nothing outside the asio files under library/platform includes it.
  *
  * the code in here is written the way asio likes, as asio::awaitable, and crosses
  * into a Task at the edge with await(). the other direction is never needed: a Task
  * that has to wait for asio awaits, and asio never waits for a Task.
  */
-namespace Haio::Platform::Desktop {
+namespace Haio::Platform::Asio {
 
 /** the one loop, on the one thread that runs it */
 boost::asio::io_context& io();

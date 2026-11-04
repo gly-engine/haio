@@ -1,0 +1,13 @@
+services:
+  haio:
+    image: haio:prod
+    container_name: haio
+    restart: unless-stopped
+    working_dir: /workspace
+    command: ["cdn", "/etc/haio/haio-cdn.toml"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker/haio-cdn.prod.toml:/etc/haio/haio-cdn.toml:ro
+      - ./assets:/srv/haio/assets:ro
+      - ./var/haio-cache:/var/lib/haio/cache

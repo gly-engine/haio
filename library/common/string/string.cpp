@@ -27,6 +27,11 @@ bool parseInt(std::string_view value, int& out) {
     return ec == std::errc{} && ptr == end;
 }
 
+bool parseSigned(std::string_view value, int& out) {
+    if (!value.empty() && value.front() == ' ') value.remove_prefix(1);
+    return parseInt(value, out);
+}
+
 }
 
 namespace Haio::String {
@@ -100,8 +105,10 @@ bool tryGetCropGeometry(std::string_view value, Rect& out) {
     if (!parseInt(value.substr(0, sep), width)) return false;
     if (width <= 0) return false;
 
+    constexpr std::string_view signs = "+- ";
+
     auto rest = value.substr(sep + 1);
-    const auto offset = rest.find_first_of("+-");
+    const auto offset = rest.find_first_of(signs);
     if (!parseInt(rest.substr(0, offset), height)) return false;
     if (height <= 0) return false;
 
@@ -112,12 +119,12 @@ bool tryGetCropGeometry(std::string_view value, Rect& out) {
     }
 
     rest.remove_prefix(offset);
-    const auto second = rest.substr(1).find_first_of("+-");
+    const auto second = rest.substr(1).find_first_of(signs);
     if (second == std::string_view::npos) return false;
 
     const auto x = rest.substr(0, second + 1);
     const auto y = rest.substr(second + 1);
-    if (!parseInt(x, rect.x) || !parseInt(y, rect.y)) return false;
+    if (!parseSigned(x, rect.x) || !parseSigned(y, rect.y)) return false;
 
     out = rect;
     return true;
