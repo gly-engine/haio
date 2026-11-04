@@ -276,7 +276,7 @@ Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config&
     const auto parsed = Haio::Parser::parse(words, {.bucketPrefix = true, .outputNamed = "the answer"});
     if (parsed.error) co_return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, parsed.error.message});
 
-    if (parsed.inputs.size() > config.security.maxSources) {
+    if (config.security.maxSources != 0 && parsed.inputs.size() > config.security.maxSources) {
         co_return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput,
                                               "a request may name " + std::to_string(config.security.maxSources)
                                                   + " sources and this one names " + std::to_string(parsed.inputs.size())});
@@ -434,8 +434,8 @@ void warnAboutDefaults(const Haio::Cdn::Config& config, bool cacheEnabled) {
                   << config.security.maxSizePercent << " percent by default\n";
     }
     if (missing("security.max_sources")) {
-        std::cerr << "warning: security.max_sources is not set, so one request may ask the server to fetch "
-                  << config.security.maxSources << " files by default\n";
+        std::cerr << "warning: security.max_sources is not set, so one request may ask the server "
+                     "to fetch as many files as it names\n";
     }
     if (missing("security.max_requests_by_ip")) {
         // no default: a number picked blind would shut out a whole office behind one

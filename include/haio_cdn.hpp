@@ -247,14 +247,16 @@
  * max_requests_by_ip = 10        # per second, as a leaky bucket
  * allow_unzip = false            # whether a path may reach inside an archive
  * max_unzip = 64                 # in mb, one extracted file and the archives kept
- * max_sources = 4                # how many files one request may ask the server to fetch
+ * max_sources = 4                # how many files one request may ask for, zero is every
  * @endcode
  *
  * ## Security Defaults
  *
  * each has a default and the server starts without them. the two counted per address
  * default to no limit on purpose: a number picked blind shuts out an office behind
- * one NAT. either way the server says at startup which ones it chose for itself.
+ * one NAT, and max_sources does the same, since how many pictures one answer is made
+ * of is the deployment's business. either way the server says at startup which ones
+ * it chose for itself.
  *
  * ## Security Why
  *
@@ -319,8 +321,7 @@ struct SecurityConfig {
      */
     size_t maxUnzip = 64u << 20;
 
-    /** how many sources one request may name, and so how many fetches it may cost */
-    size_t maxSources = 4;
+    size_t maxSources = 0;
 };
 
 struct Config {
