@@ -31,6 +31,8 @@ struct Picture {
      */
     std::optional<Image<Color::PALETTE>> indexed;
 
+    Metadata meta;
+
     /** what every transform starts with: the picture in rgba8888, from here on for good */
     std::optional<Error> rgba() {
         if (!native) return std::nullopt;
@@ -48,6 +50,48 @@ struct Picture {
     }
 };
 
+Size sizeOf(const Picture& picture) {
+    return picture.native ? Size{picture.native->width, picture.native->height}
+                          : Size{picture.image.width, picture.image.height};
+}
+
+/**
+ * the cuts moved by an offset and trimmed to a canvas this big. one that ends up
+ * wholly outside it is dropped, since there is nothing left there to cut out.
+ */
+std::vector<Cut> movedCuts(std::vector<Cut> cuts, int dx, int dy, Size canvas) {
+    std::vector<Cut> kept;
+    kept.reserve(cuts.size());
+    for (auto& cut : cuts) {
+        const auto left = std::max(cut.rect.x + dx, 0);
+        const auto top = std::max(cut.rect.y + dy, 0);
+        const auto right = std::min(cut.rect.x + dx + cut.rect.width, canvas.width);
+        const auto bottom = std::min(cut.rect.y + dy + cut.rect.height, canvas.height);
+        if (right <= left || bottom <= top) continue;
+        kept.push_back(Cut{Rect{left, top, right - left, bottom - top}, std::move(cut.name)});
+    }
+    return kept;
+}
+
+/**
+ * the cuts stretched the way the picture under them was. both edges are scaled, not
+ * the corner and the size, so two cuts that touched still touch afterwards, and one
+ * shrunk below a pixel keeps the pixel it starts on rather than vanishing.
+ */
+std::vector<Cut> scaledCuts(std::vector<Cut> cuts, Size from, Size to) {
+    const auto scale = [](int at, int wanted, int was) {
+        return static_cast<int>(static_cast<int64_t>(at) * wanted / was);
+    };
+    for (auto& cut : cuts) {
+        const auto left = scale(cut.rect.x, to.width, from.width);
+        const auto top = scale(cut.rect.y, to.height, from.height);
+        const auto right = scale(cut.rect.x + cut.rect.width, to.width, from.width);
+        const auto bottom = scale(cut.rect.y + cut.rect.height, to.height, from.height);
+        cut.rect = Rect{left, top, std::max(right - left, 1), std::max(bottom - top, 1)};
+    }
+    return movedCuts(std::move(cuts), 0, 0, to);
+}
+
 /** a transform's answer, kept where it goes or handed back as the failure */
 template <typename I>
 std::optional<Error> keep(I& into, Result<I> result) {
@@ -61,6 +105,7 @@ std::optional<Error> crop(Picture& picture, const Token& token) {
     if (auto failed = keep(picture.image, Transforms::Crop<Color::RGBA8888>(std::move(picture.image), token.rect))) {
         return failed;
     }
+    picture.meta.cuts = movedCuts(std::move(picture.meta.cuts), -token.rect.x, -token.rect.y, sizeOf(picture));
     // the same rectangle of the indices too, wherever the build has one for them
     if constexpr (Transforms::Croppable<Color::PALETTE>) {
         if (picture.indexed) return keep(*picture.indexed, Transforms::Crop<Color::PALETTE>(*std::move(picture.indexed), token.rect));
@@ -80,9 +125,11 @@ std::optional<Error> resize(Picture& picture, const Token& token) {
         wanted = Size{std::max(1, picture.image.width * token.percent / 100),
                       std::max(1, picture.image.height * token.percent / 100)};
     }
+    const auto before = sizeOf(picture);
     if (auto failed = keep(picture.image, Transforms::Resize<Color::RGBA8888>(std::move(picture.image), wanted, token.filter))) {
         return failed;
     }
+    picture.meta.cuts = scaledCuts(std::move(picture.meta.cuts), before, sizeOf(picture));
     // indices cannot be mixed, so only a point resize keeps them in step
     if constexpr (Transforms::Resizable<Color::PALETTE>) {
         if (picture.indexed && token.filter == ResizeFilter::Point) {
@@ -172,11 +219,6 @@ std::optional<Error> pixFmt(Picture& picture, const Token& token) {
     return std::nullopt;
 }
 
-Size sizeOf(const Picture& picture) {
-    return picture.native ? Size{picture.native->width, picture.native->height}
-                          : Size{picture.image.width, picture.image.height};
-}
-
 /** a blend declared for the two colours as they are, so tint sees a grey as a grey */
 std::optional<Result<Image<Color::RGBA8888>>> blendAsTheyAre(Compose compose, Picture& base, Picture& layer, int x, int y) {
     const auto colourOf = [](const Picture& picture) { return picture.native ? picture.native->color : Color::RGBA8888; };
@@ -209,10 +251,21 @@ std::optional<Result<Image<Color::RGBA8888>>> blendAsTheyAre(Compose compose, Pi
     return out;
 }
 
-/** the layer over the base; the result is full colour, so the indices of a palette go */
+/**
+ * the layer over the base; the result is full colour, so the indices of a palette go.
+ *
+ * the base keeps its size, so it keeps its cuts, and the layer's join them moved to
+ * where the layer landed: an atlas stays an atlas whichever side of the composite it
+ * was on. the name is the base's, or the layer's when the base is a canvas painted
+ * only to be drawn on.
+ */
 std::optional<Error> composite(Picture& base, Picture layer, Compose compose, Gravity gravity, int x, int y) {
     base.indexed.reset();
     const auto [left, top] = placeOf(sizeOf(base), sizeOf(layer), gravity, x, y);
+
+    auto laid = movedCuts(std::move(layer.meta.cuts), left, top, sizeOf(base));
+    base.meta.cuts.insert(base.meta.cuts.end(), std::make_move_iterator(laid.begin()), std::make_move_iterator(laid.end()));
+    if (!base.meta.name) base.meta.name = std::move(layer.meta.name);
     if (auto blended = blendAsTheyAre(compose, base, layer, left, top)) return keep(base.image, *std::move(blended));
     // the base's colour picks the blend, so a layer in any other colour is widened to the rgba8888 they take
     if (layer.native && layer.native->color != Color::RGBA8888) {
@@ -249,7 +302,6 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
     /** where each open parenthesis begins on the stack; the first is the line itself */
     std::vector<size_t> scopes{0};
     size_t nextInput = 0;
-    const std::string path = inputs.empty() ? std::string{} : inputs.front().path;
 
     Format outputFormat = Format::RAW;
     std::optional<Color> outputColor;
@@ -265,6 +317,7 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
         auto decoded = DecodeNative(input, settings);
         if (!decoded) return decoded.error();
         stack.push_back(Picture{*std::move(decoded), {}, std::nullopt});
+        if (!input.path.empty()) stack.back().meta.name = input.path;
 
         // the file has become pixels and nothing reads it again, so it goes now
         // rather than sitting beside every buffer the rest of the pipeline allocates
@@ -353,7 +406,9 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
                     stack.pop_back();
                     auto first = std::move(stack.back());
                     stack.pop_back();
+                    // a copy of the destination, so its cuts would otherwise come back twice
                     auto negative = stack.back();
+                    negative.meta.cuts.clear();
                     failure = negate(negative, token);
                     if (!failure) failure = composite(negative, std::move(second), Compose::Tint, Gravity::NorthWest, 0, 0);
                     if (!failure) failure = composite(stack.back(), std::move(first), Compose::Tint, Gravity::NorthWest, 0, 0);
@@ -437,7 +492,8 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
 
         auto packed = Pack(std::move(images), outputPack);
         if (!packed) return std::unexpected(packed.error());
-        packed->path = path;
+        const auto named = std::ranges::find_if(stack, [](const Picture& picture) { return picture.meta.name.has_value(); });
+        if (named != stack.end()) packed->path = *named->meta.name;
         return finish(*std::move(packed));
     }
 
@@ -459,7 +515,8 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
         auto pixels = Convert(picture.current(), to);
         if (!pixels) return std::unexpected(pixels.error());
 
-        return finish(Blob{Format::RAW, to, std::string(contentTypeFor(Format::RAW)), path, std::move(pixels->data),
+        return finish(Blob{Format::RAW, to, std::string(contentTypeFor(Format::RAW)),
+                           picture.meta.name.value_or(std::string{}), std::move(pixels->data),
                            Size{pixels->width, pixels->height}});
     }
 
@@ -481,7 +538,7 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
     auto encoded = asIndices ? Encode(*std::move(picture.indexed), outputFormat, encodeSettings)
                              : Encode(picture.current(), outputFormat, outputColor, encodeSettings);
     if (!encoded) return encoded;
-    encoded->path = path;
+    encoded->path = picture.meta.name.value_or(std::string{});
     return finish(*std::move(encoded));
 }
 
