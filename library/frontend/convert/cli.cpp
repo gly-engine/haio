@@ -218,15 +218,29 @@ std::vector<std::string> filesMatching(const std::string& pattern) {
     return out;
 }
 
+/**
+ * a line of text about a picture instead of the picture, for print:, which is how
+ * "'*.png' print:'%t\t%G\n'" lists every file and its size for sort or awk.
+ */
+int print(const std::string& format, const Written& written, size_t index, size_t count) {
+    const auto text = expandEscapes(format, written, index, count);
+    if (!text) {
+        printError(text.error().message);
+        return 1;
+    }
+    std::cout << *text << std::flush;
+    return 0;
+}
+
 /** the output, written once, with its escapes filled in from the one picture when it has any */
-int once(Command& command) {
+int once(Command& command, const std::optional<std::string>& printing) {
     // every source read before anything runs, so a missing file stops the line
     // before a single picture is decoded
     std::vector<Blob> inputs;
     for (auto& input : command.inputs) inputs.push_back(readInputBlob(input));
     const auto pipeline = buildPipeline(command);
 
-    if (command.outputIsStdout || !hasEscapes(command.outputPath)) {
+    if (!printing && (command.outputIsStdout || !hasEscapes(command.outputPath))) {
         const auto output = runPipeline(std::move(inputs), pipeline);
         if (!output) {
             printError(output.error().message);
@@ -241,6 +255,8 @@ int once(Command& command) {
         printError(written.error().message);
         return 1;
     }
+    if (printing) return print(*printing, *written, 0, 1);
+
     const auto named = expandEscapes(command.outputPath, *written, 0, 1);
     if (!named) {
         printError(named.error().message);
@@ -257,7 +273,7 @@ int once(Command& command) {
  * fetched once. a file that fails stops the ones after it, and two that would land
  * on the same name stop the second before it overwrites the first.
  */
-int eachFile(Command& command, size_t pattern) {
+int eachFile(Command& command, size_t pattern, const std::optional<std::string>& printing) {
     const auto files = filesMatching(command.inputs[pattern].path);
     const auto pipeline = buildPipeline(command);
 
@@ -277,6 +293,10 @@ int eachFile(Command& command, size_t pattern) {
         if (!written) {
             printError(Stages::quoted(files[file]) + ": " + written.error().message);
             return 1;
+        }
+        if (printing) {
+            if (print(*printing, *written, file, files.size()) != 0) return 1;
+            continue;
         }
         auto named = expandEscapes(command.outputPath, *written, file, files.size());
         if (!named) {
@@ -301,7 +321,18 @@ int runCli(int argc, char* argv[]) {
         return 1;
     }
 
-    auto command = parseArgs(argc, argv);
+    /**
+     * print: is not a container but a line of text about every picture, so the line
+     * is read as if it wrote the bare pixels to stdout, and those go unwritten.
+     */
+    std::vector<std::string> args(argv, argv + argc);
+    std::optional<std::string> printing;
+    if (args.back().starts_with("print:")) {
+        printing = unescapeText(std::string_view{args.back()}.substr(6));
+        args.back() = "raw:-";
+    }
+
+    auto command = Parser::parse(wordsOf(args));
     if (command.error) {
         printError(command.error.message);
         // the shell already spread an unquoted pattern into several sources
@@ -318,14 +349,14 @@ int runCli(int argc, char* argv[]) {
             printError("only one source may be a pattern");
             return 1;
         }
-        if (patterns.empty()) return once(command);
+        if (patterns.empty()) return once(command, printing);
 
         // every file is a run of its own, so one name for all of them would only keep the last
-        if (command.outputIsStdout || !namesEach(command.outputPath)) {
+        if (!printing && (command.outputIsStdout || !namesEach(command.outputPath))) {
             printError("a pattern runs the line once for each file, so the output has to be named after each, as %t.png");
             return 1;
         }
-        return eachFile(command, patterns.front());
+        return eachFile(command, patterns.front(), printing);
     } catch (const std::exception& err) {
         printError(err.what());
         return 1;

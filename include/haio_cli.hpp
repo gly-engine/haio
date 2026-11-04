@@ -48,6 +48,9 @@ Pipeline buildPipeline(const Command& command);
  * expanded by haio and the whole line runs once per file, so its output has to be
  * named after each, as %t.jpeg. unquoted, the shell spreads the files into the stack
  * of one run instead. only the command line does either; the cdn reads neither.
+ *
+ * print:'%t\t%G\n' as the output writes no picture: it prints the format, escapes
+ * filled in, for every picture, so "'*.png' print:'%t %wx%h\n'" lists them.
  * @{
  */
 bool hasEscapes(std::string_view name);
@@ -56,6 +59,8 @@ bool hasEscapes(std::string_view name);
 bool namesEach(std::string_view name);
 
 Result<std::string> expandEscapes(std::string_view name, const Written& picture, size_t index, size_t count);
+
+std::string unescapeText(std::string_view text);
 /** @} */
 
 int runCli(int argc, char* argv[]);

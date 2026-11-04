@@ -51,7 +51,7 @@ constexpr std::array<std::string_view, 5> perPicture{"basename", "filename", "in
 template <typename Visit>
 std::optional<Error> walk(std::string_view name, Visit&& visit) {
     const auto refused = [&](std::string_view why) {
-        return Error{ErrorCode::InvalidInput, std::string(why) + " in the output name " + Stages::quoted(std::string(name))};
+        return Error{ErrorCode::InvalidInput, std::string(why) + " in " + Stages::quoted(std::string(name))};
     };
 
     std::string literal;
@@ -101,6 +101,24 @@ std::optional<Error> walk(std::string_view name, Visit&& visit) {
     return std::nullopt;
 }
 
+}
+
+std::string unescapeText(std::string_view text) {
+    std::string out;
+    for (size_t at = 0; at < text.size(); at++) {
+        if (text[at] != '\\' || at + 1 == text.size()) {
+            out.push_back(text[at]);
+            continue;
+        }
+        switch (text[++at]) {
+            case 'n': out.push_back('\n'); break;
+            case 't': out.push_back('\t'); break;
+            case 'r': out.push_back('\r'); break;
+            case '\\': out.push_back('\\'); break;
+            default: out.push_back('\\'); out.push_back(text[at]); break;
+        }
+    }
+    return out;
 }
 
 bool hasEscapes(std::string_view name) {
