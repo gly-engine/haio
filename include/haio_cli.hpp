@@ -41,7 +41,8 @@ Pipeline buildPipeline(const Command& command);
  * %[directory] its folder, %i or %M the source as written, %w and %h the size it is
  * written at, %G the size it was read at, %m what it was read as, %B how many bytes
  * it was, %A whether it has an alpha, %n how many pictures there are, and %p, %s or
- * %d its place among them, %03d padded. %% is a percent sign.
+ * %d its place among them. %% is a percent sign. every escape takes printf's shape:
+ * %-10t, %10B, %010B for a number, %.3t.
  *
  * a source quoted so the shell leaves its pattern alone, as '*.png', or '**.png' for
  * every folder below, is

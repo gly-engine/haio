@@ -12,11 +12,17 @@ namespace Haio::Cli {
 namespace {
 
 /** an escape by its long name, which is what every spelling of it comes down to */
+/** an escape by its long name, shaped the way printf shapes a field: %-10t, %010B, %.3t */
 struct Escape {
     std::string_view name;
     int width = 0;
     bool zeros = false;
+    bool left = false;
+    std::optional<int> precision;
 };
+
+/** the escapes that are numbers, the only ones a zero may pad */
+constexpr std::array<std::string_view, 6> numbers{"index", "scene", "count", "width", "height", "bytes"};
 
 /** imagemagick's single letters, each the long name it stands for */
 constexpr std::array<std::pair<char, std::string_view>, 14> letters{{
@@ -69,31 +75,37 @@ std::optional<Error> walk(std::string_view name, Visit&& visit) {
         visit(std::string_view{literal}, std::optional<Escape>{});
         literal.clear();
 
+        Escape escape;
+        const auto number = [&] {
+            int value = 0;
+            while (at < name.size() && std::isdigit(static_cast<unsigned char>(name[at]))) value = value * 10 + (name[at++] - '0');
+            return value;
+        };
+        for (; at < name.size() && (name[at] == '-' || name[at] == '0'); at++) (name[at] == '-' ? escape.left : escape.zeros) = true;
+        escape.width = number();
+        if (at < name.size() && name[at] == '.') {
+            at++;
+            escape.precision = number();
+        }
+        if (at >= name.size()) return refused("a % with nothing after it");
+
         if (name[at] == '[') {
             const auto close = name.find(']', at);
             if (close == std::string_view::npos) return refused("a %[ that is never closed");
             const auto inside = name.substr(at + 1, close - at - 1);
             const auto known = std::ranges::find(longNames, inside);
             if (known == longNames.end()) return refused("an unknown escape %[" + std::string(inside) + "]");
-            visit(std::string_view{}, std::optional<Escape>{Escape{*known}});
+            escape.name = *known;
             at = close;
-            continue;
-        }
-
-        Escape escape;
-        escape.zeros = name[at] == '0';
-        while (at < name.size() && std::isdigit(static_cast<unsigned char>(name[at]))) {
-            escape.width = escape.width * 10 + (name[at++] - '0');
-        }
-        if (at >= name.size()) return refused("a % with nothing after it");
-        if (name[at] == 'd') {
+        } else if (name[at] == 'd') {
             escape.name = "index";
-        } else if (escape.width != 0 || escape.zeros) {
-            return refused("a width on %" + std::string(1, name[at]) + ", which only %d takes");
         } else {
             const auto letter = std::ranges::find(letters, name[at], &std::pair<char, std::string_view>::first);
             if (letter == letters.end()) return refused("an unknown escape %" + std::string(1, name[at]));
             escape.name = letter->second;
+        }
+        if (escape.zeros && !escape.left && !std::ranges::contains(numbers, escape.name)) {
+            return refused("a zero pad on %" + std::string(escape.name) + ", which is not a number");
         }
         visit(std::string_view{}, std::optional<Escape>{escape});
     }
@@ -145,13 +157,7 @@ Result<std::string> expandEscapes(std::string_view name, const Written& picture,
     };
 
     const auto fill = [&](const Escape& escape) -> std::string {
-        if (escape.name == "index" || escape.name == "scene") {
-            auto digits = std::to_string(index);
-            if (static_cast<int>(digits.size()) < escape.width) {
-                digits.insert(0, static_cast<size_t>(escape.width) - digits.size(), escape.zeros ? '0' : ' ');
-            }
-            return digits;
-        }
+        if (escape.name == "index" || escape.name == "scene") return std::to_string(index);
         if (escape.name == "count") return std::to_string(count);
         if (escape.name == "width") return std::to_string(picture.size.width);
         if (escape.name == "height") return std::to_string(picture.size.height);
@@ -186,7 +192,13 @@ Result<std::string> expandEscapes(std::string_view name, const Written& picture,
     const auto failed = walk(name, [&](std::string_view literal, const std::optional<Escape>& escape) {
         if (problem) return;
         out += literal;
-        if (escape) out += fill(*escape);
+        if (!escape) return;
+        auto value = fill(*escape);
+        if (escape->precision && value.size() > static_cast<size_t>(*escape->precision)) value.resize(static_cast<size_t>(*escape->precision));
+        const auto pad = static_cast<size_t>(std::max(0, escape->width - static_cast<int>(value.size())));
+        if (escape->left) value.append(pad, ' ');
+        else value.insert(0, pad, escape->zeros ? '0' : ' ');
+        out += value;
     });
     if (failed) return std::unexpected(*failed);
     if (problem) return std::unexpected(*problem);
