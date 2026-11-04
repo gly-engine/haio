@@ -240,7 +240,8 @@
  *
  * @code{.toml}
  * [security]
- * timeout = 10                   # in seconds, one conversion
+ * strict = false                 # a limit left out stops the server instead of warning
+ * timeout = 10                   # in seconds, one conversion, zero is forever
  * max_size_pixel = 4096          # in pixels, what a resize may ask for outright
  * max_size_percent = 500         # in percent, what a resize may ask for as a share
  * max_cache_entries_by_ip = 30   # entries one address may create per ttl window
@@ -248,15 +249,19 @@
  * allow_unzip = false            # whether a path may reach inside an archive
  * max_unzip = 64                 # in mb, one extracted file and the archives kept
  * max_sources = 4                # how many files one request may ask for, zero is every
+ * max_operations = 64            # a source costs two, a stage one, zero is every
  * @endcode
  *
  * ## Security Defaults
  *
- * each has a default and the server starts without them. the two counted per address
- * default to no limit on purpose: a number picked blind shuts out an office behind
- * one NAT, and max_sources does the same, since how many pictures one answer is made
- * of is the deployment's business. either way the server says at startup which ones
- * it chose for itself.
+ * every one of them is off until the config says a number: a limit picked blind shuts
+ * out an office behind one NAT or refuses a page nobody meant to refuse, and what a
+ * deployment can afford is the deployment's to say. the server names at startup each
+ * one left out, and `strict = true` turns those lines into a refusal to start.
+ *
+ * max_unzip is the one exception, at 64mb. undoing an archive is the only work here
+ * that a small request can turn into an arbitrarily large one, so it is never
+ * unbounded: zero is refused rather than taken as no limit.
  *
  * ## Security Why
  *
@@ -270,6 +275,7 @@
  * | `allow_unzip`             | work on behalf of whoever wrote the file         |
  * | `max_unzip`               | a small archive that expands into a large one    |
  * | `max_sources`             | one short url turning into many upstream fetches |
+ * | `max_operations`          | one short url turning into a long pipeline       |
  *
  * over the cache quota the answer is still produced and still correct, it is simply
  * not stored: the limit is on eviction, not on access.
@@ -291,38 +297,19 @@ using BucketConfig = Source::Origin;
  * for itself; see @ref cdn_security.
  */
 struct SecurityConfig {
-    /** seconds one conversion may run before it is given up on */
-    std::chrono::seconds timeout{10};
-
-    /** the largest width or height a resize may ask for outright */
-    int maxSizePixel = 4096;
-
-    /**
-     * the largest share a resize may ask for, as a percentage.
-     *
-     * it is a separate number because it bounds a different thing: a picture scaled
-     * by a share is bounded by what it was, so five hundred percent of a thumbnail is
-     * still small, while five hundred percent of something large is not.
-     */
-    int maxSizePercent = 500;
-
-    /** entries one address may create per cache window; zero is no limit */
+    bool strict = false;
+    std::chrono::seconds timeout{0};
+    int maxSizePixel = 0;
+    int maxSizePercent = 0;
     size_t maxCacheEntriesByIp = 0;
-
-    /** requests one address may make per second; zero is no limit */
     size_t maxRequestsByIp = 0;
-
-    /** whether a path may reach inside an archive; off unless asked for */
     bool allowUnzip = false;
-
-    /**
-     * bytes one file out of an archive may take, and what the archives kept in memory may
-     * take altogether. megabytes in the config.
-     */
     size_t maxUnzip = 64u << 20;
-
     size_t maxSources = 0;
+    size_t maxOperations = 0;
 };
+
+inline constexpr std::string_view warningTag = "\x1b[41;97m[warning]\x1b[0m ";
 
 struct Config {
     std::string host = "0.0.0.0";

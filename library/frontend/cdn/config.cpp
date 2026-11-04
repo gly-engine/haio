@@ -141,17 +141,26 @@ Config parseConfig(std::string_view text) {
 
         if (scope == Scope::Security) {
             config.declared.insert("security." + key);
-            if (key == "timeout") config.security.timeout = std::chrono::seconds(parseCount(key, value));
+            if (key == "strict") config.security.strict = parseFlag(key, value);
+            else if (key == "timeout") config.security.timeout = std::chrono::seconds(parseCount(key, value));
             else if (key == "max_size_pixel") config.security.maxSizePixel = static_cast<int>(parseCount(key, value));
             else if (key == "max_size_percent") config.security.maxSizePercent = static_cast<int>(parseCount(key, value));
             else if (key == "max_cache_entries_by_ip") config.security.maxCacheEntriesByIp = parseCount(key, value);
             else if (key == "max_requests_by_ip") config.security.maxRequestsByIp = parseCount(key, value);
             else if (key == "allow_unzip") config.security.allowUnzip = parseFlag(key, value);
-            else if (key == "max_unzip") config.security.maxUnzip = parseCount(key, value) * 1024 * 1024;
+            else if (key == "max_unzip") {
+                const auto megabytes = parseCount(key, value);
+                if (megabytes == 0) {
+                    throw std::runtime_error("max_unzip cannot be zero: an archive undone without a limit is a zip bomb");
+                }
+                config.security.maxUnzip = megabytes * 1024 * 1024;
+            }
             else if (key == "max_sources") config.security.maxSources = parseCount(key, value);
-            else throw unknownKey("security", key, {"timeout", "max_size_pixel", "max_size_percent",
+            else if (key == "max_operations") config.security.maxOperations = parseCount(key, value);
+            else throw unknownKey("security", key, {"strict", "timeout", "max_size_pixel", "max_size_percent",
                                                    "max_cache_entries_by_ip", "max_requests_by_ip",
-                                                   "allow_unzip", "max_unzip", "max_sources"});
+                                                   "allow_unzip", "max_unzip", "max_sources",
+                                                   "max_operations"});
             continue;
         }
 
@@ -199,7 +208,7 @@ Config loadConfig(const std::filesystem::path& path) {
         using std::filesystem::perms;
         const auto mode = std::filesystem::status(path, ec).permissions();
         if (!ec && (mode & (perms::group_read | perms::others_read)) != perms::none) {
-            std::cerr << "warning: " << path.string() << " can be read by more than its owner, "
+            std::cerr << warningTag << path.string() << " can be read by more than its owner, "
                          "and a bucket's secret_key would be readable with it\n";
         }
     }

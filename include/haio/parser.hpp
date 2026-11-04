@@ -95,6 +95,9 @@ struct Options {
     bool bucketPrefix = false;
 
     std::string_view outputNamed;
+
+    /** a source costs two of these, a stage one; zero is no limit */
+    size_t maxSteps = 64;
 };
 
 /**

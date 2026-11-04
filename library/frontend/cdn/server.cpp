@@ -268,12 +268,74 @@ std::optional<Haio::Error> checkSize(const Haio::Cdn::Config& config, const std:
     return std::nullopt;
 }
 
+constexpr size_t maxInFlight = 4;
+
+/**
+ * what the workers below share: the next input to take, where each one's blob goes,
+ * and the first refusal, which stops the others.
+ */
+struct Fetching {
+    const std::vector<Haio::Parser::Input>& inputs;
+    std::vector<Haio::Blob>& blobs;
+    size_t next = 0;
+    size_t running = 0;
+    std::optional<Haio::Error> failure;
+    Haio::Event done;
+};
+
+Haio::Task<void> fetchWorker(std::shared_ptr<Fetching> state, const Haio::Cdn::Config& config,
+                             Haio::Source::Archives& archives) {
+    while (!state->failure && state->next < state->inputs.size()) {
+        const auto at = state->next++;
+        const auto& input = state->inputs[at];
+
+        auto fetched = co_await Haio::Cdn::fetchBucket(config, archives, input.bucket, input.path);
+        if (!fetched) {
+            if (!state->failure) state->failure = fetched.error();
+            break;
+        }
+        if (fetched->format == Haio::Format::RAW) {
+            if (!state->failure) {
+                state->failure = Haio::Error{Haio::ErrorCode::UnsupportedFormat,
+                                             "haio does not recognise " + input.path};
+            }
+            break;
+        }
+        state->blobs[at] = *std::move(fetched);
+    }
+
+    state->running--;
+    if (state->running == 0) state->done.set();
+}
+
+/**
+ * every source at once, up to maxInFlight of them, each writing into its own slot so
+ * the pictures stay in the order they were asked for.
+ */
+Haio::Task<std::optional<Haio::Error>> fetchAll(const Haio::Cdn::Config& config, Haio::Source::Archives& archives,
+                                                const std::vector<Haio::Parser::Input>& inputs,
+                                                std::vector<Haio::Blob>& blobs) {
+    if (inputs.empty()) co_return std::nullopt;
+
+    blobs.resize(inputs.size());
+    auto state = std::make_shared<Fetching>(Fetching{inputs, blobs});
+
+    state->running = std::min(maxInFlight, inputs.size());
+    for (size_t worker = 0; worker < state->running; worker++) {
+        Haio::Platform::spawn(fetchWorker(state, config, archives));
+    }
+
+    co_await state->done;
+    co_return state->failure;
+}
+
 /** the fetch and the conversion behind it, which is exactly what an entry saves */
 Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config& config, Haio::Source::Archives& archives, Route route) {
     const auto words = Haio::Cdn::wordsOf(route.query);
     if (words.empty()) co_return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, "nothing asked for"});
 
-    const auto parsed = Haio::Parser::parse(words, {.bucketPrefix = true, .outputNamed = "the answer"});
+    const auto parsed = Haio::Parser::parse(
+        words, {.bucketPrefix = true, .outputNamed = "the answer", .maxSteps = config.security.maxOperations});
     if (parsed.error) co_return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, parsed.error.message});
 
     if (config.security.maxSources != 0 && parsed.inputs.size() > config.security.maxSources) {
@@ -285,16 +347,8 @@ Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config&
     if (auto tooBig = checkSize(config, parsed.steps)) co_return std::unexpected(*tooBig);
 
     std::vector<Haio::Blob> blobs;
-    blobs.reserve(parsed.inputs.size());
-    for (const auto& input : parsed.inputs) {
-        auto fetched = co_await Haio::Cdn::fetchBucket(config, archives, input.bucket, input.path);
-        if (!fetched) co_return std::unexpected(fetched.error());
-
-        if (fetched->format == Haio::Format::RAW) {
-            co_return std::unexpected(Haio::Error{Haio::ErrorCode::UnsupportedFormat,
-                                                  "haio does not recognise " + input.path});
-        }
-        blobs.push_back(*std::move(fetched));
+    if (auto refused = co_await fetchAll(config, archives, parsed.inputs, blobs)) {
+        co_return std::unexpected(*refused);
     }
 
     Haio::Pipeline pipeline;
@@ -314,7 +368,9 @@ Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config&
         pipeline |= Haio::Tokens::Deliver(parsed.outputEncoding, parsed.outputName);
     }
 
-    const auto deadline = std::chrono::steady_clock::now() + config.security.timeout;
+    const auto deadline = config.security.timeout.count() == 0
+                              ? std::chrono::steady_clock::time_point::max()
+                              : std::chrono::steady_clock::now() + config.security.timeout;
     auto converted = Haio::runPipeline(std::move(blobs), pipeline, deadline);
     if (!converted) co_return std::unexpected(converted.error());
 
@@ -407,50 +463,56 @@ Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, Htt
 }
 
 /**
- * these are what stands between the server and somebody deciding to spend all of its
- * memory, so leaving one out is worth saying out loud. each has a default and the
- * server is safe without them: the warning is there so nobody believes they
- * configured a limit they never wrote.
+ * a limit left out is a limit that is not there, so the server names the ones it has
+ * none of. with security.strict the same lines refuse to start it.
  */
 void warnAboutDefaults(const Haio::Cdn::Config& config, bool cacheEnabled) {
+    const auto missing = [&config](std::string_view key) { return !config.declared.contains(std::string(key)); };
+    std::vector<std::string> notes;
+
     for (const auto& [name, bucket] : config.buckets) {
         if (bucket.open) {
-            std::cerr << "warning: bucket \"" << name << "\" is open, so it will fetch whatever host the request names\n";
+            notes.push_back("bucket \"" + name + "\" is open, so it will fetch whatever host the request names");
         }
     }
-
-    const auto missing = [&config](std::string_view key) { return !config.declared.contains(std::string(key)); };
-
     if (missing("security.timeout")) {
-        std::cerr << "warning: security.timeout is not set, so a conversion is stopped after "
-                  << config.security.timeout.count() << "s by default\n";
+        notes.push_back("security.timeout is not set, so one conversion may run for as long as it takes");
     }
     if (missing("security.max_size_pixel")) {
-        std::cerr << "warning: security.max_size_pixel is not set, so a resize is capped at "
-                  << config.security.maxSizePixel << " on each side by default\n";
+        notes.push_back("security.max_size_pixel is not set, so a resize may ask for any size");
     }
     if (missing("security.max_size_percent")) {
-        std::cerr << "warning: security.max_size_percent is not set, so a resize is capped at "
-                  << config.security.maxSizePercent << " percent by default\n";
+        notes.push_back("security.max_size_percent is not set, so a resize may ask for any share");
     }
     if (missing("security.max_sources")) {
-        std::cerr << "warning: security.max_sources is not set, so one request may ask the server "
-                     "to fetch as many files as it names\n";
+        notes.push_back("security.max_sources is not set, so one request may ask the server to fetch as many files as it names");
     }
     if (missing("security.max_requests_by_ip")) {
-        // no default: a number picked blind would shut out a whole office behind one
-        // address, the same reason max_cache_entries_by_ip has none
-        std::cerr << "warning: security.max_requests_by_ip is not set, so one address may "
-                     "make as many requests per second as it likes\n";
+        notes.push_back("security.max_requests_by_ip is not set, so one address may make as many requests per second as it likes");
+    }
+    if (missing("security.max_operations")) {
+        notes.push_back("security.max_operations is not set, so one request may ask for a pipeline of any length");
+    }
+    if (missing("security.max_unzip")) {
+        notes.push_back("security.max_unzip is not set, so one extracted file is capped at "
+                        + std::to_string(config.security.maxUnzip / (1024 * 1024)) + "mb by default");
     }
     if (cacheEnabled && missing("cache.max_usage")) {
-        std::cerr << "warning: cache.max_usage is not set, so the cache is capped at "
-                  << config.cache.maxUsage / (1024 * 1024) << "mb by default\n";
+        notes.push_back("cache.max_usage is not set, so the cache is capped at "
+                        + std::to_string(config.cache.maxUsage / (1024 * 1024)) + "mb by default");
     }
     if (cacheEnabled && missing("security.max_cache_entries_by_ip")) {
-        std::cerr << "warning: security.max_cache_entries_by_ip is not set, so one address "
-                     "may fill the cache on its own and evict everybody else\n";
+        notes.push_back("security.max_cache_entries_by_ip is not set, so one address may fill the cache on its own and evict everybody else");
     }
+
+    if (notes.empty()) return;
+
+    if (config.security.strict) {
+        std::string all = "security.strict is on, and the server will not start while";
+        for (const auto& note : notes) all += "\n  " + note;
+        throw std::runtime_error(all);
+    }
+    for (const auto& note : notes) std::cerr << Haio::Cdn::warningTag << note << '\n';
 }
 
 }
