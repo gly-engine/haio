@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <iterator>
 #include <system_error>
 
 namespace Haio::Platform {
@@ -49,6 +50,24 @@ bool matches(std::string_view pattern, std::string_view path, bool keepCase) {
 }
 
 std::vector<std::string> glob(std::string_view pattern) {
+    if (const auto bar = pattern.find('|'); bar != std::string_view::npos) {
+        const auto dot = pattern.rfind('.', bar);
+        const auto head = dot == std::string_view::npos ? std::string_view{} : pattern.substr(0, dot + 1);
+        auto tails = pattern.substr(head.size());
+
+        std::vector<std::string> out;
+        while (true) {
+            const auto end = tails.find('|');
+            auto found = glob(std::string(head) + std::string(tails.substr(0, end)));
+            out.insert(out.end(), std::make_move_iterator(found.begin()), std::make_move_iterator(found.end()));
+            if (end == std::string_view::npos) break;
+            tails.remove_prefix(end + 1);
+        }
+        std::ranges::sort(out);
+        out.erase(std::ranges::unique(out).begin(), out.end());
+        return out;
+    }
+
     std::string spelled(pattern);
     std::ranges::replace(spelled, '\\', '/');
     if (const auto home = homeFolder(); !home.empty() && (spelled == "~" || spelled.starts_with("~/"))) {

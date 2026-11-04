@@ -209,7 +209,7 @@ void writeOutput(const Command& command, const std::vector<uint8_t>& data) {
 
 /** a source the shell left alone because it was quoted, which haio expands itself */
 bool isPattern(const std::string& path) {
-    return path != "-" && !Source::isRemoteUri(path) && path.find('*') != std::string::npos;
+    return path != "-" && !Source::isRemoteUri(path) && path.find_first_of("*|") != std::string::npos;
 }
 
 std::vector<std::string> filesMatching(const std::string& pattern) {
@@ -275,7 +275,6 @@ int once(Command& command, const std::optional<std::string>& printing) {
  */
 int eachFile(Command& command, size_t pattern, const std::optional<std::string>& printing) {
     const auto files = filesMatching(command.inputs[pattern].path);
-    const auto pipeline = buildPipeline(command);
 
     std::vector<Blob> fixed(command.inputs.size());
     for (size_t at = 0; at < command.inputs.size(); at++) {
@@ -284,9 +283,14 @@ int eachFile(Command& command, size_t pattern, const std::optional<std::string>&
 
     std::vector<std::string> names;
     for (size_t file = 0; file < files.size(); file++) {
-        std::vector<Blob> inputs = fixed;
-        auto one = command.inputs[pattern];
+        // built again for every file, since '**.png|jpeg' says what it reads only once it is a file
+        auto line = command;
+        auto& one = line.inputs[pattern];
         one.path = files[file];
+        if (one.formatName.empty()) one.format = formatFromExtension(files[file]);
+        const auto pipeline = buildPipeline(line);
+
+        std::vector<Blob> inputs = fixed;
         inputs[pattern] = readInputBlob(one);
 
         const auto written = runPipelineWritten(std::move(inputs), pipeline);

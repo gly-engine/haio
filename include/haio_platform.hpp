@@ -158,7 +158,8 @@ Task<void> serveHttp(HttpServerOptions options, HttpHandler handler);
 /**
  * the files a pattern names, sorted, for a source the shell was told to leave alone.
  * `*` stays inside a folder and `**` crosses them, so `'*.png'` is every png here,
- * `'**.png'` every one under here and `'src/**.png'` every one under src. a leading
+ * `'**.png'` every one under here and `'src/**.png'` every one under src, and `|`
+ * picks between what follows the last dot, so `'**.png|jpeg'` is both. a leading
  * `~` is the home folder where there is one. hidden files and folders are left out,
  * and folder links are not followed, so a loop cannot be walked.
  */
