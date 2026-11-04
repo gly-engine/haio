@@ -315,8 +315,9 @@ private:
         const auto taken = take(stage, stage.name(), dashed.spelling);
         if (!taken) return false;
 
-        constexpr size_t maxSteps = 64;
-        if (command_.steps.size() >= maxSteps) return refuse("too many operations", dashed.spelling);
+        if (options_.maxSteps != 0 && command_.steps.size() >= options_.maxSteps) {
+            return refuse("too many operations", dashed.spelling);
+        }
 
         auto token = build(stage, *value, Stages::Given{*taken});
         if (!token) return refuseWhole(std::move(token.error().message), std::move(token.error().token));
