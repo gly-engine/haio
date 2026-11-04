@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,12 +17,17 @@ constexpr std::string_view base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefg
 constexpr int base62PairMax = 62 * 62 - 1;
 
 /**
- * zcis splits the canvas into two layers of alternating rows, so that each layer
+ * zcis splits a picture into two layers of alternating rows, so that each layer
  * stays a decodable image on its own and both together rebuild the original
- * without losing a pixel.
+ * without losing a pixel. a command in capitals is a commit, which shows what was
+ * painted; the same letter in lower case is a blit, which paints and waits.
  */
 constexpr char baseCommand = 'A';
 constexpr char refineCommand = 'C';
+
+char commandOf(char commit, bool shown) {
+    return shown ? commit : static_cast<char>(commit - 'A' + 'a');
+}
 
 constexpr std::string_view indexMemberName = "0000000000.txt";
 
@@ -92,8 +98,72 @@ std::optional<Haio::Error> openArchive(std::vector<uint8_t>& out, const Haio::Me
     return appendMember(out, std::string(indexMemberName), {index.begin(), index.end()});
 }
 
-std::string canvasTarget(int width, int height) {
-    return base62Pair(0) + base62Pair(0) + base62Pair(width) + base62Pair(height);
+std::string target(int x, int y, int width, int height) {
+    return base62Pair(x) + base62Pair(y) + base62Pair(width) + base62Pair(height);
+}
+
+/** the ORDER character, which only sorts the members and so may wrap around */
+char orderOf(int order) {
+    return base62[static_cast<size_t>(order) % base62.size()];
+}
+
+/**
+ * the cuts in rows, top to bottom, and every row left to right: cuts of different
+ * heights that share a line are one row. a canvas nothing was laid on is one cut.
+ */
+std::vector<std::vector<Haio::Rect>> rowsOf(const Haio::Metadata& meta, int width, int height) {
+    std::vector<Haio::Rect> rects;
+    rects.reserve(meta.cuts.size());
+    for (const auto& cut : meta.cuts) rects.push_back(cut.rect);
+    if (rects.empty()) rects.push_back(Haio::Rect{0, 0, width, height});
+    std::ranges::stable_sort(rects, {}, &Haio::Rect::y);
+
+    std::vector<std::vector<Haio::Rect>> rows;
+    int bottom = 0;
+    for (const auto& rect : rects) {
+        if (rows.empty() || rect.y >= bottom) rows.emplace_back();
+        rows.back().push_back(rect);
+        bottom = std::max(bottom, rect.y + rect.height);
+    }
+    for (auto& row : rows) std::ranges::stable_sort(row, {}, &Haio::Rect::x);
+    return rows;
+}
+
+Haio::Image<Haio::Color::RGBA8888> piece(const Haio::Image<Haio::Color::RGBA8888>& image, const Haio::Rect& rect) {
+    const auto stride = static_cast<size_t>(image.width) * 4;
+    const auto row = static_cast<size_t>(rect.width) * 4;
+    std::vector<uint8_t> data(row * static_cast<size_t>(rect.height));
+    for (int y = 0; y < rect.height; y++) {
+        const auto from = static_cast<size_t>(rect.y + y) * stride + static_cast<size_t>(rect.x) * 4;
+        std::copy_n(image.data.data() + from, row, data.data() + static_cast<size_t>(y) * row);
+    }
+    return Haio::Image<Haio::Color::RGBA8888>{rect.width, rect.height, std::move(data)};
+}
+
+/** a cut grown outwards to even edges, which is the least a 4:2:0 frame can hold */
+Haio::Rect even(const Haio::Rect& rect, int width, int height) {
+    const auto left = rect.x / 2 * 2;
+    const auto top = rect.y / 2 * 2;
+    const auto right = std::min(width, (rect.x + rect.width + 1) / 2 * 2);
+    const auto bottom = std::min(height, (rect.y + rect.height + 1) / 2 * 2);
+    return Haio::Rect{left, top, right - left, bottom - top};
+}
+
+/** the same rectangle of each plane of a yuv420 frame, whose edges are all even */
+std::vector<uint8_t> piece(const Haio::Image<Haio::Color::YUV420>& image, const Haio::Rect& rect) {
+    const auto luma = static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
+    std::vector<uint8_t> out;
+    const auto copy = [&](size_t plane, int stride, int x, int y, int w, int h) {
+        for (int row = 0; row < h; row++) {
+            const auto from = plane + static_cast<size_t>(y + row) * static_cast<size_t>(stride) + static_cast<size_t>(x);
+            out.insert(out.end(), image.data.begin() + static_cast<std::ptrdiff_t>(from),
+                       image.data.begin() + static_cast<std::ptrdiff_t>(from + static_cast<size_t>(w)));
+        }
+    };
+    copy(0, image.width, rect.x, rect.y, rect.width, rect.height);
+    copy(luma, image.width / 2, rect.x / 2, rect.y / 2, rect.width / 2, rect.height / 2);
+    copy(luma + luma / 4, image.width / 2, rect.x / 2, rect.y / 2, rect.width / 2, rect.height / 2);
+    return out;
 }
 
 }
@@ -103,6 +173,11 @@ namespace Haio::Codecs {
 /**
  * @addtogroup encode
  * @{
+ */
+/**
+ * the cuts a row at a time, top to bottom: every cut of the row blitted at low
+ * resolution and the row shown at once, then the rows that were skipped blitted in
+ * and the row shown again, sharp, before the next one starts.
  */
 template <>
 Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, const Metadata& meta) {
@@ -115,24 +190,29 @@ Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, c
     std::vector<uint8_t> out;
     HAIO_CHECK(openArchive(out, meta, img.width, img.height));
 
-    const auto target = canvasTarget(img.width, img.height);
-
     int order = 1;
-    const auto appendLayer = [&](char command, const Image<Color::RGBA8888>& layer) -> std::optional<Error> {
-        if (layer.height <= 0) return std::nullopt;
-
+    const auto appendLayer = [&](char command, const Rect& at, const Image<Color::RGBA8888>& layer) -> std::optional<Error> {
         auto payload = Encode<Format::PPM, Color::RGBA8888>(Image<Color::RGBA8888>{layer});
         if (!payload) return payload.error();
-
-        const auto name = std::string(1, base62[static_cast<size_t>(order++)]) + command + target + ".ppm";
+        const auto name = std::string(1, orderOf(order++)) + command + target(at.x, at.y, at.width, at.height) + ".ppm";
         return appendMember(out, name, payload->data);
     };
 
-    if (img.height == 1) {
-        HAIO_CHECK(appendLayer(baseCommand, selectRows(img, 0)));
-    } else {
-        HAIO_CHECK(appendLayer(baseCommand, selectRows(img, 1)));
-        HAIO_CHECK(appendLayer(refineCommand, selectRows(img, 0)));
+    /**
+     * a row is blitted a cut at a time and shown by the last of them, so it appears
+     * whole rather than piece by piece, and only the cuts travel: nothing between
+     * them is sent. its low resolution layer goes first and the rows it skipped after.
+     */
+    for (const auto& row : rowsOf(meta, img.width, img.height)) {
+        for (size_t at = 0; at < row.size(); at++) {
+            const auto cut = piece(img, row[at]);
+            HAIO_CHECK(appendLayer(commandOf(baseCommand, at + 1 == row.size()), row[at], selectRows(cut, cut.height == 1 ? 0 : 1)));
+        }
+        std::vector<Rect> taller;
+        std::ranges::copy_if(row, std::back_inserter(taller), [](const Rect& rect) { return rect.height > 1; });
+        for (size_t at = 0; at < taller.size(); at++) {
+            HAIO_CHECK(appendLayer(commandOf(refineCommand, at + 1 == taller.size()), taller[at], selectRows(piece(img, taller[at]), 0)));
+        }
     }
 
     return Blob{Format::ZCIS, Color::RGBA8888, "image/x-zcis", {}, std::move(out)};
@@ -143,6 +223,7 @@ Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img) {
     return Encode<Format::ZCIS, Color::RGBA8888>(std::move(img), Metadata{});
 }
 
+/** the cuts a row at a time, top to bottom, every row blitted a cut at a time and shown by its last */
 template <>
 Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img, const Metadata& meta) {
     if (img.width <= 0 || img.height <= 0) HAIO_FAIL(InvalidInput, "invalid yuv420 image for zcis encode");
@@ -153,13 +234,21 @@ Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img, const
     std::vector<uint8_t> out;
     HAIO_CHECK(openArchive(out, meta, img.width, img.height));
 
-    std::vector<uint8_t> payload;
-    appendBytes(payload, "YUV4MPEG2 W" + std::to_string(img.width) + " H" + std::to_string(img.height)
-                             + " F1:1 Ip A1:1 C420jpeg XCOLORRANGE=FULL\nFRAME\n");
-    payload.insert(payload.end(), img.data.begin(), img.data.end());
+    int order = 1;
+    for (const auto& row : rowsOf(meta, img.width, img.height)) {
+        for (size_t at = 0; at < row.size(); at++) {
+            const auto rect = even(row[at], img.width, img.height);
+            std::vector<uint8_t> payload;
+            appendBytes(payload, "YUV4MPEG2 W" + std::to_string(rect.width) + " H" + std::to_string(rect.height)
+                                     + " F1:1 Ip A1:1 C420jpeg XCOLORRANGE=FULL\nFRAME\n");
+            const auto planes = piece(img, rect);
+            payload.insert(payload.end(), planes.begin(), planes.end());
 
-    const auto name = std::string(1, base62[1]) + baseCommand + canvasTarget(img.width, img.height) + ".y4m";
-    HAIO_CHECK(appendMember(out, name, payload));
+            const auto name = std::string(1, orderOf(order++)) + commandOf(baseCommand, at + 1 == row.size())
+                            + target(rect.x, rect.y, rect.width, rect.height) + ".y4m";
+            HAIO_CHECK(appendMember(out, name, payload));
+        }
+    }
 
     return Blob{Format::ZCIS, Color::YUV420, "image/x-zcis", {}, std::move(out)};
 }
