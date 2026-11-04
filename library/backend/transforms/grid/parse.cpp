@@ -46,7 +46,7 @@ Built build<&grid>(std::string_view value, const Given& given) {
 
     auto text = value;
     const auto columns = count(text);
-    if (!columns || text.empty() || text.front() != '@') return refused();
+    if (!columns || text.empty() || text.front() != '/') return refused();
     text.remove_prefix(1);
     const auto rows = count(text);
     const auto quantum = rows ? pair(text, '-') : std::nullopt;
