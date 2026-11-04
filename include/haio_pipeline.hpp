@@ -151,4 +151,16 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
 Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
                          std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt);
 
+/** one picture written, beside what it knew about itself then, for a front end that names files after it */
+struct Written {
+    Blob blob;
+    Metadata meta;
+    Size size;
+    Color color = Color::RGBA8888;
+};
+
+/** the same, with the picture that was written beside the bytes */
+Result<Written> runPipelineWritten(std::vector<Blob> inputs, const Pipeline& pipeline,
+                                   std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt);
+
 }

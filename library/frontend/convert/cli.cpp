@@ -191,17 +191,106 @@ Blob readInputBlob(Input& input) {
     return blob;
 }
 
+void writeFile(const std::string& path, const std::vector<uint8_t>& data) {
+    std::ofstream out(path, std::ios::binary);
+    if (!out) throw std::runtime_error("unable to open image " + Stages::quoted(path) + " for writing");
+    out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+    if (!out) throw std::runtime_error("unable to write image " + Stages::quoted(path));
+}
+
 void writeOutput(const Command& command, const std::vector<uint8_t>& data) {
     if (command.outputIsStdout) {
         std::cout.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
         if (!std::cout) throw std::runtime_error("unable to write image `-'");
         return;
     }
+    writeFile(command.outputPath, data);
+}
 
-    std::ofstream out(command.outputPath, std::ios::binary);
-    if (!out) throw std::runtime_error("unable to open image " + Stages::quoted(command.outputPath) + " for writing");
-    out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
-    if (!out) throw std::runtime_error("unable to write image " + Stages::quoted(command.outputPath));
+/** a source the shell left alone because it was quoted, which haio expands itself */
+bool isPattern(const std::string& path) {
+    return path != "-" && !Source::isRemoteUri(path) && path.find('*') != std::string::npos;
+}
+
+std::vector<std::string> filesMatching(const std::string& pattern) {
+    auto out = Platform::glob(pattern);
+    if (out.empty()) throw std::runtime_error("no file matches " + Stages::quoted(pattern));
+    return out;
+}
+
+/** the output, written once, with its escapes filled in from the one picture when it has any */
+int once(Command& command) {
+    // every source read before anything runs, so a missing file stops the line
+    // before a single picture is decoded
+    std::vector<Blob> inputs;
+    for (auto& input : command.inputs) inputs.push_back(readInputBlob(input));
+    const auto pipeline = buildPipeline(command);
+
+    if (command.outputIsStdout || !hasEscapes(command.outputPath)) {
+        const auto output = runPipeline(std::move(inputs), pipeline);
+        if (!output) {
+            printError(output.error().message);
+            return 1;
+        }
+        writeOutput(command, output->data);
+        return 0;
+    }
+
+    const auto written = runPipelineWritten(std::move(inputs), pipeline);
+    if (!written) {
+        printError(written.error().message);
+        return 1;
+    }
+    const auto named = expandEscapes(command.outputPath, *written, 0, 1);
+    if (!named) {
+        printError(named.error().message);
+        return 1;
+    }
+    writeFile(*named, written->blob.data);
+    return 0;
+}
+
+/**
+ * the whole line once for every file the pattern matches, the way mogrify runs, so a
+ * transform reaches each of them and only one is ever held at a time. the other
+ * sources are read once and handed to every run, so a logo laid over each is
+ * fetched once. a file that fails stops the ones after it, and two that would land
+ * on the same name stop the second before it overwrites the first.
+ */
+int eachFile(Command& command, size_t pattern) {
+    const auto files = filesMatching(command.inputs[pattern].path);
+    const auto pipeline = buildPipeline(command);
+
+    std::vector<Blob> fixed(command.inputs.size());
+    for (size_t at = 0; at < command.inputs.size(); at++) {
+        if (at != pattern) fixed[at] = readInputBlob(command.inputs[at]);
+    }
+
+    std::vector<std::string> names;
+    for (size_t file = 0; file < files.size(); file++) {
+        std::vector<Blob> inputs = fixed;
+        auto one = command.inputs[pattern];
+        one.path = files[file];
+        inputs[pattern] = readInputBlob(one);
+
+        const auto written = runPipelineWritten(std::move(inputs), pipeline);
+        if (!written) {
+            printError(Stages::quoted(files[file]) + ": " + written.error().message);
+            return 1;
+        }
+        auto named = expandEscapes(command.outputPath, *written, file, files.size());
+        if (!named) {
+            printError(named.error().message);
+            return 1;
+        }
+        if (std::ranges::contains(names, *named)) {
+            printError(Stages::quoted(files[file]) + " would be written to " + Stages::quoted(*named) + ", which an earlier file already was");
+            return 1;
+        }
+        writeFile(*named, written->blob.data);
+        names.push_back(*std::move(named));
+    }
+    return 0;
 }
 
 }
@@ -215,24 +304,28 @@ int runCli(int argc, char* argv[]) {
     auto command = parseArgs(argc, argv);
     if (command.error) {
         printError(command.error.message);
+        // the shell already spread an unquoted pattern into several sources
+        if (namesEach(argv[argc - 1])) printError("quote the pattern, as '*.png', so haio runs the line once for each file");
         return 1;
     }
 
     try {
-        // every source read before anything runs, so a missing file stops the line
-        // before a single picture is decoded
-        std::vector<Blob> inputs;
-        for (auto& input : command.inputs) inputs.push_back(readInputBlob(input));
-
-        const auto pipeline = buildPipeline(command);
-        const auto output = runPipeline(std::move(inputs), pipeline);
-        if (!output) {
-            printError(output.error().message);
+        std::vector<size_t> patterns;
+        for (size_t at = 0; at < command.inputs.size(); at++) {
+            if (isPattern(command.inputs[at].path)) patterns.push_back(at);
+        }
+        if (patterns.size() > 1) {
+            printError("only one source may be a pattern");
             return 1;
         }
+        if (patterns.empty()) return once(command);
 
-        writeOutput(command, output->data);
-        return 0;
+        // every file is a run of its own, so one name for all of them would only keep the last
+        if (command.outputIsStdout || !namesEach(command.outputPath)) {
+            printError("a pattern runs the line once for each file, so the output has to be named after each, as %t.png");
+            return 1;
+        }
+        return eachFile(command, patterns.front());
     } catch (const std::exception& err) {
         printError(err.what());
         return 1;

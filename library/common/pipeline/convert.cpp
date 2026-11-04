@@ -338,6 +338,8 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
     return runPipeline(std::move(inputs), pipeline, deadline);
 }
 
+namespace {
+
 /**
  * a conversion described at runtime, which is what a url query and a command line
  * both build. every Decode and every Generate puts a picture on the stack, a transform changes the one
@@ -347,8 +349,8 @@ Result<Blob> runPipeline(Blob input, const Pipeline& pipeline,
  * a pipeline with no Decode at all is the cdn's: one input, decoded the moment
  * something needs its pixels, and handed back untouched when nothing does.
  */
-Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
-                         std::optional<std::chrono::steady_clock::time_point> deadline) {
+Result<Written> run(std::vector<Blob> inputs, const Pipeline& pipeline,
+                    std::optional<std::chrono::steady_clock::time_point> deadline) {
     std::vector<Picture> stack;
     /** where each open parenthesis begins on the stack; the first is the line itself */
     std::vector<size_t> scopes{0};
@@ -364,10 +366,16 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
     auto decode = [&](const Settings& settings) -> std::optional<Error> {
         if (nextInput >= inputs.size()) return Error{ErrorCode::InvalidInput, "more pictures asked for than were given"};
         auto& input = inputs[nextInput++];
+        const auto magick = input.format != Format::RAW ? input.format : Detect(input.data).format;
         auto decoded = DecodeNative(input, settings);
         if (!decoded) return decoded.error();
         stack.push_back(Picture{*std::move(decoded), {}, std::nullopt});
-        if (!input.path.empty()) stack.back().meta.name = input.path;
+
+        auto& meta = stack.back().meta;
+        if (!input.path.empty()) meta.name = input.path;
+        meta.magick = magick;
+        meta.bytes = input.data.size();
+        meta.original = sizeOf(stack.back());
 
         // the file has become pixels and nothing reads it again, so it goes now
         // rather than sitting beside every buffer the rest of the pipeline allocates
@@ -526,7 +534,7 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
         if (failure) return std::unexpected(*failure);
     }
 
-    auto finish = [&](Blob blob) -> Result<Blob> {
+    auto finish = [&](Blob blob) -> Blob {
         if (!outputName.empty()) blob.path = outputName;
         if (outputEncoding != BodyEncoding::Identity) blob.data = encodeBody(blob.data, outputEncoding);
         return blob;
@@ -537,7 +545,7 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
      * what a pipeline with nothing to do hands back.
      */
     if (outputFormat == Format::RAW && !outputColor && stack.empty() && nextInput == 0 && inputs.size() == 1) {
-        return finish(std::move(inputs.front()));
+        return Written{finish(std::move(inputs.front())), {}, {}};
     }
 
     if (auto failed = decodeLazily()) return std::unexpected(*failed);
@@ -546,7 +554,13 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
         return std::unexpected(Error{ErrorCode::InvalidInput, std::to_string(stack.size())
                                                                   + " pictures and one output; join them with -composite or -grid"});
     }
+
     auto& picture = stack.front();
+
+    /** the bytes, beside the size and colour they were written from and what the picture knew */
+    const auto size = sizeOf(picture);
+    const auto color = picture.native ? picture.native->color : Color::RGBA8888;
+    const auto written = [&](Blob blob) { return Written{finish(std::move(blob)), std::move(picture.meta), size, color}; };
 
     /**
      * no container asked for, so the answer is the pixels themselves.
@@ -560,9 +574,9 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
         auto pixels = Convert(picture.current(), to);
         if (!pixels) return std::unexpected(pixels.error());
 
-        return finish(Blob{Format::RAW, to, std::string(contentTypeFor(Format::RAW)),
-                           picture.meta.name.value_or(std::string{}), std::move(pixels->data),
-                           Size{pixels->width, pixels->height}});
+        return written(Blob{Format::RAW, to, std::string(contentTypeFor(Format::RAW)),
+                            picture.meta.name.value_or(std::string{}), std::move(pixels->data),
+                            Size{pixels->width, pixels->height}});
     }
 
     /**
@@ -582,9 +596,27 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
 
     auto encoded = asIndices ? Encode(*std::move(picture.indexed), outputFormat, encodeSettings)
                              : Encode(picture.current(), outputFormat, outputColor, encodeSettings, picture.meta);
-    if (!encoded) return encoded;
+    if (!encoded) return std::unexpected(encoded.error());
     encoded->path = picture.meta.name.value_or(std::string{});
-    return finish(*std::move(encoded));
+    return written(*std::move(encoded));
+}
+
+}
+
+/**
+ * a conversion described at runtime, which is what a url query and a command line
+ * both build, with the one picture left at the end as the answer.
+ */
+Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
+                         std::optional<std::chrono::steady_clock::time_point> deadline) {
+    auto written = run(std::move(inputs), pipeline, deadline);
+    if (!written) return std::unexpected(written.error());
+    return std::move(written->blob);
+}
+
+Result<Written> runPipelineWritten(std::vector<Blob> inputs, const Pipeline& pipeline,
+                                   std::optional<std::chrono::steady_clock::time_point> deadline) {
+    return run(std::move(inputs), pipeline, deadline);
 }
 
 }

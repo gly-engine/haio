@@ -1,5 +1,8 @@
 #pragma once
 
+#include "haio_formats.hpp"
+
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <vector>
@@ -38,6 +41,11 @@ struct Metadata {
 
     /** the pictures laid on this one, so a container that keeps an index can cut them back out */
     std::vector<Cut> cuts;
+
+    /** the file it was read from, as it was before anything was done to it: what it was, its bytes, its size */
+    std::optional<Format> magick;
+    size_t bytes = 0;
+    std::optional<Size> original;
 };
 
 }

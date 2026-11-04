@@ -10,6 +10,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -148,6 +149,24 @@ struct HttpServerOptions {
  * is measured and then left unsent.
  */
 Task<void> serveHttp(HttpServerOptions options, HttpHandler handler);
+
+///@}
+
+/** @name files */
+///@{
+
+/**
+ * the files a pattern names, sorted, for a source the shell was told to leave alone.
+ * `*` stays inside a folder and `**` crosses them, so `'*.png'` is every png here,
+ * `'**.png'` every one under here and `'src/**.png'` every one under src. a leading
+ * `~` is the home folder where there is one. hidden files and folders are left out,
+ * and folder links are not followed, so a loop cannot be walked.
+ */
+std::vector<std::string> glob(std::string_view pattern);
+
+/** the home folder, empty where nobody writes ~, and whether two names that differ only in case are two files */
+std::string homeFolder();
+bool namesKeepCase();
 
 ///@}
 

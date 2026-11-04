@@ -33,6 +33,31 @@ std::vector<std::string> lexCommandLine(std::string_view text);
 /** Parser::build, for a caller that would rather have an exception than a Result */
 Pipeline buildPipeline(const Command& command);
 
+/**
+ * @name output escapes
+ * imagemagick's percent escapes in the output name, filled in from the picture
+ * written: %t the source's name
+ * without its folder or extension, %f with its extension, %e the extension alone,
+ * %[directory] its folder, %i or %M the source as written, %w and %h the size it is
+ * written at, %G the size it was read at, %m what it was read as, %B how many bytes
+ * it was, %A whether it has an alpha, %n how many pictures there are, and %p, %s or
+ * %d its place among them, %03d padded. %% is a percent sign.
+ *
+ * a source quoted so the shell leaves its pattern alone, as '*.png', or '**.png' for
+ * every folder below, is
+ * expanded by haio and the whole line runs once per file, so its output has to be
+ * named after each, as %t.jpeg. unquoted, the shell spreads the files into the stack
+ * of one run instead. only the command line does either; the cdn reads neither.
+ * @{
+ */
+bool hasEscapes(std::string_view name);
+
+/** whether the name says something different for every file, so a pattern may run the line once per file */
+bool namesEach(std::string_view name);
+
+Result<std::string> expandEscapes(std::string_view name, const Written& picture, size_t index, size_t count);
+/** @} */
+
 int runCli(int argc, char* argv[]);
 
 }
