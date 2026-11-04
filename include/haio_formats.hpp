@@ -76,6 +76,14 @@ enum class Format {
      * @ext utf8
      */
     UTF8,
+    /**
+     * real pixels in a terminal that draws them, as foot, wezterm, mlterm or xterm
+     * started as a vt340 do: a palette of colours and six rows at a time.
+     *
+     * @mime image/x-sixel
+     * @ext sixel six
+     */
+    SIXEL,
 
     /**
      * a cartridge, which is a container like any other: it says where its pattern
