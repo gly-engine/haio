@@ -173,7 +173,7 @@ Task<Result<HttpResponse>> httpGet(HttpRequest request) {
      */
     try {
         requireHttpScheme(*parsed);
-        co_return co_await Desktop::await(follow(*std::move(parsed), std::move(request.headers)));
+        co_return co_await Asio::await(follow(*std::move(parsed), std::move(request.headers)));
     } catch (const Refused& err) {
         co_return std::unexpected(Error{err.code, err.what()});
     } catch (const boost::system::system_error& err) {

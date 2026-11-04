@@ -17,16 +17,18 @@
 /**
  * everything haio needs from the machine it runs on, and nothing it does with it.
  *
- * one directory under library/platform answers all of this, picked by HAIO_PLATFORM
- * at configure time. desktop does it with asio, beast and a socket; a browser build
- * would do the client half with fetch() and leave the server half out, since a page
- * does not listen on a port. nothing outside library/platform includes asio.
+ * one directory per capability under library/platform, and inside it one file per way
+ * of answering it: server/http/asio.cpp listens on a socket, server/http/cgi.cpp
+ * answers the one request a web server handed over, glob/posix.cpp and
+ * glob/windows.cpp each take the half of the world that is theirs. a file only one
+ * machine has guards itself with an #if, so the build needs no list of platforms.
+ * nothing outside library/platform includes asio.
  *
  * the split follows who opens the connection:
  *
  *   runtime   the loop everything runs on
- *   client    haio asking somebody else for bytes: http, and redis on the desktop
- *   server    somebody asking haio: the cdn's listener
+ *   client    haio asking somebody else for bytes: http, and redis
+ *   server    somebody asking haio: the cdn's listener, or a cgi gateway
  */
 namespace Haio::Platform {
 
@@ -149,6 +151,13 @@ struct HttpServerOptions {
  * is measured and then left unsent.
  */
 Task<void> serveHttp(HttpServerOptions options, HttpHandler handler);
+
+/**
+ * the handler called once for the request in the cgi environment, with the answer
+ * written to stdout. the path is ignored, so only the query says what to serve, and a
+ * HEAD sends its content-length without the body.
+ */
+Task<void> serveHttpCgi(HttpHandler handler);
 
 ///@}
 

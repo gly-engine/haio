@@ -66,7 +66,6 @@ std::optional<CacheEntry> decodeEntry(std::span<const uint8_t> raw);
 
 std::unique_ptr<CacheStore> makeMemoryStore(size_t maxUsage, std::chrono::seconds ttl);
 std::unique_ptr<CacheStore> makeFileStore(std::filesystem::path root, std::chrono::seconds ttl, size_t maxUsage);
-/** desktop only: redis is reached with asio, so it lives in library/platform/desktop */
 std::unique_ptr<CacheStore> makeRedisStore(std::string url, std::chrono::seconds ttl, size_t maxUsage);
 
 /**

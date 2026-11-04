@@ -3,6 +3,7 @@
 #include "haio.hpp"
 #include "haio/parser.hpp"
 #include "haio_cache.hpp"
+#include "haio_platform.hpp"
 #include "haio_source.hpp"
 
 #include <chrono>
@@ -353,6 +354,9 @@ std::vector<Parser::Word> wordsOf(std::string_view query);
 Config parseConfig(std::string_view text);
 Config loadConfig(const std::filesystem::path& path);
 Task<Result<Blob>> fetchBucket(const Config& config, Source::Archives& archives, std::string bucket, std::string path);
+
+/** the cdn as one function, with the cache, the limiter and the archives made once behind it */
+Platform::HttpHandler makeHandler(Config config);
 
 /** listens until the platform's loop is stopped, and throws if it cannot listen at all */
 Task<void> runServer(Config config);

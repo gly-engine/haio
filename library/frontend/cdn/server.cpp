@@ -337,6 +337,15 @@ struct Shared {
     std::shared_ptr<Haio::Source::Archives> archives;
 };
 
+std::shared_ptr<Shared> makeShared(Haio::Cdn::Config config) {
+    return std::make_shared<Shared>(Shared{
+        config,
+        Haio::Cdn::Cache{config.cache, config.security.maxCacheEntriesByIp},
+        RateLimiter{config.security.maxRequestsByIp},
+        Haio::Source::makeArchives(config.security.maxUnzip),
+    });
+}
+
 Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, HttpServerRequest req) {
     if (req.method != "GET" && req.method != "HEAD") {
         co_return makeText(405, "method not allowed\n");
@@ -448,16 +457,16 @@ void warnAboutDefaults(const Haio::Cdn::Config& config, bool cacheEnabled) {
 
 namespace Haio::Cdn {
 
+Platform::HttpHandler makeHandler(Config config) {
+    auto shared = makeShared(std::move(config));
+    return [shared](HttpServerRequest req) { return handleRequest(shared, std::move(req)); };
+}
+
 Task<void> runServer(Config config) {
-    auto shared = std::make_shared<Shared>(Shared{
-        config,
-        Cache{config.cache, config.security.maxCacheEntriesByIp},
-        RateLimiter{config.security.maxRequestsByIp},
-        Source::makeArchives(config.security.maxUnzip),
-    });
+    auto shared = makeShared(config);
 
     if (shared->cache.enabled()) {
-        std::cout << "cache: " << (config.cache.url.empty() ? "memory" : config.cache.url)
+        std::cerr << "cache: " << (config.cache.url.empty() ? "memory" : config.cache.url)
                   << ", ttl " << config.cache.ttl.count() << "s\n";
     }
     warnAboutDefaults(config, shared->cache.enabled());
@@ -467,7 +476,7 @@ Task<void> runServer(Config config) {
     options.port = config.port;
     options.name = "haio-cdn";
     options.ready = [host = config.host, port = config.port] {
-        std::cout << "haio cdn listening on http://" << host << ':' << port << "\n";
+        std::cerr << "haio cdn listening on http://" << host << ':' << port << "\n";
     };
 
     co_await Platform::serveHttp(std::move(options), [shared](HttpServerRequest req) {
