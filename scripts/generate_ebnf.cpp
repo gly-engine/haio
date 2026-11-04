@@ -95,7 +95,7 @@ void stageRules(const Stage& stage, std::vector<Line>& out) {
 std::string transformAlternation(bool merges) {
     std::vector<std::string> rules;
     for (const auto* stage : Grammar::stages) {
-        if (stage->kind == Kind::Transform && stage->merges == merges) rules.emplace_back(stage->rule);
+        if (stage->kind == Kind::Transform && static_cast<bool>(stage->merges) == merges) rules.emplace_back(stage->rule);
     }
     return alternation(rules);
 }

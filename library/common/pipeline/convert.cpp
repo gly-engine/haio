@@ -1,4 +1,5 @@
 #include <haio.hpp>
+#include <haio_atlas.hpp>
 
 #include <meta>
 #include <optional>
@@ -219,6 +220,56 @@ std::optional<Error> pixFmt(Picture& picture, const Token& token) {
     return std::nullopt;
 }
 
+void blit(Image<Color::RGBA8888>& canvas, const Image<Color::RGBA8888>& picture, int left, int top) {
+    const auto row = static_cast<size_t>(picture.width) * 4;
+    for (int y = 0; y < picture.height; y++) {
+        const auto to = (static_cast<size_t>(top + y) * static_cast<size_t>(canvas.width) + static_cast<size_t>(left)) * 4;
+        std::copy_n(picture.data.data() + static_cast<size_t>(y) * row, row, canvas.data.data() + to);
+    }
+}
+
+/**
+ * the pictures laid on one canvas, which keeps where each of them went as its cuts.
+ * one that already had cuts brings those rather than one of its own, so a grid of
+ * grids is a single index of everything that went into them.
+ */
+Result<Picture> grid(std::span<Picture> pictures, const Token& token) {
+    std::vector<Size> sizes;
+    sizes.reserve(pictures.size());
+    for (const auto& picture : pictures) sizes.push_back(sizeOf(picture));
+
+    const Atlas::Spread spread{token.quantum, token.gap};
+    auto layout = token.cells.width == 0 && token.cells.height == 0 ? Atlas::shelf(sizes, spread)
+                                                                     : Atlas::grid(sizes, token.cells, spread);
+    if (!layout) return std::unexpected(layout.error());
+
+    Picture out;
+    out.image = Image<Color::RGBA8888>{
+        layout->canvas.width, layout->canvas.height,
+        std::vector<uint8_t>(static_cast<size_t>(layout->canvas.width) * static_cast<size_t>(layout->canvas.height) * 4)};
+
+    for (size_t at = 0; at < pictures.size(); at++) {
+        auto& picture = pictures[at];
+        if (auto failed = picture.rgba()) return std::unexpected(*failed);
+
+        const auto& room = layout->rects[at];
+        const auto [dx, dy] = placeOf(Size{room.width, room.height}, sizes[at], token.gravity, 0, 0);
+        const auto left = room.x + dx;
+        const auto top = room.y + dy;
+        blit(out.image, picture.image, left, top);
+        picture.image.data = {};
+
+        if (picture.meta.cuts.empty()) {
+            out.meta.cuts.push_back(Cut{Rect{left, top, sizes[at].width, sizes[at].height}, picture.meta.name.value_or(std::string{})});
+        } else {
+            auto moved = movedCuts(std::move(picture.meta.cuts), left, top, layout->canvas);
+            out.meta.cuts.insert(out.meta.cuts.end(), std::make_move_iterator(moved.begin()), std::make_move_iterator(moved.end()));
+        }
+        if (!out.meta.name) out.meta.name = std::move(picture.meta.name);
+    }
+    return out;
+}
+
 /** a blend declared for the two colours as they are, so tint sees a grey as a grey */
 std::optional<Result<Image<Color::RGBA8888>>> blendAsTheyAre(Compose compose, Picture& base, Picture& layer, int x, int y) {
     const auto colourOf = [](const Picture& picture) { return picture.native ? picture.native->color : Color::RGBA8888; };
@@ -427,6 +478,22 @@ Result<Blob> runPipeline(std::vector<Blob> inputs, const Pipeline& pipeline,
                 stack.pop_back();
                 failure = composite(stack.back(), std::move(layer), token.compose, token.gravity,
                                     token.rect.x, token.rect.y);
+                break;
+            }
+
+            case TokenKind::Grid: {
+                auto pictures = inScope();
+                if (!pictures) {
+                    failure = pictures.error();
+                    break;
+                }
+                auto laid = grid(*pictures, token);
+                if (!laid) {
+                    failure = laid.error();
+                    break;
+                }
+                stack.resize(scopes.back());
+                stack.push_back(*std::move(laid));
                 break;
             }
 

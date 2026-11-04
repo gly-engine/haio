@@ -232,6 +232,8 @@ inline constexpr std::array leafRules = {
     Rule{"crop-geometry", R"(integer , ( "x" | "X" ) , integer , [ signed-integer , signed-integer ] | rect)"},
     Rule{"rect", R"(integer , "," , integer , "," , integer , "," , integer)"},
     Rule{"offset", "signed-integer , signed-integer"},
+    Rule{"grid-geometry", R"([ integer ] , "@" , [ integer ] , [ "-" , integer , "-" , integer ] , [ plus , integer , plus , integer ])"},
+    Rule{"plus", R"("+" | " ")"},
     Rule{"integer", "digit , { digit }"},
     Rule{"signed-integer", R"(( "+" | "-" | " " ) , integer)"},
 };
@@ -248,7 +250,7 @@ inline constexpr std::array notes = {
     Note{"a canvas such as `xc:white` is painted by a brush rather than read by a codec, so `-size` is one of its options; `canvas:` is `xc:` and `fractal:` is `plasma:` under another name, as they are for imagemagick."},
     Note{"`gradient:` and `radial-gradient:` draw the same pixels imagemagick 6 does, `-define gradient:*` included, except where imagemagick 6 slips: south by -define measured against the width, and a start pixel in the last column taking its neighbour's colour. `plasma:` is haio's own noise, so a `-seed` repeats haio's picture rather than imagemagick's."},
     Note{"every source puts a picture on a stack, the way imagemagick keeps a list: a file, an http url, `-` for stdin, or a canvas such as `xc:white`. the last word is always the output."},
-    Note{"a transform changes the picture on top of the stack, the one made last; imagemagick would change them all. a merge such as `-composite` wants two to four in its parenthesis and leaves one: with three the third tints the second, and with four the fourth tints the second's negative under it."},
+    Note{"a transform changes the picture on top of the stack, the one made last; imagemagick would change them all. a merge such as `-composite` wants two to four in its parenthesis and leaves one: with three the third tints the second, and with four the fourth tints the second's negative under it. `-grid` takes every picture in its parenthesis, however many."},
     Note{"a `qr:` or `text:` first of three in a `-composite` is the shape and not the background: `qr:x xc:red xc:blue` is read as `qr:x -pix_fmt nil qr:x xc:red xc:blue`, a clear background as big as the code, and `qr:x xc:red` as `qr:x xc:red null:` before that, unless a `-compose` other than over was asked for."},
     Note{"`-pix_fmt nil` keeps a picture's size and forgets its pixels, which is a clear canvas as big as it was."},
     Note{"a parenthesis only scopes the stack: what is inside sees only the pictures made inside, and they join the stack around it at the `)`. options do not cross it."},

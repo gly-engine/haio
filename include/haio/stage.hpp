@@ -231,6 +231,13 @@ enum class Kind {
     Output,      /**< the last word, and the one stage there is always exactly one of */
 };
 
+struct Joins {
+    size_t fewest = 0;
+    size_t most = 0;
+
+    constexpr explicit operator bool() const { return most > 0; }
+};
+
 struct Stage {
     Kind kind = Kind::Transform;
 
@@ -248,11 +255,12 @@ struct Stage {
     std::string_view help;
 
     /**
-     * it joins the picture from a parenthesis into the one before it, as -composite
-     * does. a parenthesis is only ever closed into one of these: imagemagick would
-     * keep both pictures and write two, which haio does not do.
+     * how many pictures of its parenthesis it joins into one, at least and at most:
+     * two to four for -composite, every one of them for -grid. a parenthesis is only
+     * ever closed into one of these: imagemagick would keep both pictures and write
+     * two, which haio does not do. a stage that joins nothing leaves both at zero.
      */
-    bool merges = false;
+    Joins merges{};
 
     constexpr std::string_view name() const { return spellings[0]; }
 

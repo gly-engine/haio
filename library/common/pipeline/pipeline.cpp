@@ -79,6 +79,15 @@ Token Composite(Compose compose, Gravity gravity, int x, int y) {
     return token;
 }
 
+Token Grid(Size cells, Size quantum, Size gap, Gravity gravity) {
+    Token token{TokenKind::Grid};
+    token.cells = cells;
+    token.quantum = quantum;
+    token.gap = gap;
+    token.gravity = gravity;
+    return token;
+}
+
 Token Fx(std::string expression) {
     Token token{TokenKind::Fx};
     token.expression = std::move(expression);

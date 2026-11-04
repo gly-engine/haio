@@ -242,6 +242,11 @@ std::optional<Haio::Error> checkSize(const Haio::Cdn::Config& config, const std:
     const auto& limits = config.security;
 
     for (const auto& token : tokens) {
+        if (token.kind == Haio::TokenKind::Grid && limits.maxSizePixel > 0
+            && std::max({token.quantum.width, token.quantum.height, token.gap.width, token.gap.height}) > limits.maxSizePixel) {
+            return Haio::Error{Haio::ErrorCode::InvalidInput,
+                               "a grid cell or gap is limited to " + std::to_string(limits.maxSizePixel) + " on each side"};
+        }
         if (token.kind != Haio::TokenKind::Resize) continue;
 
         // a share is checked as a share: the factor is known here even though what it

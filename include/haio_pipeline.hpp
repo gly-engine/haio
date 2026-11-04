@@ -26,6 +26,7 @@ enum class TokenKind {
     Palette,
     PixFmt,     /**< the picture moved into the colour in color */
     Composite,
+    Grid,       /**< every picture of the parenthesis laid on one canvas, which keeps where each went */
     Fx,
     Open,    /**< a parenthesis: what comes after it, until Close, sees only its own pictures */
     Close,
@@ -74,6 +75,16 @@ struct Token {
     Gravity gravity = Gravity::NorthWest;
     Compose compose = Compose::Over;   /**< and how the two are mixed */
 
+    /**
+     * Grid only: how many columns and rows, either zero for as many as it takes and
+     * both zero for a layout that picks its own; the cell each picture gets, rounded up
+     * to a multiple of quantum; and the gap left between two cells. gravity says where
+     * a picture sits in a cell bigger than it.
+     */
+    Size cells;
+    Size quantum{1, 1};
+    Size gap;
+
     /** Generate only: which brush; what it paints is in expression and its options in settings */
     Brush brush = Brush::Xc;
 
@@ -110,6 +121,7 @@ Token Negate();
 Token Palette(std::string palette, Dither dither, size_t limit, Limit limitHow);
 Token PixFmt(Color color);
 Token Composite(Compose compose, Gravity gravity, int x, int y);
+Token Grid(Size cells, Size quantum, Size gap, Gravity gravity = Gravity::NorthWest);
 Token Fx(std::string expression);
 Token Open();
 Token Close();

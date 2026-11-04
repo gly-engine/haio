@@ -308,8 +308,8 @@ private:
 
         auto& pictures = scopes_.back();
         if (pictures == 0) return refuse("no images defined", dashed.spelling);
-        if (stage.merges && pictures == 1) return refuse("image sequence is required", dashed.spelling);
-        if (stage.merges && pictures > 4) return refuse("image sequence is too long", dashed.spelling);
+        if (stage.merges && pictures < stage.merges.fewest) return refuse("image sequence is required", dashed.spelling);
+        if (stage.merges && pictures > stage.merges.most) return refuse("image sequence is too long", dashed.spelling);
 
         const auto taken = take(stage, stage.name(), dashed.spelling);
         if (!taken) return false;
@@ -320,7 +320,7 @@ private:
         auto token = build(stage, *value, Stages::Given{*taken});
         if (!token) return refuseWhole(std::move(token.error().message), std::move(token.error().token));
 
-        const bool shapeFirst = stage.merges && firsts_.back() && composite4Of(command_.steps[firsts_.back()->begin].brush);
+        const bool shapeFirst = token->kind == TokenKind::Composite && firsts_.back() && composite4Of(command_.steps[firsts_.back()->begin].brush);
 
         // a shape and one colour over it is that colour on nothing, which is two colours with null: the second
         if (shapeFirst && pictures == 2 && token->compose == Compose::Over) {
