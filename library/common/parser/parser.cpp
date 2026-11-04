@@ -446,9 +446,11 @@ private:
             if (!prefixed) {
                 return refuseWhole("a source needs a bucket, as assets:" + std::string(word), std::string(word));
             }
-            if (prefixed->value.empty()) return refuse("missing an image filename", std::string(word));
+            std::string_view path = prefixed->value;
+            if (path.starts_with("//")) path.remove_prefix(2);
+            if (path.empty()) return refuse("missing an image filename", std::string(word));
             input.bucket = prefixed->prefix;
-            input.path = prefixed->value;
+            input.path = std::string(path);
             input.format = formatFromPathOrRaw(input.path);
         } else {
             if (prefixed && knownFormat(prefixed->prefix)) {
