@@ -97,6 +97,18 @@ struct Options {
     std::string_view outputNamed;
 };
 
+/**
+ * the sets taken off the front, and every \@name they declared replaced in what is
+ * left. a name nobody declared stays as it was written, so a line without a set is
+ * handed back word for word.
+ */
+struct Expanded {
+    std::vector<Word> words;
+    Error error;
+};
+
+Expanded expand(std::span<const Word> words);
+
 Parsed parse(std::span<const Word> words, Options options = {});
 
 /**

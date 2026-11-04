@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <map>
 #include <stdexcept>
 #include <vector>
 
@@ -568,8 +569,118 @@ private:
 
 } // namespace
 
+namespace {
+
+using Sets = std::map<std::string, std::string, std::less<>>;
+
+constexpr std::string_view setPrefix = "option:";
+
+bool isNameChar(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+}
+
+std::string substituted(std::string_view text, const Sets& sets) {
+    std::string out;
+    for (size_t at = 0; at < text.size();) {
+        if (text[at] != '@') {
+            out += text[at++];
+            continue;
+        }
+
+        size_t end = at + 1;
+        while (end < text.size() && isNameChar(text[end])) end++;
+
+        const auto name = text.substr(at + 1, end - at - 1);
+        const auto found = name.empty() ? sets.end() : sets.find(name);
+        out += found == sets.end() ? std::string(text.substr(at, end - at)) : found->second;
+        at = end;
+    }
+    return out;
+}
+
+std::optional<Error> declare(Sets& sets, std::string_view written, std::string_view spelling) {
+    const auto refused = [&](std::string why) {
+        return Error{std::move(why), std::string(written)};
+    };
+
+    if (!written.starts_with(setPrefix)) {
+        return refused(std::string(spelling) + " takes option:name=value, and this one has no option: in front");
+    }
+
+    const auto rest = written.substr(setPrefix.size());
+    const auto equals = rest.find('=');
+    if (equals == std::string_view::npos) {
+        return refused(std::string(spelling) + " takes option:name=value, and this one has no value");
+    }
+
+    const auto name = rest.substr(0, equals);
+    if (name.empty() || !std::ranges::all_of(name, isNameChar)) {
+        return refused("a set names its variable in a to z and 0 to 9, and this one is " + Stages::quoted(std::string(name)));
+    }
+    if (sets.contains(name)) {
+        return refused("the variable " + Stages::quoted(std::string(name)) + " was already set, and a set is not written twice");
+    }
+
+    sets.emplace(name, rest.substr(equals + 1));
+    return std::nullopt;
+}
+
+}
+
+Expanded expand(std::span<const Word> words) {
+    Expanded out;
+    Sets sets;
+    bool preamble = true;
+
+    for (size_t at = 0; at < words.size(); at++) {
+        const auto& word = words[at];
+        if (word.kind != Word::Kind::Named || word.name != "set") {
+            preamble = false;
+            out.words.push_back(word);
+            continue;
+        }
+
+        if (!preamble) {
+            out.error = Error{"a set comes before everything else, and this one does not", word.text};
+            return out;
+        }
+
+        std::string_view written;
+        if (word.value) {
+            written = *word.value;
+        } else if (at + 1 < words.size()) {
+            written = words[++at].text;
+        } else {
+            out.error = Error{word.spelling + " takes option:name=value, and nothing came after it", word.text};
+            return out;
+        }
+
+        if (auto refusal = declare(sets, written, word.spelling)) {
+            out.error = *refusal;
+            return out;
+        }
+    }
+
+    if (sets.empty()) return out;
+
+    for (auto& word : out.words) {
+        if (word.kind == Word::Kind::Named) {
+            if (word.value) word.value = substituted(*word.value, sets);
+        } else {
+            word.text = substituted(word.text, sets);
+        }
+    }
+    return out;
+}
+
 Parsed parse(std::span<const Word> words, Options options) {
-    return Reader(words, options).run();
+    auto expanded = expand(words);
+    if (expanded.error) {
+        Parsed out;
+        out.error = expanded.error;
+        return out;
+    }
+    return Reader(expanded.words, options).run();
 }
 
 } // namespace Haio::Parser
