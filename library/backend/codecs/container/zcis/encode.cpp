@@ -2,13 +2,11 @@
 #include <haio/generated/codec.hpp>
 #include <haio_convert.hpp>
 #include <haio_util.hpp>
-#include <haio/internal/codecs/zcis.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cstdio>
 #include <optional>
-#include <span>
 #include <string>
 #include <string_view>
 
@@ -76,14 +74,21 @@ std::optional<Haio::Error> checkCanvas(int width, int height) {
     return std::nullopt;
 }
 
-std::optional<Haio::Error> openArchive(std::vector<uint8_t>& out, std::span<const Haio::Rect> cuts) {
+/**
+ * the index: a line for every picture laid on the canvas, saying where to cut it back
+ * out, or a single one covering the canvas when nothing was laid on it. the names the
+ * cuts carry stay behind, since a line has no room for them.
+ */
+std::optional<Haio::Error> openArchive(std::vector<uint8_t>& out, const Haio::Metadata& meta, int width, int height) {
     appendBytes(out, "!<arch>\n");
 
+    const auto line = [](const Haio::Rect& rect) {
+        return std::to_string(rect.x) + " " + std::to_string(rect.y) + " " + std::to_string(rect.width) + " "
+             + std::to_string(rect.height) + "\r\n";
+    };
     std::string index;
-    for (const auto& cut : cuts) {
-        index += std::to_string(cut.x) + " " + std::to_string(cut.y) + " "
-               + std::to_string(cut.width) + " " + std::to_string(cut.height) + "\r\n";
-    }
+    for (const auto& cut : meta.cuts) index += line(cut.rect);
+    if (meta.cuts.empty()) index = line(Haio::Rect{0, 0, width, height});
     return appendMember(out, std::string(indexMemberName), {index.begin(), index.end()});
 }
 
@@ -99,9 +104,8 @@ namespace Haio::Codecs {
  * @addtogroup encode
  * @{
  */
-namespace Zcis {
-
-Result<Blob> writeCanvas(const Image<Color::RGBA8888>& img, std::span<const Rect> cuts) {
+template <>
+Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, const Metadata& meta) {
     const auto expected = static_cast<size_t>(img.width) * static_cast<size_t>(img.height) * 4;
     if (img.width <= 0 || img.height <= 0 || img.data.size() != expected) {
         HAIO_FAIL(InvalidInput, "invalid rgba8888 image for zcis encode");
@@ -109,7 +113,7 @@ Result<Blob> writeCanvas(const Image<Color::RGBA8888>& img, std::span<const Rect
     HAIO_CHECK(checkCanvas(img.width, img.height));
 
     std::vector<uint8_t> out;
-    HAIO_CHECK(openArchive(out, cuts));
+    HAIO_CHECK(openArchive(out, meta, img.width, img.height));
 
     const auto target = canvasTarget(img.width, img.height);
 
@@ -134,29 +138,20 @@ Result<Blob> writeCanvas(const Image<Color::RGBA8888>& img, std::span<const Rect
     return Blob{Format::ZCIS, Color::RGBA8888, "image/x-zcis", {}, std::move(out)};
 }
 
-}
-
-/**
- * @addtogroup encode
- * @{
- */
 template <>
 Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img) {
-    const Rect whole{0, 0, img.width, img.height};
-    return Zcis::writeCanvas(img, std::span{&whole, 1});
+    return Encode<Format::ZCIS, Color::RGBA8888>(std::move(img), Metadata{});
 }
-/** @} */
 
 template <>
-Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img) {
+Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img, const Metadata& meta) {
     if (img.width <= 0 || img.height <= 0) HAIO_FAIL(InvalidInput, "invalid yuv420 image for zcis encode");
     HAIO_TRY(expected, sizeOf(Color::YUV420, Size{img.width, img.height}));
     if (img.data.size() != expected) HAIO_FAIL(InvalidInput, "invalid yuv420 image for zcis encode");
     HAIO_CHECK(checkCanvas(img.width, img.height));
 
     std::vector<uint8_t> out;
-    const Rect whole{0, 0, img.width, img.height};
-    HAIO_CHECK(openArchive(out, std::span{&whole, 1}));
+    HAIO_CHECK(openArchive(out, meta, img.width, img.height));
 
     std::vector<uint8_t> payload;
     appendBytes(payload, "YUV4MPEG2 W" + std::to_string(img.width) + " H" + std::to_string(img.height)
@@ -167,6 +162,11 @@ Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img) {
     HAIO_CHECK(appendMember(out, name, payload));
 
     return Blob{Format::ZCIS, Color::YUV420, "image/x-zcis", {}, std::move(out)};
+}
+
+template <>
+Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img) {
+    return Encode<Format::ZCIS, Color::YUV420>(std::move(img), Metadata{});
 }
 /** @} */
 

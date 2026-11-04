@@ -219,12 +219,12 @@ template <Format F, Color P> Result<Image<P>> Decode(const Blob&, const Settings
 template <Format F, Color P> Result<Blob>     Encode(Image<P>, const Settings&)    = delete;
 
 /**
- * several pictures written into one container, which only a container that can say
- * where each of them is may do. how they are laid out is the container's own: an
- * atlas and an index for zcis, numbered members for an archive, array layers for a
- * texture. a format that defines none of these cannot pack, and says so by itself.
+ * the way in for a container that keeps what a picture knows about itself besides
+ * its pixels, as zcis keeps the cuts in its index. one that defines it may still
+ * define the plain form too, for a picture that knows nothing; this one wins when
+ * both are there.
  */
-template <Format F, Color P> Result<Blob> Pack(std::vector<Image<P>>) = delete;
+template <Format F, Color P> Result<Blob> Encode(Image<P>, const Metadata&) = delete;
 
 /**
  * a picture painted out of nothing by a Brush, in the colour it is painted in: the
@@ -315,11 +315,8 @@ template <Format F, Color P> concept Decodable  = DecodesPlain<F, P> || DecodesS
  */
 template <Format F, Color P> concept EncodesPlain    = requires (Image<P> i) { { Encode<F, P>(std::move(i)) } -> std::same_as<Result<Blob>>; };
 template <Format F, Color P> concept EncodesSettings = requires (Image<P> i, const Settings& s) { { Encode<F, P>(std::move(i), s) } -> std::same_as<Result<Blob>>; };
-template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P>;
-/** can several pictures of this colour be written into this container at once */
-template <Format F, Color P> concept Packable = requires (std::vector<Image<P>> v) {
-    { Pack<F, P>(std::move(v)) } -> std::same_as<Result<Blob>>;
-};
+template <Format F, Color P> concept EncodesMetadata = requires (Image<P> i, const Metadata& m) { { Encode<F, P>(std::move(i), m) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P> || EncodesMetadata<F, P>;
 /**
  * @ingroup generate
  * can this brush paint in this colour, asked of the pair rather than answered by hand.
@@ -352,8 +349,9 @@ Result<Image<P>> decode(const Blob& blob, const Settings& settings) {
 
 template <Format F, Color P>
     requires Encodable<F, P>
-Result<Blob> encode(Image<P> image, const Settings& settings) {
-    if constexpr (EncodesSettings<F, P>) return Encode<F, P>(std::move(image), settings);
+Result<Blob> encode(Image<P> image, const Settings& settings, const Metadata& meta = {}) {
+    if constexpr (EncodesMetadata<F, P>) return Encode<F, P>(std::move(image), meta);
+    else if constexpr (EncodesSettings<F, P>) return Encode<F, P>(std::move(image), settings);
     else return Encode<F, P>(std::move(image));
 }
 

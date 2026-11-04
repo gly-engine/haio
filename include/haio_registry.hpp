@@ -171,26 +171,6 @@ constexpr bool encodable(Format format, Color color) {
     return false;
 }
 
-/** and whether it can take several at once, which is a different question */
-constexpr bool packable(Format format, Color color) {
-    HAIO_FOR_EACH_FORMAT(f) {
-        constexpr Format ff = std::meta::extract<Format>(f);
-        HAIO_FOR_EACH_COLOR(c) {
-            constexpr Color cc = std::meta::extract<Color>(c);
-            if (ff == format && cc == color) return Codecs::Packable<ff, cc>;
-        }
-    }
-    return false;
-}
-
-/** whether anything at all can be packed into it, whatever the colour */
-constexpr bool packable(Format format) {
-    HAIO_FOR_EACH_COLOR(c) {
-        if (packable(format, std::meta::extract<Color>(c))) return true;
-    }
-    return false;
-}
-
 /**
  * the colour a container is written in when nobody names one: the one it declares as
  * its own, and failing that the first it can write at all.
@@ -373,7 +353,7 @@ inline Result<std::vector<uint8_t>> Convert(const Image<Color::RGBA8888>& image,
  * Codecs::Encode, with nothing but this bridge between it and a string.
  */
 inline Result<Blob> Encode(AnyImage image, Format to, std::optional<Color> as = std::nullopt,
-                           const Settings& settings = {}) {
+                           const Settings& settings = {}, const Metadata& meta = {}) {
     const auto wanted = as ? as : encodeColorFor(to);
     if (!wanted) {
         return std::unexpected(Error{ErrorCode::UnsupportedFormat,
@@ -398,51 +378,8 @@ inline Result<Blob> Encode(AnyImage image, Format to, std::optional<Color> as = 
                 auto converted = Convert(std::move(image), color);
                 out = converted ? Codecs::encode<format, color>(
                                       Image<color>{converted->width, converted->height, std::move(converted->data)},
-                                      settings)
+                                      settings, meta)
                                 : Result<Blob>{std::unexpected(converted.error())};
-            }
-        }
-    }
-    return out;
-}
-
-/**
- * several pictures out through one container, for the containers that can say where
- * each of them is. how they are arranged is the container's own; what is shared is
- * only getting them all into the colour it writes.
- */
-inline Result<Blob> Pack(std::vector<AnyImage> images, Format to, std::optional<Color> as = std::nullopt) {
-    if (images.empty()) return std::unexpected(Error{ErrorCode::InvalidInput, "nothing to pack"});
-
-    const auto wanted = as ? as : encodeColorFor(to);
-    if (!wanted) {
-        return std::unexpected(Error{ErrorCode::UnsupportedFormat,
-                                     "cannot encode " + std::string(formatName(to))});
-    }
-
-    Result<Blob> out = std::unexpected(Error{ErrorCode::UnsupportedFormat,
-                                             "a " + std::string(formatName(to)) + " cannot hold several pictures"});
-    bool done = false;
-
-    HAIO_FOR_EACH_COLOR(c) {
-        constexpr Color color = std::meta::extract<Color>(c);
-        HAIO_FOR_EACH_FORMAT(f) {
-            constexpr Format format = std::meta::extract<Format>(f);
-            if constexpr (Codecs::Packable<format, color>) {
-                if (done || format != to || color != *wanted) continue;
-                done = true;
-
-                std::vector<Image<color>> ready;
-                ready.reserve(images.size());
-                for (auto& image : images) {
-                    auto converted = Convert(std::move(image), color);
-                    if (!converted) {
-                        out = std::unexpected(converted.error());
-                        break;
-                    }
-                    ready.push_back(Image<color>{converted->width, converted->height, std::move(converted->data)});
-                }
-                if (ready.size() == images.size()) out = Codecs::Pack<format, color>(std::move(ready));
             }
         }
     }

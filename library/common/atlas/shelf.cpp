@@ -41,9 +41,9 @@ Layout fill(std::span<const Size> sizes, std::span<const size_t> order, int widt
 }
 
 std::optional<Error> checkSizes(std::span<const Size> sizes, const Spread& spread) {
-    if (sizes.empty()) return Error{ErrorCode::InvalidInput, "nothing to pack"};
+    if (sizes.empty()) return Error{ErrorCode::InvalidInput, "nothing to lay out"};
     for (const auto& size : sizes) {
-        if (size.width <= 0 || size.height <= 0) return Error{ErrorCode::InvalidInput, "a picture with no pixels cannot be packed"};
+        if (size.width <= 0 || size.height <= 0) return Error{ErrorCode::InvalidInput, "a picture with no pixels cannot be laid out"};
     }
     if (spread.quantum.width <= 0 || spread.quantum.height <= 0 || spread.gap.width < 0 || spread.gap.height < 0) {
         return Error{ErrorCode::InvalidInput, "a grid cell is rounded to a positive multiple, with no negative gap"};

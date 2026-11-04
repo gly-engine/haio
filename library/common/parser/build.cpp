@@ -14,7 +14,7 @@ std::expected<Pipeline, Error> build(const Parsed& parsed) {
      * extension never means it, which is exactly what tells it apart from a format
      * nobody recognised.
      */
-    if (parsed.outputPack == Format::RAW && parsed.outputFormat == Format::RAW && parsed.outputFormatName.empty()) {
+    if (parsed.outputFormat == Format::RAW && parsed.outputFormatName.empty()) {
         return std::unexpected(Error{"no encode delegate for this image format " + Stages::quoted(parsed.outputPath), parsed.outputPath});
     }
 
@@ -24,8 +24,7 @@ std::expected<Pipeline, Error> build(const Parsed& parsed) {
         if (token.kind == TokenKind::Fx) return std::unexpected(Error{"unsupported option `-fx', read and not yet run: " + token.expression, token.expression});
         pipeline |= token;
     }
-    if (parsed.outputPack != Format::RAW) pipeline |= Tokens::Pack(parsed.outputPack);
-    else pipeline |= Tokens::Encode(parsed.outputFormat, parsed.outputColor, parsed.outputSettings);
+    pipeline |= Tokens::Encode(parsed.outputFormat, parsed.outputColor, parsed.outputSettings);
 
     if (parsed.outputEncoding != BodyEncoding::Identity || !parsed.outputName.empty()) {
         pipeline |= Tokens::Deliver(parsed.outputEncoding, parsed.outputName);

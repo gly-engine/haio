@@ -126,12 +126,6 @@ Token Encode(Format format, std::optional<Color> color, Settings settings) {
     return token;
 }
 
-Token Pack(Format format) {
-    Token token{TokenKind::Pack};
-    token.format = format;
-    return token;
-}
-
 Token Deliver(BodyEncoding encoding, std::string name) {
     Token token{TokenKind::Deliver};
     token.encoding = encoding;
