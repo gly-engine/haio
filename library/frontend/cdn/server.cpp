@@ -268,6 +268,67 @@ std::optional<Haio::Error> checkSize(const Haio::Cdn::Config& config, const std:
     return std::nullopt;
 }
 
+constexpr size_t maxInFlight = 4;
+
+/**
+ * what the workers below share: the next input to take, where each one's blob goes,
+ * and the first refusal, which stops the others.
+ */
+struct Fetching {
+    const std::vector<Haio::Parser::Input>& inputs;
+    std::vector<Haio::Blob>& blobs;
+    size_t next = 0;
+    size_t running = 0;
+    std::optional<Haio::Error> failure;
+    Haio::Event done;
+};
+
+Haio::Task<void> fetchWorker(std::shared_ptr<Fetching> state, const Haio::Cdn::Config& config,
+                             Haio::Source::Archives& archives) {
+    while (!state->failure && state->next < state->inputs.size()) {
+        const auto at = state->next++;
+        const auto& input = state->inputs[at];
+
+        auto fetched = co_await Haio::Cdn::fetchBucket(config, archives, input.bucket, input.path);
+        if (!fetched) {
+            if (!state->failure) state->failure = fetched.error();
+            break;
+        }
+        if (fetched->format == Haio::Format::RAW) {
+            if (!state->failure) {
+                state->failure = Haio::Error{Haio::ErrorCode::UnsupportedFormat,
+                                             "haio does not recognise " + input.path};
+            }
+            break;
+        }
+        state->blobs[at] = *std::move(fetched);
+    }
+
+    state->running--;
+    if (state->running == 0) state->done.set();
+}
+
+/**
+ * every source at once, up to maxInFlight of them, each writing into its own slot so
+ * the pictures stay in the order they were asked for.
+ */
+Haio::Task<std::optional<Haio::Error>> fetchAll(const Haio::Cdn::Config& config, Haio::Source::Archives& archives,
+                                                const std::vector<Haio::Parser::Input>& inputs,
+                                                std::vector<Haio::Blob>& blobs) {
+    if (inputs.empty()) co_return std::nullopt;
+
+    blobs.resize(inputs.size());
+    auto state = std::make_shared<Fetching>(Fetching{inputs, blobs});
+
+    state->running = std::min(maxInFlight, inputs.size());
+    for (size_t worker = 0; worker < state->running; worker++) {
+        Haio::Platform::spawn(fetchWorker(state, config, archives));
+    }
+
+    co_await state->done;
+    co_return state->failure;
+}
+
 /** the fetch and the conversion behind it, which is exactly what an entry saves */
 Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config& config, Haio::Source::Archives& archives, Route route) {
     const auto words = Haio::Cdn::wordsOf(route.query);
@@ -286,16 +347,8 @@ Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config&
     if (auto tooBig = checkSize(config, parsed.steps)) co_return std::unexpected(*tooBig);
 
     std::vector<Haio::Blob> blobs;
-    blobs.reserve(parsed.inputs.size());
-    for (const auto& input : parsed.inputs) {
-        auto fetched = co_await Haio::Cdn::fetchBucket(config, archives, input.bucket, input.path);
-        if (!fetched) co_return std::unexpected(fetched.error());
-
-        if (fetched->format == Haio::Format::RAW) {
-            co_return std::unexpected(Haio::Error{Haio::ErrorCode::UnsupportedFormat,
-                                                  "haio does not recognise " + input.path});
-        }
-        blobs.push_back(*std::move(fetched));
+    if (auto refused = co_await fetchAll(config, archives, parsed.inputs, blobs)) {
+        co_return std::unexpected(*refused);
     }
 
     Haio::Pipeline pipeline;
