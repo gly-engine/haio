@@ -30,30 +30,42 @@ Result<Blob> encodePvr(Image<P> img) {
  * @addtogroup encode
  * @{
  */
+
 template <>
 Result<Blob> Encode<Format::PVR, Color::ETC1>(Image<Color::ETC1> img) {
     return encodePvr<Color::ETC1>(std::move(img));
 }
-/** @} */
 
-/**
- * @addtogroup encode
- * @{
- */
+template <>
+Result<Blob> Encode<Format::PVR, Color::ETC2>(Image<Color::ETC2> img) {
+    return encodePvr<Color::ETC2>(std::move(img));
+}
+
+template <>
+Result<Blob> Encode<Format::PVR, Color::ETC2A>(Image<Color::ETC2A> img) {
+    return encodePvr<Color::ETC2A>(std::move(img));
+}
+
+template <>
+Result<Blob> Encode<Format::PVR, Color::EAC_R11>(Image<Color::EAC_R11> img) {
+    return encodePvr<Color::EAC_R11>(std::move(img));
+}
+
+template <>
+Result<Blob> Encode<Format::PVR, Color::EAC_RG11>(Image<Color::EAC_RG11> img) {
+    return encodePvr<Color::EAC_RG11>(std::move(img));
+}
+
 template <>
 Result<Blob> Encode<Format::PVR, Color::RGB565>(Image<Color::RGB565> img) {
     return encodePvr<Color::RGB565>(std::move(img));
 }
-/** @} */
 
-/**
- * @addtogroup encode
- * @{
- */
 template <>
 Result<Blob> Encode<Format::PVR, Color::RGBA8888>(Image<Color::RGBA8888> img) {
     return encodePvr<Color::RGBA8888>(std::move(img));
 }
+
 /** @} */
 
 }

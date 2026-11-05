@@ -33,30 +33,42 @@ Result<Image<P>> decodeKtx(const Blob& blob) {
  * @addtogroup decode
  * @{
  */
+
 template <>
 Result<Image<Color::ETC1>> Decode<Format::KTX, Color::ETC1>(const Blob& blob) {
     return decodeKtx<Color::ETC1>(blob);
 }
-/** @} */
 
-/**
- * @addtogroup decode
- * @{
- */
+template <>
+Result<Image<Color::ETC2>> Decode<Format::KTX, Color::ETC2>(const Blob& blob) {
+    return decodeKtx<Color::ETC2>(blob);
+}
+
+template <>
+Result<Image<Color::ETC2A>> Decode<Format::KTX, Color::ETC2A>(const Blob& blob) {
+    return decodeKtx<Color::ETC2A>(blob);
+}
+
+template <>
+Result<Image<Color::EAC_R11>> Decode<Format::KTX, Color::EAC_R11>(const Blob& blob) {
+    return decodeKtx<Color::EAC_R11>(blob);
+}
+
+template <>
+Result<Image<Color::EAC_RG11>> Decode<Format::KTX, Color::EAC_RG11>(const Blob& blob) {
+    return decodeKtx<Color::EAC_RG11>(blob);
+}
+
 template <>
 Result<Image<Color::RGB565>> Decode<Format::KTX, Color::RGB565>(const Blob& blob) {
     return decodeKtx<Color::RGB565>(blob);
 }
-/** @} */
 
-/**
- * @addtogroup decode
- * @{
- */
 template <>
 Result<Image<Color::RGBA8888>> Decode<Format::KTX, Color::RGBA8888>(const Blob& blob) {
     return decodeKtx<Color::RGBA8888>(blob);
 }
+
 /** @} */
 
 }

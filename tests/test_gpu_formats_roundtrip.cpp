@@ -53,6 +53,15 @@ void testContainer(const Haio::Image<P>& img) {
     }
 }
 
+/** every gpu container, so a colour is added to the list in one place rather than four */
+template <Haio::Color P>
+void testEvery(const Haio::Image<P>& img) {
+    testContainer<Haio::Format::KTX>(img);
+    testContainer<Haio::Format::KTX2>(img);
+    testContainer<Haio::Format::PVR>(img);
+    testContainer<Haio::Format::DDS>(img);
+}
+
 }
 
 auto main() -> int {
@@ -60,28 +69,40 @@ auto main() -> int {
         const auto rgba = makeImage(8, 8);
         const auto rgb565 = unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::RGB565>(rgba));
         const auto rgb565Rgba = unwrap(Haio::Codecs::Convert<Haio::Color::RGB565, Haio::Color::RGBA8888>(rgb565));
-        const auto etc1 = unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::ETC1>(rgba));
 
         require(psnr(rgba, rgb565Rgba) > 40.0, "rgb565 psnr is too low");
 
-        testContainer<Haio::Format::KTX>(rgba);
-        testContainer<Haio::Format::KTX>(rgb565);
-        testContainer<Haio::Format::KTX>(etc1);
+        testEvery(rgba);
+        testEvery(rgb565);
+        testEvery(unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::ETC1>(rgba)));
+        testEvery(unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::ETC2>(rgba)));
+        testEvery(unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::ETC2A>(rgba)));
+        testEvery(unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::EAC_R11>(rgba)));
+        testEvery(unwrap(Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::EAC_RG11>(rgba)));
 
-        testContainer<Haio::Format::KTX2>(rgba);
-        testContainer<Haio::Format::KTX2>(rgb565);
-        testContainer<Haio::Format::KTX2>(etc1);
+        // a block is eight bytes, or sixteen once there is an alpha or a second channel
+        require(Haio::sizeOf(Haio::Color::ETC2, {8, 8}) == 32, "etc2 is eight bytes a block");
+        require(Haio::sizeOf(Haio::Color::ETC2A, {8, 8}) == 64, "etc2a is sixteen bytes a block");
+        require(Haio::sizeOf(Haio::Color::EAC_R11, {8, 8}) == 32, "eac r11 is eight bytes a block");
+        require(Haio::sizeOf(Haio::Color::EAC_RG11, {8, 8}) == 64, "eac rg11 is sixteen bytes a block");
 
-        testContainer<Haio::Format::PVR>(rgba);
-        testContainer<Haio::Format::PVR>(rgb565);
-        testContainer<Haio::Format::PVR>(etc1);
+        // and the sides round up to whole blocks rather than being refused
+        require(Haio::sizeOf(Haio::Color::ETC2, {7, 5}) == 32, "etc2 rounds up to whole blocks");
 
-        testContainer<Haio::Format::DDS>(rgba);
-        testContainer<Haio::Format::DDS>(rgb565);
-
-        // dds carries no etc1, and that is now a pair that was never declared
+        // dds carries no etc at all, and those are pairs that were never declared
         static_assert(!Haio::Codecs::Encodable<Haio::Format::DDS, Haio::Color::ETC1>);
-        static_assert(Haio::Codecs::Encodable<Haio::Format::KTX2, Haio::Color::ETC1>);
+        static_assert(!Haio::Codecs::Encodable<Haio::Format::DDS, Haio::Color::ETC2>);
+        static_assert(Haio::Codecs::Encodable<Haio::Format::KTX2, Haio::Color::ETC2A>);
+
+        /**
+         * the gpu containers hold several colours and name no favourite, so a
+         * conversion into one without a -pix_fmt is refused rather than guessed at.
+         */
+        require(!Haio::encodeColorFor(Haio::Format::KTX), "a ktx must be asked which colour");
+        require(!Haio::encodeColorFor(Haio::Format::KTX2), "a ktx2 must be asked which colour");
+        require(!Haio::encodeColorFor(Haio::Format::PVR), "a pvr must be asked which colour");
+        require(!Haio::encodeColorFor(Haio::Format::DDS), "a dds must be asked which colour");
+        require(Haio::encodeColorFor(Haio::Format::PNG) == Haio::Color::RGBA8888, "a png declares its own");
 
         return 0;
     } catch (const std::exception& err) {

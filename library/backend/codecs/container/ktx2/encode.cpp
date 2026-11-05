@@ -33,30 +33,42 @@ Result<Blob> encodeKtx2(Image<P> img) {
  * @addtogroup encode
  * @{
  */
+
 template <>
 Result<Blob> Encode<Format::KTX2, Color::ETC1>(Image<Color::ETC1> img) {
     return encodeKtx2<Color::ETC1>(std::move(img));
 }
-/** @} */
 
-/**
- * @addtogroup encode
- * @{
- */
+template <>
+Result<Blob> Encode<Format::KTX2, Color::ETC2>(Image<Color::ETC2> img) {
+    return encodeKtx2<Color::ETC2>(std::move(img));
+}
+
+template <>
+Result<Blob> Encode<Format::KTX2, Color::ETC2A>(Image<Color::ETC2A> img) {
+    return encodeKtx2<Color::ETC2A>(std::move(img));
+}
+
+template <>
+Result<Blob> Encode<Format::KTX2, Color::EAC_R11>(Image<Color::EAC_R11> img) {
+    return encodeKtx2<Color::EAC_R11>(std::move(img));
+}
+
+template <>
+Result<Blob> Encode<Format::KTX2, Color::EAC_RG11>(Image<Color::EAC_RG11> img) {
+    return encodeKtx2<Color::EAC_RG11>(std::move(img));
+}
+
 template <>
 Result<Blob> Encode<Format::KTX2, Color::RGB565>(Image<Color::RGB565> img) {
     return encodeKtx2<Color::RGB565>(std::move(img));
 }
-/** @} */
 
-/**
- * @addtogroup encode
- * @{
- */
 template <>
 Result<Blob> Encode<Format::KTX2, Color::RGBA8888>(Image<Color::RGBA8888> img) {
     return encodeKtx2<Color::RGBA8888>(std::move(img));
 }
+
 /** @} */
 
 }

@@ -72,9 +72,9 @@ struct Image {
 };
 
 /**
- * how wide one pixel is, or zero when the colour has no such number: etc1 packs four
- * by four blocks and yuv420 splits into planes, so neither can be measured a pixel at
- * a time. sizeOf reads this too, so the widths are written down once.
+ * how wide one pixel is, or zero when the colour has no such number: the etc family
+ * packs four by four blocks and yuv420 splits into planes, so neither can be measured
+ * a pixel at a time. sizeOf reads this too, so the widths are written down once.
  */
 constexpr size_t strideOf(Color color) {
     switch (color) {
@@ -89,9 +89,13 @@ constexpr size_t strideOf(Color color) {
         case Color::GRAYALPHA88: return 2;
         // one byte per pixel, so a crop or a resize can index it like any other
         case Color::PALETTE:  return 1;
-        // tiled and planar, so no pixel has an address of its own
+        // tiled, blocked and planar, so no pixel has an address of its own
         case Color::CHR_NES:  break;
         case Color::ETC1:     break;
+        case Color::ETC2:     break;
+        case Color::ETC2A:    break;
+        case Color::EAC_R11:  break;
+        case Color::EAC_RG11: break;
         case Color::YUV420:   break;
         // no pixels at all
         case Color::NIL:      break;
@@ -122,9 +126,15 @@ constexpr int alphaOffsetOf(Color color) {
         case Color::RGBA5551: break;
         case Color::GRAY8:    break;
         case Color::GRAYALPHA88: return 1;
-        // tiled and planar, so no pixel has an address of its own
+        // tiled, blocked and planar, so no pixel has an address of its own. etc2a
+        // does carry an alpha, in a block of its own, and still has no byte here:
+        // there is no pixel to reach into without decoding the block first
         case Color::CHR_NES:  break;
         case Color::ETC1:     break;
+        case Color::ETC2:     break;
+        case Color::ETC2A:    break;
+        case Color::EAC_R11:  break;
+        case Color::EAC_RG11: break;
         case Color::YUV420:   break;
         case Color::NIL:      break;
     }

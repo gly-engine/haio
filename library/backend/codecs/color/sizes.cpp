@@ -13,9 +13,10 @@ Result<size_t> sizeOf(Color color, Size size) {
     // the addressable colours are just their stride, which strideOf already knows
     if (const auto stride = strideOf(color); stride != 0) return pixels * stride;
 
-    switch (color) {
-        case Color::ETC1: return Util::GPU::etc1Size(size);
+    // every etc and eac is whole four by four blocks, which is one rule for all of them
+    if (Util::GPU::blockBytes(color) != 0) return Util::GPU::blockedSize(color, size);
 
+    switch (color) {
         /**
          * sixteen bytes for every eight by eight tile, which works out to two bits a
          * pixel. the sides have to be whole tiles: a chr file has no way to say that
