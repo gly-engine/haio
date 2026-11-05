@@ -10,17 +10,7 @@ namespace Haio::Codecs {
  * @{
  */
 
-/**
- * one chunk of a cartridge, drawn.
- *
- * which one is named with -define tic80:read. nobody naming one gets the picture
- * the cartridge shows for itself, because that is what somebody pointing haio at a
- * cartridge almost always meant, and the other twenty chunks are code and music.
- *
- * a name that is not there, or is there and is not a picture, is answered with what
- * the cartridge does hold: the chunks are read off the file rather than guessed, so
- * the list is the real one every time.
- */
+/** the chunk -define tic80:read names, or the cover when it names none */
 template <>
 Result<Image<Color::RGBA8888>> Decode<Format::ROM, Color::RGBA8888>(const Blob& blob, const Settings& settings) {
     HAIO_TRY(sectors, Tic80::sectorsOf(blob.data));

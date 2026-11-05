@@ -5,13 +5,7 @@
 
 namespace {
 
-/**
- * the chunk types cart.c declares, and whether haio can draw each one.
- *
- * three of twenty one draw. the rest are a cartridge's code, its music, its map and
- * its flags: real parts of the file, with nothing in them that is a picture. they
- * are still listed, so a refusal can say what is there rather than only what is not.
- */
+/** the chunk types cart.c declares, and whether haio can draw each one */
 struct Kind {
     std::string_view name;
     bool drawable;
@@ -19,9 +13,9 @@ struct Kind {
 
 constexpr Kind kinds[] = {
     {"CHUNK_DUMMY",        false},
-    {"CHUNK_TILES",        false},   // 4bpp like the sprites; a sheet of its own one day
+    {"CHUNK_TILES",        false},
     {"CHUNK_SPRITES",      true },
-    {"CHUNK_COVER_DEP",    true },   // a whole gif, from before 0.90
+    {"CHUNK_COVER_DEP",    true },
     {"CHUNK_MAP",          false},
     {"CHUNK_CODE",         false},
     {"CHUNK_FLAGS",        false},
@@ -41,7 +35,7 @@ constexpr Kind kinds[] = {
     {"CHUNK_LANG",         false},
 };
 
-/** only these two may fill a bank, and a full one writes its size down as zero */
+/** a full bank writes its size down as zero, and only these two may fill one */
 constexpr uint32_t code = 5;
 constexpr uint32_t binary = 19;
 
@@ -67,7 +61,6 @@ Result<std::vector<Sector>> sectorsOf(Bytes data) {
         sector.name = type < std::size(kinds) ? std::string(kinds[type].name)
                                               : "CHUNK_" + std::to_string(type);
         sector.drawable = type < std::size(kinds) && kinds[type].drawable;
-        // the first of a type keeps the bare name; a second bank says which it is
         if (bank != 0) sector.name += "." + std::to_string(bank);
 
         sectors.push_back(std::move(sector));
@@ -82,13 +75,7 @@ bool isCartridge(Bytes data) {
     return sectorsOf(data).has_value();
 }
 
-/**
- * what a cartridge shows for itself.
- *
- * since 0.90 that is bank zero of the screen chunk; before it, a gif in a chunk of
- * its own. a cartridge written today has the first and a cartridge from 2019 has
- * the second, so both are looked for and the newer one wins.
- */
+/** since 0.90 the screen chunk; before it, a gif in a chunk of its own */
 const Sector* cover(const std::vector<Sector>& sectors) {
     if (const auto* screen = Roms::named(sectors, "CHUNK_SCREEN")) return screen;
     return Roms::named(sectors, "CHUNK_COVER_DEP");

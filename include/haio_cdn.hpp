@@ -334,6 +334,8 @@ struct Config {
  * not content-encoding on purpose: that header is for compression a client undoes on
  * its own, and one that met "base64" there would fail the response rather than hand
  * the text over.
+ *
+ * `x-original-content-length` is always sent: the body's size before gzip.
  */
 
 /** the query as the words Haio::Parser reads, one per "&", in the order written */

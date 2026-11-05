@@ -440,6 +440,7 @@ Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, Htt
      */
     auto body = std::move(entry->data);
     const auto bodyEncoding = entry->encoding;
+    const auto arriving = body.size();
     const bool compressible = worthCompressing(entry->contentType)
                            && !body.empty() && body.size() <= std::numeric_limits<uInt>::max();
     const auto encoding = compressible ? negotiateEncoding(req.header("accept-encoding")) : Encoding::Identity;
@@ -452,6 +453,7 @@ Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, Htt
 
     auto res = makeResponse(200, entry->contentType, std::move(body));
     res.headers.emplace_back("content-disposition", "inline; filename=\"" + entry->filename + "\"");
+    res.headers.emplace_back("x-original-content-length", std::to_string(arriving));
     if (compressible) res.headers.emplace_back("vary", "Accept-Encoding");
     if (encoding == Encoding::Gzip) res.headers.emplace_back("content-encoding", "gzip");
     if (encoding == Encoding::Deflate) res.headers.emplace_back("content-encoding", "deflate");
