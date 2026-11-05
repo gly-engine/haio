@@ -86,11 +86,15 @@ enum class Format {
     SIXEL,
 
     /**
-     * a cartridge, which is a container like any other: it says where its pattern
-     * data begins and how much of it there is.
+     * a cartridge: a file with several things in it, only some of which are
+     * pictures. which console it came from is read off the bytes and kept inside
+     * the rom codecs, because nothing outside them has a use for the answer.
      *
-     * @mime application/x-nes-rom
-     * @ext nes
+     * the first mime is the one haio sends, and a cartridge is never written, so
+     * it is only ever the label on an untouched file the cdn passed through.
+     *
+     * @mime application/x-nes-rom application/x-tic80-cart
+     * @ext nes tic
      */
     ROM,
 
