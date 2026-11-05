@@ -105,6 +105,44 @@ auto main() -> int {
           "with or without the endianness it never had a choice about");
     check(!colorNamed("yuv444p"), "a colour haio does not have is not quietly something else");
 
+    /**
+     * 4:2:0 keeps chroma for whole two by two blocks, so an odd side grows its planes
+     * to the next even number instead of being refused. the size is the one
+     * libjpeg-turbo asks for, which is what lets a jpeg decode straight into it.
+     */
+    check(sizeOf(Color::YUV420, Size{8, 8}) == 96, "an even picture is width times height and a half");
+    check(sizeOf(Color::YUV420, Size{7, 5}) == 72, "7x5 is a luma of 8x6 and two chroma of 4x3");
+    check(sizeOf(Color::YUV420, Size{159, 159}) == 38400, "and 159x159 is a luma of 160x160");
+    check(sizeOf(Color::YUV420, Size{1, 1}) == 6, "down to one pixel, which is a whole block of its own");
+
+    // the picture keeps its real size; only the planes under it are rounded
+    {
+        const int side = 159;
+        std::vector<uint8_t> pixels(static_cast<size_t>(side) * side * 4);
+        for (size_t i = 0; i < pixels.size(); i += 4) {
+            pixels[i + 0] = static_cast<uint8_t>((i / 4) % 251);
+            pixels[i + 1] = static_cast<uint8_t>((i / 4) % 241);
+            pixels[i + 2] = static_cast<uint8_t>((i / 4) % 239);
+            pixels[i + 3] = 255;
+        }
+        auto planes = Codecs::Convert<Color::RGBA8888, Color::YUV420>(
+            Image<Color::RGBA8888>{side, side, pixels});
+        check(planes.has_value(), "an odd sided picture converts into 4:2:0");
+        if (planes) {
+            check(planes->width == side && planes->height == side, "and keeps the size it came in with");
+            check(planes->data.size() == 38400, "while its planes are the rounded up ones");
+
+            // the spare luma column carries its neighbour rather than being left black
+            const auto& data = planes->data;
+            check(data[static_cast<size_t>(side)] == data[static_cast<size_t>(side) - 1],
+                  "the spare luma column repeats the edge");
+
+            auto back = Codecs::Convert<Color::YUV420, Color::RGBA8888>(*std::move(planes));
+            check(back.has_value() && back->width == side && back->height == side,
+                  "and converts back to the size it started as");
+        }
+    }
+
     if (failures == 0) std::cout << "packed colours: ok\n";
     return failures == 0 ? 0 : 1;
 }

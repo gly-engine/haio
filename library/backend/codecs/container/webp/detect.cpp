@@ -33,7 +33,8 @@ Holds holdsOf(Haio::Bytes data) {
     const int width = (data[dimensions] | (data[dimensions + 1] << 8)) & 0x3fff;
     const int height = (data[dimensions + 2] | (data[dimensions + 3] << 8)) & 0x3fff;
 
-    // an odd side has no yuv420 to be read into, so it comes out rgba rather than refused
+    // an odd side comes out rgba: the planes would hold it now, but libwebp fills only
+    // the real columns and rgba is the lossless answer rather than a padded one
     return (width % 2 == 0 && height % 2 == 0) ? Holds::Yuv : Holds::Rgba;
 }
 

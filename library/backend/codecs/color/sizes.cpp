@@ -1,3 +1,4 @@
+#include <haio/internal/codecs/yuv.hpp>
 #include <haio_convert.hpp>
 #include <haio_util.hpp>
 
@@ -31,18 +32,12 @@ Result<size_t> sizeOf(Color color, Size size) {
         }
 
         /**
-         * three planes: a full size luma and two half size chroma. the halves are
-         * why the dimensions have to be even, and refusing an odd one here is better
-         * than rounding it and handing back a picture a line short.
+         * three planes: a luma and two chroma at half of it in both directions. an
+         * odd side has no whole two by two block to end on, so the planes are grown
+         * to the next even number -- see haio/internal/codecs/yuv.hpp, which is also
+         * the layout libjpeg-turbo hands its planes over in.
          */
-        case Color::YUV420: {
-            if (size.width % 2 != 0 || size.height % 2 != 0) {
-                return std::unexpected(Error{ErrorCode::InvalidInput,
-                                             "yuv420 needs even width and height"});
-            }
-            const auto chroma = (static_cast<size_t>(size.width) / 2) * (static_cast<size_t>(size.height) / 2);
-            return pixels + chroma * 2;
-        }
+        case Color::YUV420: return Codecs::Yuv420::planesOf(size).bytes;
         case Color::NIL: return 0;
         default: break;
     }

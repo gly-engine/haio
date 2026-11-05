@@ -1,3 +1,4 @@
+#include <haio/internal/codecs/yuv.hpp>
 #include <haio_convert.hpp>
 
 #include <utility>
@@ -19,32 +20,28 @@ namespace Haio::Codecs {
  */
 template <>
 Result<void> Move<Color::RGB888, Color::YUV420>(Bytes src, std::span<uint8_t> dst, Size size) {
-    if (size.width % 2 != 0 || size.height % 2 != 0) {
-        HAIO_FAIL(InvalidInput, "yuv420 needs even width and height");
-    }
-
+    const auto planes = Yuv420::planesOf(size);
     const auto width = static_cast<int>(size.width);
     const auto height = static_cast<int>(size.height);
     const auto pixels = static_cast<size_t>(width) * height;
-    const auto chroma = static_cast<size_t>(width / 2) * (height / 2);
 
-    if (src.size() < pixels * 3 || dst.size() < pixels + chroma * 2) {
+    if (src.size() < pixels * 3 || dst.size() < planes.bytes) {
         HAIO_FAIL(InvalidInput, "rgb888 to yuv420 got a buffer that is too small");
     }
 
     auto* y = dst.data();
-    auto* u = y + pixels;
-    auto* v = u + chroma;
+    auto* u = y + planes.luma;
+    auto* v = u + planes.chroma;
 
     const auto result = libyuv::RAWToJ420(
         src.data(),
         width * 3,
         y,
-        width,
+        planes.lumaWidth,
         u,
-        width / 2,
+        planes.chromaWidth,
         v,
-        width / 2,
+        planes.chromaWidth,
         width,
         height
     );
@@ -53,6 +50,8 @@ Result<void> Move<Color::RGB888, Color::YUV420>(Bytes src, std::span<uint8_t> ds
         HAIO_FAIL(InvalidInput, "libyuv failed to convert rgb888 to yuv420");
     }
 
+    // libyuv writes the real pixels; the spare luma column and row are ours to fill
+    Yuv420::repeatEdges(dst, size, planes);
     return {};
 }
 /** @} */

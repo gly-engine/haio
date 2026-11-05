@@ -571,6 +571,20 @@ Result<Written> run(std::vector<Blob> inputs, const Pipeline& pipeline,
      */
     if (outputFormat == Format::RAW) {
         const auto to = outputColor.value_or(Color::RGBA8888);
+
+        /**
+         * except for 4:2:0 of an odd sided picture, which has a spare column or row
+         * inside its planes so that the chroma covers whole two by two blocks. that
+         * padding is a thing containers carry and a bare file cannot: nothing in the
+         * bytes says it is there, so whoever reads them back gets a sheared picture.
+         * a jpeg or a zcis keeps the real size beside the planes and is fine.
+         */
+        if (to == Color::YUV420 && (size.width % 2 != 0 || size.height % 2 != 0)) {
+            return std::unexpected(Error{ErrorCode::InvalidInput,
+                                         "yuv420 pads an odd side out to whole 4:2:0 blocks, and bare pixels have "
+                                         "nowhere to say so; write it into a container, or resize to even sides"});
+        }
+
         auto pixels = Convert(picture.current(), to);
         if (!pixels) return std::unexpected(pixels.error());
 

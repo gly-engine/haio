@@ -1,3 +1,4 @@
+#include <haio/internal/codecs/yuv.hpp>
 #include <haio_codec.hpp>
 #include <haio/generated/codec.hpp>
 #include <haio_convert.hpp>
@@ -61,16 +62,17 @@ Result<Image<Color::YUV420>> Decode<Format::WEBP, Color::YUV420>(const Blob& blo
     HAIO_TRY(bytes, sizeOf(Color::YUV420, Size{width, height}));
     std::vector<uint8_t> planes(bytes);
 
-    const size_t luma = static_cast<size_t>(width) * static_cast<size_t>(height);
-    const size_t chroma = (bytes - luma) / 2;
-    const int chromaStride = width / 2;
+    const auto shape = Yuv420::planesOf(Size{width, height});
 
     if (!WebPDecodeYUVInto(blob.data.data(), blob.data.size(),
-                           planes.data(), luma, width,
-                           planes.data() + luma, chroma, chromaStride,
-                           planes.data() + luma + chroma, chroma, chromaStride)) {
+                           planes.data(), shape.luma, shape.lumaWidth,
+                           planes.data() + shape.luma, shape.chroma, shape.chromaWidth,
+                           planes.data() + shape.luma + shape.chroma, shape.chroma, shape.chromaWidth)) {
         HAIO_FAIL(InvalidInput, "the webp could not be decoded");
     }
+    // only even sided webps reach here today, so there is nothing spare to fill; this
+    // holds the line if detect ever routes an odd one in
+    Yuv420::repeatEdges(planes, Size{width, height}, shape);
     return Image<Color::YUV420>{width, height, std::move(planes)};
 }
 /** @} */

@@ -1,3 +1,4 @@
+#include <haio/internal/codecs/yuv.hpp>
 #include <haio_codec.hpp>
 #include <haio/generated/codec.hpp>
 #include <haio_convert.hpp>
@@ -140,18 +141,24 @@ Haio::Image<Haio::Color::RGBA8888> piece(const Haio::Image<Haio::Color::RGBA8888
     return Haio::Image<Haio::Color::RGBA8888>{rect.width, rect.height, std::move(data)};
 }
 
-/** a cut grown outwards to even edges, which is the least a 4:2:0 frame can hold */
-Haio::Rect even(const Haio::Rect& rect, int width, int height) {
+/**
+ * a cut grown outwards to even edges, which is the least a 4:2:0 frame can hold.
+ *
+ * it clamps to the planes rather than to the picture, so a cut that reaches the right
+ * edge of an odd sided canvas grows into the spare column instead of staying odd and
+ * losing its last chroma sample. the index keeps the real rectangle either way.
+ */
+Haio::Rect even(const Haio::Rect& rect, const Haio::Codecs::Yuv420::Planes& planes) {
     const auto left = rect.x / 2 * 2;
     const auto top = rect.y / 2 * 2;
-    const auto right = std::min(width, (rect.x + rect.width + 1) / 2 * 2);
-    const auto bottom = std::min(height, (rect.y + rect.height + 1) / 2 * 2);
+    const auto right = std::min(planes.lumaWidth, (rect.x + rect.width + 1) / 2 * 2);
+    const auto bottom = std::min(planes.lumaHeight, (rect.y + rect.height + 1) / 2 * 2);
     return Haio::Rect{left, top, right - left, bottom - top};
 }
 
 /** the same rectangle of each plane of a yuv420 frame, whose edges are all even */
-std::vector<uint8_t> piece(const Haio::Image<Haio::Color::YUV420>& image, const Haio::Rect& rect) {
-    const auto luma = static_cast<size_t>(image.width) * static_cast<size_t>(image.height);
+std::vector<uint8_t> piece(const Haio::Image<Haio::Color::YUV420>& image, const Haio::Rect& rect,
+                           const Haio::Codecs::Yuv420::Planes& planes) {
     std::vector<uint8_t> out;
     const auto copy = [&](size_t plane, int stride, int x, int y, int w, int h) {
         for (int row = 0; row < h; row++) {
@@ -160,9 +167,10 @@ std::vector<uint8_t> piece(const Haio::Image<Haio::Color::YUV420>& image, const 
                        image.data.begin() + static_cast<std::ptrdiff_t>(from + static_cast<size_t>(w)));
         }
     };
-    copy(0, image.width, rect.x, rect.y, rect.width, rect.height);
-    copy(luma, image.width / 2, rect.x / 2, rect.y / 2, rect.width / 2, rect.height / 2);
-    copy(luma + luma / 4, image.width / 2, rect.x / 2, rect.y / 2, rect.width / 2, rect.height / 2);
+    copy(0, planes.lumaWidth, rect.x, rect.y, rect.width, rect.height);
+    copy(planes.luma, planes.chromaWidth, rect.x / 2, rect.y / 2, rect.width / 2, rect.height / 2);
+    copy(planes.luma + planes.chroma, planes.chromaWidth,
+         rect.x / 2, rect.y / 2, rect.width / 2, rect.height / 2);
     return out;
 }
 
@@ -234,15 +242,17 @@ Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img, const
     std::vector<uint8_t> out;
     HAIO_CHECK(openArchive(out, meta, img.width, img.height));
 
+    const auto planes = Yuv420::planesOf(Size{img.width, img.height});
+
     int order = 1;
     for (const auto& row : rowsOf(meta, img.width, img.height)) {
         for (size_t at = 0; at < row.size(); at++) {
-            const auto rect = even(row[at], img.width, img.height);
+            const auto rect = even(row[at], planes);
             std::vector<uint8_t> payload;
             appendBytes(payload, "YUV4MPEG2 W" + std::to_string(rect.width) + " H" + std::to_string(rect.height)
                                      + " F1:1 Ip A1:1 C420jpeg XCOLORRANGE=FULL\nFRAME\n");
-            const auto planes = piece(img, rect);
-            payload.insert(payload.end(), planes.begin(), planes.end());
+            const auto cut = piece(img, rect, planes);
+            payload.insert(payload.end(), cut.begin(), cut.end());
 
             const auto name = std::string(1, orderOf(order++)) + commandOf(baseCommand, at + 1 == row.size())
                             + target(rect.x, rect.y, rect.width, rect.height) + ".y4m";
