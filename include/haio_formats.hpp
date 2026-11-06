@@ -86,6 +86,19 @@ enum class Format {
     SIXEL,
 
     /**
+     * paintbrush. one byte of magic, and then a header that has to agree with
+     * itself: a version, a depth and a plane count that are each one of a handful
+     * of numbers, and a row wide enough for the picture it claims. that is weaker
+     * than a signature and stronger than a cartridge, which is why it sits between
+     * them -- a tic-80 cart has no magic at all and is recognised by its chunks
+     * tiling to the end of the file, which any file can do by accident.
+     *
+     * @mime image/x-pcx image/vnd.zbrush.pcx
+     * @ext pcx
+     */
+    PCX,
+
+    /**
      * a cartridge: a file with several things in it, only some of which are
      * pictures. which console it came from is read off the bytes and kept inside
      * the rom codecs, because nothing outside them has a use for the answer.
@@ -114,6 +127,7 @@ enum class Format {
      * @ext gif
      */
     GIF,
+
 };
 
 /**
