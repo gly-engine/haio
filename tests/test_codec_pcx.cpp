@@ -235,6 +235,41 @@ void testUncompressed() {
 }
 
 /**
+ * a mask: two colours, one bit a pixel, the leftmost in the top bit of the byte.
+ *
+ * it is written this way without being asked because the readers that want a mask
+ * read one bit and nothing else -- a two colour picture at eight bits is a file
+ * they refuse, and eight times the size of the one they wanted.
+ */
+void testTwoColoursGoOneBitAPixel() {
+    Image<Color::PALETTE> img{19, 5, {}};
+    img.entries = {0xFF000000u, 0xFFFFFFFFu};
+    img.data.resize(19 * 5);
+    for (int y = 0; y < 5; y++) {
+        for (int x = 0; x < 19; x++) img.data[static_cast<size_t>(y) * 19 + x] = (x + y) % 3 ? 1 : 0;
+    }
+
+    const auto blob = Codecs::Encode<Format::PCX, Color::PALETTE>(img, Settings{});
+    check(blob.has_value(), "a two colour picture encodes");
+    if (!blob) return;
+    check(blob->data[3] == 1, "two colours ask for one bit a pixel");
+    check(blob->data[65] == 1, "in a single plane");
+    // nineteen pixels is three bytes of bits, padded to the even row the format wants
+    check((blob->data[66] | (blob->data[67] << 8)) == 4, "the row is the bits, padded even");
+
+    const auto back = Codecs::Decode<Format::PCX, Color::PALETTE>(*blob);
+    check(back.has_value(), "and reads back");
+    if (!back) return;
+    check(back->width == 19 && back->height == 5, "at the size it went in");
+    check(back->data == img.data, "every bit survives");
+
+    const auto wide = Codecs::Encode<Format::PCX, Color::PALETTE>(
+        img, Settings{Setting{"pcx:depth", "byte"}});
+    check(wide.has_value() && wide->data[3] == 8, "and a byte a pixel is still there for the asking");
+    check(wide->data.size() > blob->data.size(), "which is the bigger file it sounds like");
+}
+
+/**
  * the rows as they are, which the format allows and which beats the run length on
  * noise: a byte above 0xbf costs two when packed, so a picture that never repeats
  * comes out larger compressed than plain.
@@ -274,6 +309,7 @@ int main() {
     testHighBytesSurviveTheRunLength();
     testTruecolorRoundTrip();
     testUncompressed();
+    testTwoColoursGoOneBitAPixel();
     testCompressionChoice();
 
     if (failures == 0) std::cout << "ok\n";

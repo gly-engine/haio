@@ -4,6 +4,8 @@
 #include <haio_codec.hpp>
 #include <haio_convert.hpp>
 
+#include <algorithm>
+
 namespace Haio::Codecs {
 
 namespace {
@@ -59,10 +61,37 @@ PcxCompression compressionOf(const Settings& settings) {
 }
 
 /**
+ * bits a pixel, with the automatic answer being the one the picture asks for: two
+ * colours is a mask and wants one bit, anything more is a picture and wants eight.
+ *
+ * there is nothing in between on purpose. four bits would halve a file the run
+ * length already flattens and would cost every reader older than the packing, while
+ * one bit is the difference between a mask a television reads and one it refuses.
+ */
+int depthOf(const Settings& settings, size_t colours) {
+    auto chosen = PcxDepth::Auto;
+    if (const auto* named = settingNamed(settings, pcxDepth.name())) {
+        if (const auto found = Stages::enumNamed<PcxDepth>(named->value)) chosen = *found;
+    }
+    if (chosen == PcxDepth::Bit) return 1;
+    if (chosen == PcxDepth::Byte) return 8;
+    return colours <= 2 ? 1 : 8;
+}
+
+/** the indices of one row as bits, the leftmost pixel in the top bit of the byte */
+void packBits(const uint8_t* pixels, int width, std::vector<uint8_t>& row) {
+    std::ranges::fill(row, 0);
+    for (int x = 0; x < width; x++) {
+        if (pixels[x] == 0) continue;
+        row[static_cast<size_t>(x) / 8] |= static_cast<uint8_t>(0x80 >> (x % 8));
+    }
+}
+
+/**
  * the hundred and twenty eight byte header, filled for the only two shapes haio
  * writes: one eight bit plane of indices, or three of colour.
  */
-Result<std::vector<uint8_t>> header(int width, int height, uint8_t planes, uint16_t bytesPerLine,
+Result<std::vector<uint8_t>> header(int width, int height, uint8_t bits, uint8_t planes, uint16_t bytesPerLine,
                                     std::span<const uint32_t> ega, PcxCompression how) {
     if (width <= 0 || height <= 0) HAIO_FAIL(InvalidInput, "pcx needs positive dimensions");
     if (width > 0xFFFF || height > 0xFFFF) HAIO_FAIL(InvalidInput, "a pcx says its size in sixteen bits");
@@ -71,7 +100,7 @@ Result<std::vector<uint8_t>> header(int width, int height, uint8_t planes, uint1
     out[0] = Pcx::magic;
     out[1] = 5;  // the version that has a 256 colour palette at the end
     out[2] = how == PcxCompression::Rle ? 1 : 0;
-    out[3] = 8;
+    out[3] = bits;
     little16(out, 4, 0);
     little16(out, 6, 0);
     little16(out, 8, width - 1);
@@ -120,13 +149,20 @@ Result<Blob> Encode<Format::PCX, Color::PALETTE>(Image<Color::PALETTE> img, cons
     }
 
     // the format pads every row to an even byte, and the padding is not pixels
-    const auto bytesPerLine = static_cast<uint16_t>(img.width + (img.width % 2));
-    HAIO_TRY(out, header(img.width, img.height, 1, bytesPerLine, img.entries, how));
+    const auto bits = depthOf(settings, img.entries.size());
+    if (bits == 1 && img.entries.size() > 2) HAIO_FAIL(InvalidInput, "one bit a pixel holds two colours");
+    const auto packed = bits == 1 ? (img.width + 7) / 8 : img.width;
+    const auto bytesPerLine = static_cast<uint16_t>(packed + (packed % 2));
+    HAIO_TRY(out, header(img.width, img.height, static_cast<uint8_t>(bits), 1, bytesPerLine, img.entries, how));
 
     std::vector<uint8_t> row(bytesPerLine, 0);
     for (int y = 0; y < img.height; y++) {
         const auto* pixels = img.data.data() + static_cast<size_t>(y) * img.width;
-        std::copy(pixels, pixels + img.width, row.begin());
+        if (bits == 1) {
+            packBits(pixels, img.width, row);
+        } else {
+            std::copy(pixels, pixels + img.width, row.begin());
+        }
         writeRow(row.data(), row.size(), how, out);
     }
 
@@ -160,7 +196,7 @@ Result<Blob> Encode<Format::PCX, Color::RGB888>(Image<Color::RGB888> img, const 
     if (img.data.size() != incoming) HAIO_FAIL(InvalidInput, "invalid rgb888 image for pcx encode");
 
     const auto bytesPerLine = static_cast<uint16_t>(img.width + (img.width % 2));
-    HAIO_TRY(out, header(img.width, img.height, 3, bytesPerLine, {}, how));
+    HAIO_TRY(out, header(img.width, img.height, 8, 3, bytesPerLine, {}, how));
 
     std::vector<uint8_t> plane(bytesPerLine, 0);
     for (int y = 0; y < img.height; y++) {

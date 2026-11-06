@@ -18,7 +18,29 @@ enum class PcxCompression {
     None,
 };
 
+/**
+ * how many bits one pixel is given.
+ *
+ * eight is what a picture of anything wants, and one is what a mask wants: a two
+ * colour picture written a byte at a time is eight times the file it needs to be,
+ * and the readers that care about masks -- the television's among them -- read one
+ * bit and nothing else, so a mono picture written at eight bits is a file they
+ * refuse outright.
+ */
+enum class PcxDepth {
+    Auto,
+    Bit,
+    Byte,
+};
+
 namespace Codecs {
+
+inline constexpr Stages::Option pcxDepth{
+    .spellings = {"pcx:depth"}, .takes = "name",
+    .help = "bits a pixel: one for a mask, eight for a picture",
+    .shape = Stages::Shape::Name, .names = Stages::namesOf<PcxDepth>(),
+    .fallback = "auto", .called = "pcx depth",
+};
 
 inline constexpr Stages::Option pcxCompression{
     .spellings = {"pcx:compression"}, .takes = "name",
@@ -27,7 +49,7 @@ inline constexpr Stages::Option pcxCompression{
     .fallback = "rle", .called = "pcx compression",
 };
 
-inline constexpr Stages::Option pcxEncodes[] = {pcxCompression};
+inline constexpr Stages::Option pcxEncodes[] = {pcxCompression, pcxDepth};
 
 template <> inline constexpr Reads reads<Format::PCX>{.encode = pcxEncodes};
 

@@ -66,6 +66,13 @@ Image names may specify `WIDTH` and `HEIGHT` independently. When the target dime
 | c    | C      | `⠉` Horizontal interlaced tint
 | d    | D      | `⠁` Stippled tint
 | e    | E      | Erase Masking
+| f    | F      | Fill
+
+- **Fill:** paints the whole target rectangle one colour, which the member spells out
+  as four decimal numbers separated by spaces -- red, green, blue, alpha -- in a
+  `.txt`. A picture without an alpha channel writes `255`. Padding is allowed and
+  ignored. It is the cheapest command there is: one colour and one rectangle, whatever
+  the rectangle's size.
 
 - **Erase Masking:** Is a `solid tint` of the alpha channel that permanently applies transparency. uses a 1-bit monochrome PCX bitmap, where `1` represents opaque and `0` represents transparent.
 - **Interlaced phase:** the dots of the glyph are what is painted in every 2x2 cell, counted from the chunk's own `POSX` and `POSY`. `B` paints the first column of every pair, `C` the first row and `D` the first pixel; the rest keeps what was already there. The other phase is reached by sending it first as the stretched base, or by moving the chunk one pixel.
@@ -142,10 +149,81 @@ between them stays transparent, so a cut never picks up its neighbour.
 Packing is offered only by a container that can say where each picture is, which today
 is zcis alone: `-pack png` is refused rather than silently dropping the index.
 
+### What `-define zcis:optimization=` adds
+
+The level says which commands the file may carry and how the layers are laid out.
+Nothing below happens at `0`, which is what the format did before any of it.
+
+| level | adds | what it does |
+| :---: | :--- | :--- |
+| 0 | | every cut travels whole |
+| 1 | `f` | the flat ground of a cut is named once and stops travelling |
+| 2 | `e` | masks, so that nothing is painted over what already shows it |
+
+At `1` the encoder finds the commonest colour of each cut, writes it as a fill over
+the whole cut, and shrinks the picture chunk to the rectangle where pixels differ
+from it. Fills of the same colour in touching cuts are merged, so a row of
+thumbnails on the same background is one rectangle rather than eight.
+
+At `2` two masks go out per box. The first says which pixels are already the colour
+of the ground beneath them and goes down before anything is painted, so it spares
+both layers. The second says which rows of the sharp layer the stretched one already
+got right -- wherever the two rows of a pair ended up the same -- and goes down
+between the layers, so it spares the sharp one alone. A mask is only written when it
+spares more drawing than it costs to arrive, which is decided by writing the bitmap
+out and measuring it.
+
+The rate between a draw and a byte, which decides whether a mask is worth sending,
+is in `include/haio/internal/codecs/zcis.hpp` -- derived from a television rather
+than chosen.
+
+### What `-define zcis:lazy=` changes
+
+How the two layers of an RGB picture share its rows. It is not an optimization and
+is not a level of one: it changes what somebody sees while the page is loading.
+
+| value | the first layer | rows painted |
+| :--- | :--- | :---: |
+| `whole` | the odd rows, stretched over both rows of every pair — the whole picture at half the height | `1.5` each |
+| `half` | the even rows only, with the second layer carrying the odd rows one pixel further down | `1` each |
+
+`whole` is the default and is what the format did before. The stretched layer paints
+every row of the box and the sharp one then paints half of them again, so one row in
+three is drawn twice for nothing. `half` uses the phase shift the standard describes
+under *Interlaced phase* -- the same chunk moved one pixel down -- so each row is
+painted once. The finished picture is identical either way.
+
+Measured over twelve photographs, `half` removes a third of all the drawing at
+`minification=0`, where no colour is given up at all:
+
+| | `lazy=whole` | `lazy=half` |
+| :--- | ---: | ---: |
+| `optimization=1 minification=0` | −0.7% | −33.8% |
+| `optimization=2 minification=0` | −10.1% | −36.3% |
+| `optimization=1 minification=40` | −40.3% | −60.1% |
+| `optimization=2 minification=40` | −46.6% | −62.3% |
+
+A 4:2:0 picture ignores the setting: it travels as a single frame, so there is no
+second layer to shift and nothing being painted twice.
+
+### What `-define zcis:minification=` gives up
+
+A number from 0 to 99 naming the share of the drawing to remove, measured against the
+picture with nothing done to it. The encoder searches for the least colour slack that
+reaches it, spending the ground of each cut first since that costs no colour at all.
+`0` is the picture to the bit.
+
+The number is measured at level `1` however high the level goes, so whatever the
+higher levels find is added on top rather than spent reaching it. The same number
+gives up the same colour at every level; the higher ones simply draw less. The same
+holds for `zcis:lazy`, which costs no colour either. Measured over twelve
+photographs at `minification=40`, level `1` removes 40.3% of the drawing and level
+`2` removes 46.6%, both at the same error.
+
 ### Open items
 
-- **Commands `b`, `d` and `e` are not emitted**, so there is no erase masking and no
-  vertical or stippled refinement yet. Only `A` and `C` are emitted.
+- **Commands `b` and `d` are not emitted**, so there is no vertical or stippled
+  refinement yet.
 - **`POSX` and `POSY` are always zero.** Packing puts several pictures in one container
   through the index rather than through the chunks, so every chunk still covers the
   whole canvas. Per-picture chunks, which is what those two fields are for, would make
