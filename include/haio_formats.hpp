@@ -57,6 +57,11 @@ enum class Format {
      * @ext zcis
      */
     ZCIS,
+    /**
+     * @mime image/webp
+     * @ext webp
+     */
+    WEBP,
 
     /**
      * not files but pictures drawn with escape codes, for looking at one without
@@ -71,13 +76,38 @@ enum class Format {
      * @ext utf8
      */
     UTF8,
+    /**
+     * real pixels in a terminal that draws them, as foot, wezterm, mlterm or xterm
+     * started as a vt340 do: a palette of colours and six rows at a time.
+     *
+     * @mime image/x-sixel
+     * @ext sixel six
+     */
+    SIXEL,
 
     /**
-     * a cartridge, which is a container like any other: it says where its pattern
-     * data begins and how much of it there is.
+     * paintbrush. one byte of magic, and then a header that has to agree with
+     * itself: a version, a depth and a plane count that are each one of a handful
+     * of numbers, and a row wide enough for the picture it claims. that is weaker
+     * than a signature and stronger than a cartridge, which is why it sits between
+     * them -- a tic-80 cart has no magic at all and is recognised by its chunks
+     * tiling to the end of the file, which any file can do by accident.
      *
-     * @mime application/x-nes-rom
-     * @ext nes
+     * @mime image/x-pcx image/vnd.zbrush.pcx
+     * @ext pcx
+     */
+    PCX,
+
+    /**
+     * a cartridge: a file with several things in it, only some of which are
+     * pictures. which console it came from is read off the bytes and kept inside
+     * the rom codecs, because nothing outside them has a use for the answer.
+     *
+     * the first mime is the one haio sends, and a cartridge is never written, so
+     * it is only ever the label on an untouched file the cdn passed through.
+     *
+     * @mime application/x-nes-rom application/x-tic80-cart
+     * @ext nes tic
      */
     ROM,
 
@@ -97,11 +127,13 @@ enum class Format {
      * @ext gif
      */
     GIF,
+
 };
 
 /**
- * how the pixels are laid out. these never appear as a file on their own: ETC1 and
- * RGB565 are what a gpu container carries, the rest are what codecs hand around.
+ * how the pixels are laid out. these never appear as a file on their own: the etc
+ * family and RGB565 are what a gpu container carries, the rest are what codecs hand
+ * around.
  */
 enum class Color {
     RGBA8888,
@@ -139,6 +171,37 @@ enum class Color {
     /** grey then alpha; to -compose tint a colour, where a GRAY8 is a mask */
     GRAYALPHA88,
     ETC1,
+
+    /**
+     * the same four by four blocks etc1 packs, with the modes etc2 added: planar for
+     * a smooth gradient and t and h for the two colours etc1 could only average.
+     *
+     * an etc1 block is a valid etc2 block, so hardware that reads this reads both and
+     * the two never need separate decoders. what they do not share is a name in
+     * vulkan, which has no etc1 at all: a ktx2 asked for etc1 says etc2 in its header
+     * and is read back as etc2, which decodes to the same pixels.
+     */
+    ETC2,
+
+    /**
+     * etc2 colour with an eac alpha block in front of it, so sixteen bytes a block
+     * rather than eight. this is the one to ask for when the picture has holes in it:
+     * every other etc is opaque, and a corner rounded away with -radius has nowhere
+     * to go in them.
+     */
+    ETC2A,
+
+    /**
+     * one eleven bit channel a block, which is what a height map or the x of a normal
+     * map wants: eight bytes for sixteen pixels with nothing spent on colour. it is
+     * written from the red channel and read back into it, so the other two come back
+     * black rather than grey -- this is one channel and says so.
+     */
+    EAC_R11,
+
+    /** two of those side by side, sixteen bytes a block, for a two channel normal map */
+    EAC_RG11,
+
     YUV420,
 
     /**
@@ -201,6 +264,17 @@ inline constexpr ColorAlias colorAliases[] = {
     {"ya8", Color::GRAYALPHA88},
     {"gray8a", Color::GRAYALPHA88},
     {"pal8", Color::PALETTE},
+    // the long spellings, for whoever writes the gpu format out in full
+    {"etc2_rgb", Color::ETC2},
+    {"etc2rgb", Color::ETC2},
+    {"etc2_rgba", Color::ETC2A},
+    {"etc2rgba", Color::ETC2A},
+    {"etc2_eac", Color::ETC2A},
+    // and the order khronos names them in, which is the other way round
+    {"r11_eac", Color::EAC_R11},
+    {"rg11_eac", Color::EAC_RG11},
+    {"eac_r", Color::EAC_R11},
+    {"eac_rg", Color::EAC_RG11},
     // the p is for planar, which is the only way haio keeps it
     {"yuv420p", Color::YUV420},
     {"null", Color::NIL},

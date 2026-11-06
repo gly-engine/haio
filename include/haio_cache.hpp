@@ -21,6 +21,8 @@ struct CacheEntry {
     std::vector<uint8_t> data;
     std::string contentType;
     std::string filename;
+
+    BodyEncoding encoding = BodyEncoding::Identity;
 };
 
 struct CacheConfig {
@@ -47,15 +49,16 @@ public:
 };
 
 /**
- * the md5 of the bucket, the path and the query, in the order they were written.
+ * the md5 of the query, which is the whole request: the sources it names, what is
+ * done to them, and how the answer is written.
  *
- * the query is not sorted, and must not be: it spells out a pipeline, so crop before
+ * it is not sorted, and must not be: the query spells out a pipeline, so crop before
  * resize is a different picture from resize before crop. sorting would collide two
  * different requests onto one entry and serve the wrong image, which is a worse fault
  * than keeping two entries for one answer. the method is left out so a HEAD finds
  * what a GET stored.
  */
-std::string cacheKey(std::string_view bucket, std::string_view path, std::string_view query);
+std::string cacheKey(std::string_view query);
 
 /** the framing the file and redis backends share; the memory one keeps the struct */
 std::vector<uint8_t> encodeEntry(const CacheEntry& entry);
@@ -63,7 +66,6 @@ std::optional<CacheEntry> decodeEntry(std::span<const uint8_t> raw);
 
 std::unique_ptr<CacheStore> makeMemoryStore(size_t maxUsage, std::chrono::seconds ttl);
 std::unique_ptr<CacheStore> makeFileStore(std::filesystem::path root, std::chrono::seconds ttl, size_t maxUsage);
-/** desktop only: redis is reached with asio, so it lives in library/platform/desktop */
 std::unique_ptr<CacheStore> makeRedisStore(std::string url, std::chrono::seconds ttl, size_t maxUsage);
 
 /**

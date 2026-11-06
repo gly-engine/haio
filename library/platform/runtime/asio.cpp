@@ -13,7 +13,7 @@ namespace asio = boost::asio;
 
 namespace Haio::Platform {
 
-namespace Desktop {
+namespace Asio {
 
 asio::io_context& io() {
     static asio::io_context context;
@@ -22,7 +22,7 @@ asio::io_context& io() {
 
 }
 
-using Desktop::io;
+using Asio::io;
 
 void spawn(Task<void> task) {
     // posted rather than started here, so spawning from inside a task never runs the
@@ -78,7 +78,7 @@ void stopOnSignal() {
 }
 
 Task<void> sleep(std::chrono::milliseconds duration) {
-    co_await Desktop::await([](std::chrono::milliseconds wait) -> asio::awaitable<void> {
+    co_await Asio::await([](std::chrono::milliseconds wait) -> asio::awaitable<void> {
         asio::steady_timer timer(co_await asio::this_coro::executor, wait);
         co_await timer.async_wait(asio::use_awaitable);
     }(duration));

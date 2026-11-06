@@ -28,6 +28,9 @@ namespace Haio::Codecs {
  * only 4:2:0 is read. it is what cameras and ad creatives produce, and reading 4:4:4
  * or 4:2:2 into a buffer sized for 4:2:0 would quietly truncate the chroma rather
  * than fail, so those are refused instead.
+ *
+ * an odd side is not refused: the planes are grown to the next even number, which is
+ * what the file already holds, and the picture keeps its real size.
  */
 template <>
 Result<Image<Color::YUV420>> Decode<Format::JPEG, Color::YUV420>(const Blob& blob) {
@@ -46,17 +49,13 @@ Result<Image<Color::YUV420>> Decode<Format::JPEG, Color::YUV420>(const Blob& blo
     if (sampling != TJSAMP_420) {
         HAIO_FAIL(UnsupportedFormat, "haio reads 4:2:0 jpegs, and this one is not");
     }
-    if (width % 2 != 0 || height % 2 != 0) {
-        // 4:2:0 stores chroma for whole two by two blocks, so an odd side means the
-        // file's own planes are padded and would not line up with ours
-        HAIO_FAIL(UnsupportedFormat, "haio reads 4:2:0 jpegs with even sides, and this one is odd");
-    }
-
     HAIO_TRY(bytes, sizeOf(Color::YUV420, Size{width, height}));
     std::vector<uint8_t> planes(bytes);
 
-    // align 1 means the planes sit back to back with no padding, which is the layout
-    // Color::YUV420 is defined as
+    // align 1 means the rows sit back to back with no padding between them, which is
+    // the layout Color::YUV420 is defined as. an odd side still grows its plane to a
+    // whole two by two block, and sizeOf grows with it: this is exactly the size
+    // tj3YUVBufSize asks for, so the decoder writes straight into our buffer
     if (tj3DecompressToYUV8(handle.raw, blob.data.data(), blob.data.size(), planes.data(), 1) != 0) {
         HAIO_FAIL(InvalidInput, "the jpeg could not be decoded");
     }

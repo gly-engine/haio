@@ -1,6 +1,7 @@
 #include <haio_cdn.hpp>
 #include <haio_platform.hpp>
 #include <haio/internal/cdn/clients.hpp>
+#include <haio/stage.hpp>
 
 #include <haio_url.hpp>
 
@@ -22,47 +23,16 @@ namespace {
 using Haio::Platform::HttpServerRequest;
 using Haio::Platform::HttpServerResponse;
 
-std::string joinSegments(const std::vector<std::string>& segments, size_t first) {
-    return std::accumulate(
-        segments.begin() + static_cast<std::ptrdiff_t>(first),
-        segments.end(),
-        std::string{},
-        [](std::string out, const std::string& segment) {
-            if (!out.empty()) out.push_back('/');
-            out += segment;
-            return out;
-        }
-    );
-}
-
 struct Route {
-    std::string bucket;
-    std::string path;
     std::string query;
 };
 
-Route parseRoute(std::string_view target) {
-    // an origin form target is a path and a query, and nothing that could name a host
+std::optional<Route> parseRoute(std::string_view target) {
     const auto parsed = target.starts_with('/') && !target.starts_with("//") ? Haio::Url::parse(target) : std::nullopt;
     if (!parsed || !parsed->scheme.empty()) throw std::runtime_error("invalid request target: " + std::string(target));
 
-    const auto& encodedPath = parsed->path;
-    constexpr std::string_view prefix = "/cdn/";
-    if (!encodedPath.starts_with(prefix)) throw std::runtime_error("expected /cdn/<bucket>/<path>");
-
-    const auto segments = parsed->segments();
-    if (segments.empty() || segments.front() != "cdn") throw std::runtime_error("expected /cdn/<bucket>/<path>");
-
-    const auto tail = std::string_view(encodedPath).substr(prefix.size());
-    const auto query = parsed->hasQuery ? parsed->query : std::string{};
-    if (tail.find('/') == std::string_view::npos) {
-        return Route{"file", segments.size() > 1 ? segments[1] : std::string{}, query};
-    }
-
-    auto bucket = segments.size() > 1 ? segments[1] : std::string{};
-    auto rest = segments.size() > 2 ? joinSegments(segments, 2) : std::string{};
-    if (bucket.empty()) bucket = "file";
-    return Route{std::move(bucket), std::move(rest), query};
+    if (parsed->path != "/cdn" && parsed->path != "/cdn/") return std::nullopt;
+    return Route{parsed->hasQuery ? parsed->query : std::string{}};
 }
 
 std::string downloadName(std::string_view path, Haio::Format format) {
@@ -80,35 +50,24 @@ std::string downloadName(std::string_view path, Haio::Format format) {
     return name + '.' + std::string(Haio::extensionFor(format));
 }
 
-bool hasTokenKind(const std::vector<Haio::Token>& tokens, Haio::TokenKind kind) {
-    return std::ranges::any_of(tokens, [kind](const Haio::Token& token) { return token.kind == kind; });
+Haio::Format preferredFormat(const Haio::Parser::Parsed& parsed, const std::vector<Haio::Blob>& blobs) {
+    for (const auto& step : parsed.steps) {
+        if (step.kind == Haio::TokenKind::Generate) return Haio::Format::PNG;
+        if (step.kind != Haio::TokenKind::Source) continue;
+        const auto found = blobs.empty() ? Haio::Format::PNG : blobs.front().format;
+        return found == Haio::Format::RAW || found == Haio::Format::PPM ? Haio::Format::PNG : found;
+    }
+    return Haio::Format::PNG;
 }
 
-bool hasImageTransform(const std::vector<Haio::Token>& tokens) {
-    return std::ranges::any_of(tokens, [](const Haio::Token& token) {
-        return token.kind == Haio::TokenKind::Crop || token.kind == Haio::TokenKind::Resize || token.kind == Haio::TokenKind::Radius;
-    });
-}
+bool nothingToDo(const Haio::Parser::Parsed& parsed, const std::vector<Haio::Blob>& blobs) {
+    if (blobs.size() != 1 || parsed.outputColor) return false;
 
-/**
- * asking for the format a file already is, with nothing else to do to it, is asking
- * for the file.
- *
- * the guard is that nothing else may be in the query. a crop or a resize has to be
- * decoded and written back out even when the container does not change, so this only
- * applies when the encode is the whole request. where it does apply it spends no cpu
- * and, more to the point, hands back the original bytes rather than a re-encode that
- * merely has the same pixels.
- *
- * a named colour counts as something else to do. two tga files are both tga and one
- * of them is sixteen bits a pixel, so "the container it already is" stops being the
- * whole question the moment -pix_fmt asks the other half of it.
- */
-bool alreadyWhatWasAsked(const std::vector<Haio::Token>& tokens, Haio::Format format) {
-    if (tokens.empty() || format == Haio::Format::RAW) return false;
+    const bool named = parsed.outputFormat != Haio::Format::RAW || !parsed.outputFormatName.empty();
+    if (named && parsed.outputFormat != blobs.front().format) return false;
 
-    return std::ranges::all_of(tokens, [format](const Haio::Token& token) {
-        return token.kind == Haio::TokenKind::Encode && token.format == format && !token.color;
+    return std::ranges::all_of(parsed.steps, [](const Haio::Token& step) {
+        return step.kind == Haio::TokenKind::Source || step.kind == Haio::TokenKind::Decode;
     });
 }
 
@@ -283,6 +242,11 @@ std::optional<Haio::Error> checkSize(const Haio::Cdn::Config& config, const std:
     const auto& limits = config.security;
 
     for (const auto& token : tokens) {
+        if (token.kind == Haio::TokenKind::Grid && limits.maxSizePixel > 0
+            && std::max({token.quantum.width, token.quantum.height, token.gap.width, token.gap.height}) > limits.maxSizePixel) {
+            return Haio::Error{Haio::ErrorCode::InvalidInput,
+                               "a grid cell or gap is limited to " + std::to_string(limits.maxSizePixel) + " on each side"};
+        }
         if (token.kind != Haio::TokenKind::Resize) continue;
 
         // a share is checked as a share: the factor is known here even though what it
@@ -304,65 +268,117 @@ std::optional<Haio::Error> checkSize(const Haio::Cdn::Config& config, const std:
     return std::nullopt;
 }
 
-Haio::Result<Haio::Cdn::BodyEncoding> encodingAsked(std::string_view query) {
-    const auto values = Haio::parseQueryMap(query);
-    const auto it = values.find("encoding");
-    if (it == values.end()) return Haio::Cdn::BodyEncoding::Identity;
+constexpr size_t maxInFlight = 4;
 
-    const auto named = Haio::Cdn::bodyEncodingNamed(it->second);
-    if (!named) HAIO_FAIL(InvalidInput, "unknown encoding: " + it->second);
-    return *named;
+/**
+ * what the workers below share: the next input to take, where each one's blob goes,
+ * and the first refusal, which stops the others.
+ */
+struct Fetching {
+    const std::vector<Haio::Parser::Input>& inputs;
+    std::vector<Haio::Blob>& blobs;
+    size_t next = 0;
+    size_t running = 0;
+    std::optional<Haio::Error> failure;
+    Haio::Event done;
+};
+
+Haio::Task<void> fetchWorker(std::shared_ptr<Fetching> state, const Haio::Cdn::Config& config,
+                             Haio::Source::Archives& archives) {
+    while (!state->failure && state->next < state->inputs.size()) {
+        const auto at = state->next++;
+        const auto& input = state->inputs[at];
+
+        auto fetched = co_await Haio::Cdn::fetchBucket(config, archives, input.bucket, input.path);
+        if (!fetched) {
+            if (!state->failure) state->failure = fetched.error();
+            break;
+        }
+        if (fetched->format == Haio::Format::RAW) {
+            if (!state->failure) {
+                state->failure = Haio::Error{Haio::ErrorCode::UnsupportedFormat,
+                                             "haio does not recognise " + input.path};
+            }
+            break;
+        }
+        state->blobs[at] = *std::move(fetched);
+    }
+
+    state->running--;
+    if (state->running == 0) state->done.set();
+}
+
+/**
+ * every source at once, up to maxInFlight of them, each writing into its own slot so
+ * the pictures stay in the order they were asked for.
+ */
+Haio::Task<std::optional<Haio::Error>> fetchAll(const Haio::Cdn::Config& config, Haio::Source::Archives& archives,
+                                                const std::vector<Haio::Parser::Input>& inputs,
+                                                std::vector<Haio::Blob>& blobs) {
+    if (inputs.empty()) co_return std::nullopt;
+
+    blobs.resize(inputs.size());
+    auto state = std::make_shared<Fetching>(Fetching{inputs, blobs});
+
+    state->running = std::min(maxInFlight, inputs.size());
+    for (size_t worker = 0; worker < state->running; worker++) {
+        Haio::Platform::spawn(fetchWorker(state, config, archives));
+    }
+
+    co_await state->done;
+    co_return state->failure;
 }
 
 /** the fetch and the conversion behind it, which is exactly what an entry saves */
 Haio::Task<Haio::Result<Haio::Cdn::CacheEntry>> produce(const Haio::Cdn::Config& config, Haio::Source::Archives& archives, Route route) {
-    const auto encoding = encodingAsked(route.query);
-    if (!encoding) co_return std::unexpected(encoding.error());
+    const auto words = Haio::Cdn::wordsOf(route.query);
+    if (words.empty()) co_return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, "nothing asked for"});
 
-    auto fetched = co_await Haio::Cdn::fetchBucket(config, archives, route.bucket, route.path);
-    if (!fetched) co_return std::unexpected(fetched.error());
-    auto blob = *std::move(fetched);
+    const auto parsed = Haio::Parser::parse(
+        words, {.bucketPrefix = true, .outputNamed = "the answer", .maxSteps = config.security.maxOperations});
+    if (parsed.error) co_return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput, parsed.error.message});
 
-    /**
-     * a bucket is a directory, and a directory holds whatever somebody put there. only
-     * files haio can name are served: without this the cdn hands out anything the
-     * bucket happens to contain, which is a file server with extra steps rather than
-     * an image one.
-     *
-     * naming it is enough, though. a png asked for without a format is handed over
-     * exactly as it was stored, because there is nothing to convert it to.
-     */
-    if (blob.format == Haio::Format::RAW) {
-        co_return std::unexpected(Haio::Error{Haio::ErrorCode::UnsupportedFormat,
-                                              "haio does not recognise " + route.path});
+    if (config.security.maxSources != 0 && parsed.inputs.size() > config.security.maxSources) {
+        co_return std::unexpected(Haio::Error{Haio::ErrorCode::InvalidInput,
+                                              "a request may name " + std::to_string(config.security.maxSources)
+                                                  + " sources and this one names " + std::to_string(parsed.inputs.size())});
     }
 
-    auto tokens = Haio::parseQueryTokens(route.query);
-    if (auto tooBig = checkSize(config, tokens)) co_return std::unexpected(*tooBig);
+    if (auto tooBig = checkSize(config, parsed.steps)) co_return std::unexpected(*tooBig);
 
-    if (!tokens.empty() && !alreadyWhatWasAsked(tokens, blob.format)) {
-        Haio::Pipeline pipeline;
-        pipeline |= Haio::Tokens::Source(route.bucket, route.path);
-        for (auto token : tokens) pipeline |= std::move(token);
-
-        if (hasImageTransform(pipeline.tokens()) && !hasTokenKind(pipeline.tokens(), Haio::TokenKind::Encode)) {
-            const auto fallback = blob.format == Haio::Format::RAW ? Haio::Format::PNG : blob.format;
-            pipeline |= Haio::Tokens::Encode(fallback == Haio::Format::PPM ? Haio::Format::PNG : fallback);
-        }
-
-        auto converted = Haio::runPipeline(std::move(blob), pipeline);
-        if (!converted) co_return std::unexpected(converted.error());
-        blob = *std::move(converted);
+    std::vector<Haio::Blob> blobs;
+    if (auto refused = co_await fetchAll(config, archives, parsed.inputs, blobs)) {
+        co_return std::unexpected(*refused);
     }
 
-    if (*encoding != Haio::Cdn::BodyEncoding::Identity) {
-        blob.data = Haio::Cdn::encodeBody(blob.data, *encoding);
+    Haio::Pipeline pipeline;
+    if (!nothingToDo(parsed, blobs)) {
+        for (const auto& step : parsed.steps) pipeline |= step;
     }
+
+    if (!pipeline.tokens().empty()) {
+        const bool named = parsed.outputFormat != Haio::Format::RAW || !parsed.outputFormatName.empty();
+        const auto format = named          ? parsed.outputFormat
+                          : parsed.outputColor ? Haio::Format::RAW
+                                               : preferredFormat(parsed, blobs);
+        pipeline |= Haio::Tokens::Encode(format, parsed.outputColor, parsed.outputSettings);
+    }
+
+    if (parsed.outputEncoding != Haio::BodyEncoding::Identity || !parsed.outputName.empty()) {
+        pipeline |= Haio::Tokens::Deliver(parsed.outputEncoding, parsed.outputName);
+    }
+
+    const auto deadline = config.security.timeout.count() == 0
+                              ? std::chrono::steady_clock::time_point::max()
+                              : std::chrono::steady_clock::now() + config.security.timeout;
+    auto converted = Haio::runPipeline(std::move(blobs), pipeline, deadline);
+    if (!converted) co_return std::unexpected(converted.error());
 
     co_return Haio::Cdn::CacheEntry{
-        std::move(blob.data),
-        blob.contentType.empty() ? std::string(Haio::contentTypeFor(blob.format)) : blob.contentType,
-        downloadName(route.path, blob.format),
+        std::move(converted->data),
+        converted->contentType.empty() ? std::string(Haio::contentTypeFor(converted->format)) : converted->contentType,
+        downloadName(converted->path, converted->format),
+        parsed.outputEncoding,
     };
 }
 
@@ -377,6 +393,15 @@ struct Shared {
     std::shared_ptr<Haio::Source::Archives> archives;
 };
 
+std::shared_ptr<Shared> makeShared(Haio::Cdn::Config config) {
+    return std::make_shared<Shared>(Shared{
+        config,
+        Haio::Cdn::Cache{config.cache, config.security.maxCacheEntriesByIp},
+        RateLimiter{config.security.maxRequestsByIp},
+        Haio::Source::makeArchives(config.security.maxUnzip),
+    });
+}
+
 Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, HttpServerRequest req) {
     if (req.method != "GET" && req.method != "HEAD") {
         co_return makeText(405, "method not allowed\n");
@@ -389,7 +414,7 @@ Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, Htt
         co_return res;
     }
 
-    Route route;
+    std::optional<Route> route;
     try {
         route = parseRoute(req.target);
     } catch (const std::exception& err) {
@@ -397,10 +422,13 @@ Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, Htt
         co_return makeText(400, std::string(err.what()) + "\n");
     }
 
+    if (!route) co_return makeText(404, "not found\n");
+    if (route->query.empty()) co_return makeText(200, "ok\n");
+
     // the key leaves the method out on purpose, so a HEAD finds what a GET stored
-    const auto key = Haio::Cdn::cacheKey(route.bucket, route.path, route.query);
+    const auto key = Haio::Cdn::cacheKey(route->query);
     auto entry = co_await shared->cache.fetch(key, req.client, [shared, route]() {
-        return produce(shared->config, *shared->archives, route);
+        return produce(shared->config, *shared->archives, *route);
     });
     if (!entry) co_return makeError(entry.error());
 
@@ -411,6 +439,8 @@ Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, Htt
      * gzip it stored for one client to another that never asked for it.
      */
     auto body = std::move(entry->data);
+    const auto bodyEncoding = entry->encoding;
+    const auto arriving = body.size();
     const bool compressible = worthCompressing(entry->contentType)
                            && !body.empty() && body.size() <= std::numeric_limits<uInt>::max();
     const auto encoding = compressible ? negotiateEncoding(req.header("accept-encoding")) : Encoding::Identity;
@@ -423,73 +453,84 @@ Haio::Task<HttpServerResponse> handleRequest(std::shared_ptr<Shared> shared, Htt
 
     auto res = makeResponse(200, entry->contentType, std::move(body));
     res.headers.emplace_back("content-disposition", "inline; filename=\"" + entry->filename + "\"");
+    res.headers.emplace_back("x-original-content-length", std::to_string(arriving));
     if (compressible) res.headers.emplace_back("vary", "Accept-Encoding");
     if (encoding == Encoding::Gzip) res.headers.emplace_back("content-encoding", "gzip");
     if (encoding == Encoding::Deflate) res.headers.emplace_back("content-encoding", "deflate");
 
-    if (const auto asked = encodingAsked(route.query); asked && *asked != Haio::Cdn::BodyEncoding::Identity) {
-        res.headers.emplace_back("x-encoding", std::string(Haio::Cdn::bodyEncodingName(*asked)));
+    if (bodyEncoding != Haio::BodyEncoding::Identity) {
+        res.headers.emplace_back("x-encoding", std::string(Haio::Stages::enumName(bodyEncoding)));
     }
     co_return res;
 }
 
 /**
- * these are what stands between the server and somebody deciding to spend all of its
- * memory, so leaving one out is worth saying out loud. each has a default and the
- * server is safe without them: the warning is there so nobody believes they
- * configured a limit they never wrote.
+ * a limit left out is a limit that is not there, so the server names the ones it has
+ * none of. with security.strict the same lines refuse to start it.
  */
 void warnAboutDefaults(const Haio::Cdn::Config& config, bool cacheEnabled) {
+    const auto missing = [&config](std::string_view key) { return !config.declared.contains(std::string(key)); };
+    std::vector<std::string> notes;
+
     for (const auto& [name, bucket] : config.buckets) {
         if (bucket.open) {
-            std::cerr << "warning: bucket \"" << name << "\" is open, so it will fetch whatever host the request names\n";
+            notes.push_back("bucket \"" + name + "\" is open, so it will fetch whatever host the request names");
         }
     }
-
-    const auto missing = [&config](std::string_view key) { return !config.declared.contains(std::string(key)); };
-
     if (missing("security.timeout")) {
-        std::cerr << "warning: security.timeout is not set, so a conversion is stopped after "
-                  << config.security.timeout.count() << "s by default\n";
+        notes.push_back("security.timeout is not set, so one conversion may run for as long as it takes");
     }
     if (missing("security.max_size_pixel")) {
-        std::cerr << "warning: security.max_size_pixel is not set, so a resize is capped at "
-                  << config.security.maxSizePixel << " on each side by default\n";
+        notes.push_back("security.max_size_pixel is not set, so a resize may ask for any size");
     }
     if (missing("security.max_size_percent")) {
-        std::cerr << "warning: security.max_size_percent is not set, so a resize is capped at "
-                  << config.security.maxSizePercent << " percent by default\n";
+        notes.push_back("security.max_size_percent is not set, so a resize may ask for any share");
+    }
+    if (missing("security.max_sources")) {
+        notes.push_back("security.max_sources is not set, so one request may ask the server to fetch as many files as it names");
     }
     if (missing("security.max_requests_by_ip")) {
-        // no default: a number picked blind would shut out a whole office behind one
-        // address, the same reason max_cache_entries_by_ip has none
-        std::cerr << "warning: security.max_requests_by_ip is not set, so one address may "
-                     "make as many requests per second as it likes\n";
+        notes.push_back("security.max_requests_by_ip is not set, so one address may make as many requests per second as it likes");
+    }
+    if (missing("security.max_operations")) {
+        notes.push_back("security.max_operations is not set, so one request may ask for a pipeline of any length");
+    }
+    if (missing("security.max_unzip")) {
+        notes.push_back("security.max_unzip is not set, so one extracted file is capped at "
+                        + std::to_string(config.security.maxUnzip / (1024 * 1024)) + "mb by default");
     }
     if (cacheEnabled && missing("cache.max_usage")) {
-        std::cerr << "warning: cache.max_usage is not set, so the cache is capped at "
-                  << config.cache.maxUsage / (1024 * 1024) << "mb by default\n";
+        notes.push_back("cache.max_usage is not set, so the cache is capped at "
+                        + std::to_string(config.cache.maxUsage / (1024 * 1024)) + "mb by default");
     }
     if (cacheEnabled && missing("security.max_cache_entries_by_ip")) {
-        std::cerr << "warning: security.max_cache_entries_by_ip is not set, so one address "
-                     "may fill the cache on its own and evict everybody else\n";
+        notes.push_back("security.max_cache_entries_by_ip is not set, so one address may fill the cache on its own and evict everybody else");
     }
+
+    if (notes.empty()) return;
+
+    if (config.security.strict) {
+        std::string all = "security.strict is on, and the server will not start while";
+        for (const auto& note : notes) all += "\n  " + note;
+        throw std::runtime_error(all);
+    }
+    for (const auto& note : notes) std::cerr << Haio::Cdn::warningTag << note << '\n';
 }
 
 }
 
 namespace Haio::Cdn {
 
+Platform::HttpHandler makeHandler(Config config) {
+    auto shared = makeShared(std::move(config));
+    return [shared](HttpServerRequest req) { return handleRequest(shared, std::move(req)); };
+}
+
 Task<void> runServer(Config config) {
-    auto shared = std::make_shared<Shared>(Shared{
-        config,
-        Cache{config.cache, config.security.maxCacheEntriesByIp},
-        RateLimiter{config.security.maxRequestsByIp},
-        Source::makeArchives(config.security.maxUnzip),
-    });
+    auto shared = makeShared(config);
 
     if (shared->cache.enabled()) {
-        std::cout << "cache: " << (config.cache.url.empty() ? "memory" : config.cache.url)
+        std::cerr << "cache: " << (config.cache.url.empty() ? "memory" : config.cache.url)
                   << ", ttl " << config.cache.ttl.count() << "s\n";
     }
     warnAboutDefaults(config, shared->cache.enabled());
@@ -499,7 +540,7 @@ Task<void> runServer(Config config) {
     options.port = config.port;
     options.name = "haio-cdn";
     options.ready = [host = config.host, port = config.port] {
-        std::cout << "haio cdn listening on http://" << host << ':' << port << "\n";
+        std::cerr << "haio cdn listening on http://" << host << ':' << port << "\n";
     };
 
     co_await Platform::serveHttp(std::move(options), [shared](HttpServerRequest req) {

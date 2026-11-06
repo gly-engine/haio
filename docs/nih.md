@@ -1,7 +1,7 @@
 # Not Invented Here
 
 Pode soar meio contraditório, sitar (NIH) em apenas mais uma ferramenta de proxy ou conversão de imagem.
-mas pelo contrário Haio não tem uma filosofia banal como "mesmo software só que escrito em rust" ou então "um design de interface do meu gosto pessoal", na verdade a base de apoio de sua perfomance além arquiteturalmente é justamente usar códigos maduro criado por terceiros. como jpeg-turbo, libyuv, wuffs. que são especificos para fazer uma coisa só, porém muito bem feito.
+mas pelo contrário Haio não tem uma filosofia banal como "mesmo software só que escrito em rust" ou então "um design de interface do meu gosto pessoal", na verdade a base de apoio de sua perfomance além arquiteturalmente é justamente usar códigos maduro criado por terceiros. como jpeg-turbo, libwebp, libyuv, wuffs. que são especificos para fazer uma coisa só, porém muito bem feito.
 
 ## Problems to Solve
 

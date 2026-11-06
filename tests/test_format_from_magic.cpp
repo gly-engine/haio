@@ -17,6 +17,9 @@ void testEachDetectorMatchesOnlyItself() {
         {Haio::Format::PNG,  Haio::Color::RGBA8888, {0x89,'P','N','G','\r','\n',0x1a,'\n',0,0,0,13,'I','H','D','R',0,0,0,8,0,0,0,8,8,6}},
         {Haio::Format::PPM,  Haio::Color::RGB888,   {'P','6','\n'}},
         {Haio::Format::ZCIS, Haio::Color::RGBA8888, {'!','<','a','r','c','h','>','\n'}},
+        // riff, then "WEBP", then the chunk that says which bitstream: vp8l is lossless
+        {Haio::Format::WEBP, Haio::Color::RGBA8888,
+         {'R','I','F','F',20,0,0,0,'W','E','B','P','V','P','8','L',13,0,0,0,0x2f,0,0,0,0}},
     };
 
     // a codec switched off with -DHAIO_CODEC_<NAME>=OFF stops recognising its own bytes

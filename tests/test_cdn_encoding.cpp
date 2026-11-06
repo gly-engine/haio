@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 
+using namespace Haio;
 using namespace Haio::Cdn;
 
 namespace {
@@ -53,12 +54,16 @@ std::vector<uint8_t> join(std::vector<uint8_t> left, const std::vector<uint8_t>&
 }
 
 int main() {
-    check(bodyEncodingNamed("cobs") == BodyEncoding::Cobs, "cobs is named");
-    check(bodyEncodingNamed("base64") == BodyEncoding::Base64, "base64 is named");
-    check(bodyEncodingNamed("hex") == BodyEncoding::Hex, "hex is named");
-    check(bodyEncodingNamed("") == BodyEncoding::Identity, "an empty name is the body as it is");
-    check(!bodyEncodingNamed("nonull"), "a name haio does not write is refused");
-    check(bodyEncodingName(BodyEncoding::Cobs) == "cobs", "cobs spells itself back");
+    // the names come off the enum by reflection, so this is really checking that a
+    // new encoding needs nothing but an enumerator
+    const auto named = [](std::string_view name) { return Haio::Stages::enumNamed<BodyEncoding>(name); };
+    check(named("cobs") == BodyEncoding::Cobs, "cobs is named");
+    check(named("base64") == BodyEncoding::Base64, "base64 is named");
+    check(named("hex") == BodyEncoding::Hex, "hex is named");
+    check(named("identity") == BodyEncoding::Identity, "so is the body as it is");
+    check(!named(""), "and no name at all is not one of them");
+    check(!named("nonull"), "a name haio does not write is refused");
+    check(Haio::Stages::enumName(BodyEncoding::Cobs) == "cobs", "cobs spells itself back");
 
     checkCobs({}, {0x01}, "nothing");
     checkCobs({0x00}, {0x01, 0x01}, "one zero");

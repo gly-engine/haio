@@ -1,3 +1,4 @@
+#include <haio/internal/codecs/yuv.hpp>
 #include <haio_convert.hpp>
 #include <haio_util.hpp>
 
@@ -13,9 +14,10 @@ Result<size_t> sizeOf(Color color, Size size) {
     // the addressable colours are just their stride, which strideOf already knows
     if (const auto stride = strideOf(color); stride != 0) return pixels * stride;
 
-    switch (color) {
-        case Color::ETC1: return Util::GPU::etc1Size(size);
+    // every etc and eac is whole four by four blocks, which is one rule for all of them
+    if (Util::GPU::blockBytes(color) != 0) return Util::GPU::blockedSize(color, size);
 
+    switch (color) {
         /**
          * sixteen bytes for every eight by eight tile, which works out to two bits a
          * pixel. the sides have to be whole tiles: a chr file has no way to say that
@@ -30,18 +32,12 @@ Result<size_t> sizeOf(Color color, Size size) {
         }
 
         /**
-         * three planes: a full size luma and two half size chroma. the halves are
-         * why the dimensions have to be even, and refusing an odd one here is better
-         * than rounding it and handing back a picture a line short.
+         * three planes: a luma and two chroma at half of it in both directions. an
+         * odd side has no whole two by two block to end on, so the planes are grown
+         * to the next even number -- see haio/internal/codecs/yuv.hpp, which is also
+         * the layout libjpeg-turbo hands its planes over in.
          */
-        case Color::YUV420: {
-            if (size.width % 2 != 0 || size.height % 2 != 0) {
-                return std::unexpected(Error{ErrorCode::InvalidInput,
-                                             "yuv420 needs even width and height"});
-            }
-            const auto chroma = (static_cast<size_t>(size.width) / 2) * (static_cast<size_t>(size.height) / 2);
-            return pixels + chroma * 2;
-        }
+        case Color::YUV420: return Codecs::Yuv420::planesOf(size).bytes;
         case Color::NIL: return 0;
         default: break;
     }
