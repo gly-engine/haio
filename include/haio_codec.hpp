@@ -237,6 +237,13 @@ template <Format F, Color P> Result<Blob>     Encode(Image<P>, const Settings&) 
 template <Format F, Color P> Result<Blob> Encode(Image<P>, const Metadata&) = delete;
 
 /**
+ * both at once, for the container that keeps an index and is also told how to fill
+ * it: zcis knows its cuts from the picture and its optimization level from the
+ * command line, and neither can be read off the other.
+ */
+template <Format F, Color P> Result<Blob> Encode(Image<P>, const Metadata&, const Settings&) = delete;
+
+/**
  * a picture painted out of nothing by a Brush, in the colour it is painted in: the
  * words are what came after its colon on the command line, "red-blue" for
  * "gradient:red-blue", and the settings its options, -size among them.
@@ -326,7 +333,8 @@ template <Format F, Color P> concept Decodable  = DecodesPlain<F, P> || DecodesS
 template <Format F, Color P> concept EncodesPlain    = requires (Image<P> i) { { Encode<F, P>(std::move(i)) } -> std::same_as<Result<Blob>>; };
 template <Format F, Color P> concept EncodesSettings = requires (Image<P> i, const Settings& s) { { Encode<F, P>(std::move(i), s) } -> std::same_as<Result<Blob>>; };
 template <Format F, Color P> concept EncodesMetadata = requires (Image<P> i, const Metadata& m) { { Encode<F, P>(std::move(i), m) } -> std::same_as<Result<Blob>>; };
-template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P> || EncodesMetadata<F, P>;
+template <Format F, Color P> concept EncodesBoth     = requires (Image<P> i, const Metadata& m, const Settings& s) { { Encode<F, P>(std::move(i), m, s) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P> || EncodesMetadata<F, P> || EncodesBoth<F, P>;
 /**
  * @ingroup generate
  * can this brush paint in this colour, asked of the pair rather than answered by hand.
@@ -360,7 +368,8 @@ Result<Image<P>> decode(const Blob& blob, const Settings& settings) {
 template <Format F, Color P>
     requires Encodable<F, P>
 Result<Blob> encode(Image<P> image, const Settings& settings, const Metadata& meta = {}) {
-    if constexpr (EncodesMetadata<F, P>) return Encode<F, P>(std::move(image), meta);
+    if constexpr (EncodesBoth<F, P>) return Encode<F, P>(std::move(image), meta, settings);
+    else if constexpr (EncodesMetadata<F, P>) return Encode<F, P>(std::move(image), meta);
     else if constexpr (EncodesSettings<F, P>) return Encode<F, P>(std::move(image), settings);
     else return Encode<F, P>(std::move(image));
 }

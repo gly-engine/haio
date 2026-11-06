@@ -1,4 +1,6 @@
 #include <haio/internal/codecs/yuv.hpp>
+#include <haio/codecs/zcis.hpp>
+#include <haio/internal/codecs/zcis.hpp>
 #include <haio_codec.hpp>
 #include <haio/generated/codec.hpp>
 #include <haio_convert.hpp>
@@ -25,6 +27,14 @@ constexpr int base62PairMax = 62 * 62 - 1;
  */
 constexpr char baseCommand = 'A';
 constexpr char refineCommand = 'C';
+constexpr char fillCommand = 'F';
+
+/**
+ * what a fill has to save to be worth sending: its own member is sixty bytes of ar
+ * header plus the colour and the padding, so anything under that makes the file
+ * bigger to save nothing.
+ */
+constexpr size_t fillWorth = 80;
 
 char commandOf(char commit, bool shown) {
     return shown ? commit : static_cast<char>(commit - 'A' + 'a');
@@ -97,6 +107,27 @@ std::optional<Haio::Error> openArchive(std::vector<uint8_t>& out, const Haio::Me
     for (const auto& cut : meta.cuts) index += line(cut.rect);
     if (meta.cuts.empty()) index = line(Haio::Rect{0, 0, width, height});
     return appendMember(out, std::string(indexMemberName), {index.begin(), index.end()});
+}
+
+/** the cuts as the index wrote them down, which is what the flattening walks */
+std::vector<Haio::Rect> cutsOf(const Haio::Metadata& meta, int width, int height) {
+    std::vector<Haio::Rect> rects;
+    rects.reserve(meta.cuts.size());
+    for (const auto& cut : meta.cuts) rects.push_back(cut.rect);
+    if (rects.empty()) rects.push_back(Haio::Rect{0, 0, width, height});
+    return rects;
+}
+
+/** the box a cut shrank to, by the rectangle it was */
+const Haio::Rect* boxFor(const Haio::Codecs::Zcis::Flat& flat, const std::vector<Haio::Rect>& cuts,
+                         const Haio::Rect& cut) {
+    for (size_t at = 0; at < cuts.size() && at < flat.boxes.size(); at++) {
+        const auto& one = cuts[at];
+        if (one.x == cut.x && one.y == cut.y && one.width == cut.width && one.height == cut.height) {
+            return &flat.boxes[at];
+        }
+    }
+    return nullptr;
 }
 
 std::string target(int x, int y, int width, int height) {
@@ -188,12 +219,19 @@ namespace Haio::Codecs {
  * and the row shown again, sharp, before the next one starts.
  */
 template <>
-Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, const Metadata& meta) {
+Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, const Metadata& meta, const Settings& settings) {
+    HAIO_TRY(level, settingInt(settings, zcisOptimization));
+    HAIO_TRY(minification, settingInt(settings, zcisMinification));
     const auto expected = static_cast<size_t>(img.width) * static_cast<size_t>(img.height) * 4;
     if (img.width <= 0 || img.height <= 0 || img.data.size() != expected) {
         HAIO_FAIL(InvalidInput, "invalid rgba8888 image for zcis encode");
     }
     HAIO_CHECK(checkCanvas(img.width, img.height));
+
+    // the cuts have to be known before the colour is chosen, since the flat ground
+    // the choice counts on is found a cut at a time
+    const auto cuts = cutsOf(meta, img.width, img.height);
+    const auto slack = Zcis::minify(img, cuts, fillWorth, level, minification);
 
     std::vector<uint8_t> out;
     HAIO_CHECK(openArchive(out, meta, img.width, img.height));
@@ -206,18 +244,52 @@ Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, c
         return appendMember(out, name, payload->data);
     };
 
+    const auto appendFill = [&](const Zcis::Fill& fill, bool shown) -> std::optional<Error> {
+        const auto text = Zcis::spell(fill.rgba);
+        const auto name = std::string(1, orderOf(order++)) + commandOf(fillCommand, shown)
+                        + target(fill.at.x, fill.at.y, fill.at.width, fill.at.height) + ".txt";
+        return appendMember(out, name, std::vector<uint8_t>(text.begin(), text.end()));
+    };
+
+    /**
+     * the ground first and all of it, because a fill merged across rows has to be
+     * down before any of the rows it spans paints. none of them shows anything by
+     * itself: the first picture to commit is what puts the whole page up at once.
+     */
+    Zcis::Flat flat;
+    if (level >= 1) flat = Zcis::flatten(img, cuts, fillWorth, slack / 16);
+
+    // and only then is the colour given up: extending the runs first would leave
+    // every row of the ground a shade of its own and nothing worth naming
+    Zcis::lengthen(img, slack);
+
+    const bool nothingPaints = std::ranges::all_of(flat.boxes, [](const Rect& box) { return box.width == 0; });
+    for (size_t at = 0; at < flat.fills.size(); at++) {
+        HAIO_CHECK(appendFill(flat.fills[at], nothingPaints && at + 1 == flat.fills.size()));
+    }
+
     /**
      * a row is blitted a cut at a time and shown by the last of them, so it appears
      * whole rather than piece by piece, and only the cuts travel: nothing between
      * them is sent. its low resolution layer goes first and the rows it skipped after.
      */
     for (const auto& row : rowsOf(meta, img.width, img.height)) {
-        for (size_t at = 0; at < row.size(); at++) {
-            const auto cut = piece(img, row[at]);
-            HAIO_CHECK(appendLayer(commandOf(baseCommand, at + 1 == row.size()), row[at], selectRows(cut, cut.height == 1 ? 0 : 1)));
+        // a cut whose ground swallowed it has nothing left to send, so the commit
+        // its row was waiting for belongs to the last one that does
+        std::vector<Rect> sending;
+        for (const auto& rect : row) {
+            const auto* box = level >= 1 ? boxFor(flat, cuts, rect) : nullptr;
+            const auto at = box ? *box : rect;
+            if (at.width > 0 && at.height > 0) sending.push_back(at);
+        }
+
+        for (size_t at = 0; at < sending.size(); at++) {
+            const auto cut = piece(img, sending[at]);
+            HAIO_CHECK(appendLayer(commandOf(baseCommand, at + 1 == sending.size()), sending[at],
+                                   selectRows(cut, cut.height == 1 ? 0 : 1)));
         }
         std::vector<Rect> taller;
-        std::ranges::copy_if(row, std::back_inserter(taller), [](const Rect& rect) { return rect.height > 1; });
+        std::ranges::copy_if(sending, std::back_inserter(taller), [](const Rect& rect) { return rect.height > 1; });
         for (size_t at = 0; at < taller.size(); at++) {
             HAIO_CHECK(appendLayer(commandOf(refineCommand, at + 1 == taller.size()), taller[at], selectRows(piece(img, taller[at]), 0)));
         }
@@ -228,16 +300,21 @@ Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, c
 
 template <>
 Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img) {
-    return Encode<Format::ZCIS, Color::RGBA8888>(std::move(img), Metadata{});
+    return Encode<Format::ZCIS, Color::RGBA8888>(std::move(img), Metadata{}, Settings{});
 }
 
 /** the cuts a row at a time, top to bottom, every row blitted a cut at a time and shown by its last */
 template <>
-Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img, const Metadata& meta) {
+Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img, const Metadata& meta, const Settings& settings) {
+    HAIO_TRY(level, settingInt(settings, zcisOptimization));
+    HAIO_TRY(minification, settingInt(settings, zcisMinification));
     if (img.width <= 0 || img.height <= 0) HAIO_FAIL(InvalidInput, "invalid yuv420 image for zcis encode");
     HAIO_TRY(expected, sizeOf(Color::YUV420, Size{img.width, img.height}));
     if (img.data.size() != expected) HAIO_FAIL(InvalidInput, "invalid yuv420 image for zcis encode");
     HAIO_CHECK(checkCanvas(img.width, img.height));
+
+    const auto cuts = cutsOf(meta, img.width, img.height);
+    const auto slack = Zcis::minifyYuv(img, cuts, fillWorth, true, level, minification);
 
     std::vector<uint8_t> out;
     HAIO_CHECK(openArchive(out, meta, img.width, img.height));
@@ -245,16 +322,37 @@ Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img, const
     const auto planes = Yuv420::planesOf(Size{img.width, img.height});
 
     int order = 1;
+    Zcis::Flat flat;
+    if (level >= 1) flat = Zcis::flattenYuv(img, cuts, fillWorth, true, slack / 16);
+    Zcis::lengthen(img, slack);
+
+    const bool nothingPaints = std::ranges::all_of(flat.boxes, [](const Rect& box) { return box.width == 0; });
+    for (size_t at = 0; at < flat.fills.size(); at++) {
+        const auto text = Zcis::spell(flat.fills[at].rgba);
+        const auto& where = flat.fills[at].at;
+        const auto name = std::string(1, orderOf(order++))
+                        + commandOf(fillCommand, nothingPaints && at + 1 == flat.fills.size())
+                        + target(where.x, where.y, where.width, where.height) + ".txt";
+        HAIO_CHECK(appendMember(out, name, std::vector<uint8_t>(text.begin(), text.end())));
+    }
+
     for (const auto& row : rowsOf(meta, img.width, img.height)) {
-        for (size_t at = 0; at < row.size(); at++) {
-            const auto rect = even(row[at], planes);
+        std::vector<Rect> sending;
+        for (const auto& one : row) {
+            const auto* box = level >= 1 ? boxFor(flat, cuts, one) : nullptr;
+            const auto at = box ? *box : one;
+            if (at.width > 0 && at.height > 0) sending.push_back(at);
+        }
+
+        for (size_t at = 0; at < sending.size(); at++) {
+            const auto rect = even(sending[at], planes);
             std::vector<uint8_t> payload;
             appendBytes(payload, "YUV4MPEG2 W" + std::to_string(rect.width) + " H" + std::to_string(rect.height)
                                      + " F1:1 Ip A1:1 C420jpeg XCOLORRANGE=FULL\nFRAME\n");
             const auto cut = piece(img, rect, planes);
             payload.insert(payload.end(), cut.begin(), cut.end());
 
-            const auto name = std::string(1, orderOf(order++)) + commandOf(baseCommand, at + 1 == row.size())
+            const auto name = std::string(1, orderOf(order++)) + commandOf(baseCommand, at + 1 == sending.size())
                             + target(rect.x, rect.y, rect.width, rect.height) + ".y4m";
             HAIO_CHECK(appendMember(out, name, payload));
         }
@@ -265,7 +363,7 @@ Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img, const
 
 template <>
 Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img) {
-    return Encode<Format::ZCIS, Color::YUV420>(std::move(img), Metadata{});
+    return Encode<Format::ZCIS, Color::YUV420>(std::move(img), Metadata{}, Settings{});
 }
 /** @} */
 
