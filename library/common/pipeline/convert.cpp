@@ -1,6 +1,8 @@
 #include <haio.hpp>
 #include <haio_atlas.hpp>
 
+#include <algorithm>
+#include <array>
 #include <meta>
 #include <optional>
 
@@ -116,21 +118,98 @@ std::optional<Error> crop(Picture& picture, const Token& token) {
     return std::nullopt;
 }
 
+/**
+ * both sides of a size turned into the one the picture ends up at: kept as written
+ * when exact, otherwise scaled by the smaller of the two factors to fit inside or by
+ * the larger to cover, rounded to the nearest pixel. a size with a side left out is
+ * passed on as it is, since the resize already keeps the shape for that one.
+ */
+Size fitted(Size picture, Size asked, ResizeFit fit) {
+    if (fit == ResizeFit::Pad) fit = ResizeFit::Inside;
+    if (fit == ResizeFit::Exact || asked.width <= 0 || asked.height <= 0) return asked;
+
+    const auto across = static_cast<int64_t>(asked.width) * picture.height;
+    const auto down = static_cast<int64_t>(asked.height) * picture.width;
+    const bool byWidth = fit == ResizeFit::Inside ? across <= down : across >= down;
+    const auto scaled = [](int64_t side, int64_t to, int64_t from) {
+        return static_cast<int>(std::max<int64_t>(1, (side * to + from / 2) / from));
+    };
+    if (byWidth) return Size{asked.width, scaled(picture.height, asked.width, picture.width)};
+    return Size{scaled(picture.width, asked.height, picture.height), asked.height};
+}
+
+/** a canvas of this size painted one colour */
+Image<Color::RGBA8888> solid(Size size, std::array<uint8_t, 4> colour) {
+    std::vector<uint8_t> data(static_cast<size_t>(size.width) * size.height * 4);
+    for (size_t at = 0; at < data.size(); at += 4) std::ranges::copy(colour, data.begin() + static_cast<std::ptrdiff_t>(at));
+    return Image<Color::RGBA8888>{size.width, size.height, std::move(data)};
+}
+
+/**
+ * the picture itself standing in for a background it does not have: stretched to
+ * cover the whole frame, the middle of it kept, and blurred until it is only colour,
+ * the way a television fills the bars around a picture of another shape.
+ */
+Result<Image<Color::RGBA8888>> blurredBehind(const Image<Color::RGBA8888>& source, Size size, ResizeFilter filter) {
+    const auto cover = fitted(Size{source.width, source.height}, size, ResizeFit::Cover);
+    HAIO_TRY(stretched, Transforms::Resize<Color::RGBA8888>(Image<Color::RGBA8888>{source}, cover, filter));
+    const Rect middle{(cover.width - size.width) / 2, (cover.height - size.height) / 2, size.width, size.height};
+    HAIO_TRY(out, Transforms::Crop<Color::RGBA8888>(std::move(stretched), middle));
+
+    return Transforms::Blur<Color::RGBA8888>(std::move(out), std::max(1, std::max(size.width, size.height) / 24));
+}
+
+/** the picture centred on the background, which is already the size it ends up at */
+Image<Color::RGBA8888> padded(const Image<Color::RGBA8888>& image, Image<Color::RGBA8888> ground, int& dx, int& dy) {
+    dx = (ground.width - image.width) / 2;
+    dy = (ground.height - image.height) / 2;
+    for (int y = 0; y < image.height; y++) {
+        const auto from = image.data.begin() + static_cast<std::ptrdiff_t>(static_cast<size_t>(y) * image.width * 4);
+        const auto to = (static_cast<size_t>(y + dy) * ground.width + static_cast<size_t>(dx)) * 4;
+        std::copy(from, from + static_cast<std::ptrdiff_t>(image.width) * 4, ground.data.begin() + static_cast<std::ptrdiff_t>(to));
+    }
+    return ground;
+}
+
 std::optional<Error> resize(Picture& picture, const Token& token) {
+    // a picture still in 4:2:0 came from a photograph or video, which has no
+    // transparency to pad with, so its sides are filled with itself, blurred
+    const bool fromYuv = picture.native && picture.native->color == Color::YUV420;
     if (auto failed = picture.rgba()) return failed;
+    const bool pad = token.fit == ResizeFit::Pad && token.percent == 0;
+    std::optional<Image<Color::RGBA8888>> source;
+    if (pad && fromYuv) source = picture.image;
 
     // a share is worked out here and not at parsing, because this is the first
     // moment anybody knows what it is a share of
-    auto wanted = token.size;
+    const auto before = sizeOf(picture);
+    auto wanted = fitted(before, token.size, token.fit);
     if (token.percent != 0) {
         wanted = Size{std::max(1, picture.image.width * token.percent / 100),
                       std::max(1, picture.image.height * token.percent / 100)};
     }
-    const auto before = sizeOf(picture);
     if (auto failed = keep(picture.image, Transforms::Resize<Color::RGBA8888>(std::move(picture.image), wanted, token.filter))) {
         return failed;
     }
     picture.meta.cuts = scaledCuts(std::move(picture.meta.cuts), before, sizeOf(picture));
+
+    // the sides are a colour the palette may not have, so the indices go with them
+    if (pad) {
+        int dx = 0;
+        int dy = 0;
+        Image<Color::RGBA8888> ground;
+        if (source) {
+            auto behind = blurredBehind(*source, token.size, token.filter);
+            if (!behind) return behind.error();
+            ground = *std::move(behind);
+        } else {
+            ground = solid(token.size, Util::edgeColour(picture.image).value_or(std::array<uint8_t, 4>{0, 0, 0, 0}));
+        }
+        picture.image = padded(picture.image, std::move(ground), dx, dy);
+        picture.meta.cuts = movedCuts(std::move(picture.meta.cuts), dx, dy, token.size);
+        picture.indexed.reset();
+        return std::nullopt;
+    }
     // indices cannot be mixed, so only a point resize keeps them in step
     if constexpr (Transforms::Resizable<Color::PALETTE>) {
         if (picture.indexed && token.filter == ResizeFilter::Point) {

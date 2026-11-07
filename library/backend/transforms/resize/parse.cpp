@@ -10,7 +10,7 @@ namespace {
 
 struct Geometry {
     Size size;
-    bool exact = false;
+    ResizeFit fit = ResizeFit::Inside;
 };
 
 /**
@@ -37,7 +37,13 @@ bool side(std::string_view text, int& out) {
 std::optional<Geometry> geometry(std::string_view value) {
     Geometry out;
     if (value.ends_with('!')) {
-        out.exact = true;
+        out.fit = ResizeFit::Exact;
+        value.remove_suffix(1);
+    } else if (value.ends_with('^')) {
+        out.fit = ResizeFit::Cover;
+        value.remove_suffix(1);
+    } else if (value.ends_with('p')) {
+        out.fit = ResizeFit::Pad;
         value.remove_suffix(1);
     }
 
@@ -48,7 +54,8 @@ std::optional<Geometry> geometry(std::string_view value) {
     if (!side(value.substr(sep + 1), out.size.height)) return std::nullopt;
 
     if (out.size.width <= 0 && out.size.height <= 0) return std::nullopt;
-    if (out.exact && (out.size.width <= 0 || out.size.height <= 0)) return std::nullopt;
+    const bool bothSides = out.fit == ResizeFit::Exact || out.fit == ResizeFit::Pad;
+    if (bothSides && (out.size.width <= 0 || out.size.height <= 0)) return std::nullopt;
     return out;
 }
 
@@ -70,7 +77,7 @@ Built build<&resize>(std::string_view value, const Given& given) {
     if (!asked) {
         return std::unexpected(Refusal{"invalid argument for option `-resize': " + std::string(value), std::string(value)});
     }
-    return Tokens::Resize(asked->size, filter, asked->exact);
+    return Tokens::Resize(asked->size, filter, asked->fit);
 }
 
 }

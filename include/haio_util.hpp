@@ -2,6 +2,7 @@
 
 #include "haio_codec.hpp"
 
+#include <array>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -52,6 +53,15 @@ Result<std::vector<uint8_t>> slice(Bytes data, size_t off, size_t len);
  * text names no colour. canvases draw with it, and so will gradients.
  */
 std::optional<uint32_t> GetColorFromName(std::string_view name);
+
+/**
+ * the colour the edge of a picture is, when it is one: the median of the pixels all
+ * round its border, kept only when nine in ten of them are within a few levels of it.
+ * a product photographed on white answers white, a transparent edge answers
+ * transparent, and an edge that is busy answers nothing, leaving the caller to pick
+ * what stands in for a background it does not have.
+ */
+std::optional<std::array<uint8_t, 4>> edgeColour(const Image<Color::RGBA8888>& image);
 
 /**
  * what the gpu containers need to agree on. these always spoke about colour rather
