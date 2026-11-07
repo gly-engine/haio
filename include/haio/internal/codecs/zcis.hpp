@@ -24,7 +24,7 @@ namespace Haio::Codecs::Zcis {
 /** a rectangle that is one colour, and the colour it is */
 struct Fill {
     Rect at;
-    uint32_t rgba = 0;  /**< 0xAARRGGBB, as the .txt spells it out in decimal */
+    uint32_t rgba = 0;  /**< 0xAARRGGBB, as the member name spells it out in hex */
     uint32_t key = 0;   /**< the same colour as the picture holds it, which is what pixels are compared to */
 
     /** nothing paints over this one, so it may be the commit its row was waiting for */
@@ -276,7 +276,7 @@ inline size_t paintsOf(const Rect& box, int y, bool stretched) {
     return (y - box.y) % 2 == 1 ? 2 : 1;
 }
 
-/** the colour as the .txt holds it: four decimal numbers, red first */
+/** the colour as the fill member is named: RRGGBBAA in upper case hex */
 std::string spell(uint32_t rgba);
 
 /**

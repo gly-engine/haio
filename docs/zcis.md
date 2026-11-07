@@ -39,6 +39,7 @@ OTXXYYWWHH.EXT
 | `WW` | `WIDTH`   | width in px (can be stretched to the original image)
 | `HH` | `HEIGHT`  | height in px (can be stretched to the original image)
 
+- **NOTE:** a fill names a colour rather than a place, so its filename is laid out differently; see [Fill](#commands).
 - **NOTE:** that the `ORDER` attribute limits you to 62 files, but this is just a convenience for debugging; filenames can be repeated without issues.
 
 #### Base 62
@@ -68,11 +69,22 @@ Image names may specify `WIDTH` and `HEIGHT` independently. When the target dime
 | e    | E      | Erase Masking
 | f    | F      | Fill
 
-- **Fill:** paints the whole target rectangle one colour, which the member spells out
-  as four decimal numbers separated by spaces -- red, green, blue, alpha -- in a
-  `.txt`. A picture without an alpha channel writes `255`. Padding is allowed and
-  ignored. It is the cheapest command there is: one colour and one rectangle, whatever
-  the rectangle's size.
+- **Fill:** paints rectangles one colour. The colour is in the filename instead of a
+  target, as `OTRRGGBBAA.txt`, where `RR`, `GG`, `BB` and `AA` are red, green, blue and
+  alpha in hex from `00` to `FF`. A picture without an alpha channel writes `FF`. The
+  `.txt` holds every rectangle of that colour, one per `\r\n` line, written in decimal
+  as `x y width height` exactly like the [header](#header). Every rectangle of a colour
+  goes in one member, so a picture whose cuts share a background has one fill, not one
+  per cut. It is the cheapest command there is: one colour, whatever the size and the
+  number of rectangles.
+
+  ```
+  1fF0F0F0FF.txt
+  ```
+  ```
+  0 0 64 64
+  64 0 64 64
+  ```
 
 - **Erase Masking:** Is a `solid tint` of the alpha channel that permanently applies transparency. uses a 1-bit monochrome PCX bitmap, where `1` represents opaque and `0` represents transparent.
 - **Interlaced phase:** the dots of the glyph are what is painted in every 2x2 cell, counted from the chunk's own `POSX` and `POSY`. `B` paints the first column of every pair, `C` the first row and `D` the first pixel; the rest keeps what was already there. The other phase is reached by sending it first as the stretched base, or by moving the chunk one pixel.

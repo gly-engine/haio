@@ -155,6 +155,31 @@ std::optional<Haio::Error> appendMask(std::vector<uint8_t>& out, int& order, con
 }
 
 /**
+ * the ground, a member per colour: the colour is the name and the body is every
+ * rectangle of it, one decimal line each as the index writes them. the colours go
+ * in the order they first appear, and the last one is the commit when asked for.
+ */
+std::optional<Haio::Error> appendFills(std::vector<uint8_t>& out, int& order, const std::vector<Haio::Codecs::Zcis::Fill>& fills,
+                                       bool shown) {
+    std::vector<uint32_t> colours;
+    for (const auto& fill : fills) {
+        if (std::ranges::find(colours, fill.rgba) == colours.end()) colours.push_back(fill.rgba);
+    }
+    for (size_t at = 0; at < colours.size(); at++) {
+        std::string body;
+        for (const auto& fill : fills) {
+            if (fill.rgba != colours[at]) continue;
+            body += std::to_string(fill.at.x) + " " + std::to_string(fill.at.y) + " " + std::to_string(fill.at.width) + " "
+                  + std::to_string(fill.at.height) + "\r\n";
+        }
+        const auto name = std::string(1, orderOf(order++)) + commandOf(fillCommand, shown && at + 1 == colours.size())
+                        + Haio::Codecs::Zcis::spell(colours[at]) + ".txt";
+        if (auto failed = appendMember(out, name, {body.begin(), body.end()})) return failed;
+    }
+    return std::nullopt;
+}
+
+/**
  * the cuts in rows, top to bottom, and every row left to right: cuts of different
  * heights that share a line are one row. a canvas nothing was laid on is one cut.
  */
@@ -267,13 +292,6 @@ Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, c
         return appendMember(out, name, payload->data);
     };
 
-    const auto appendFill = [&](const Zcis::Fill& fill, bool shown) -> std::optional<Error> {
-        const auto text = Zcis::spell(fill.rgba);
-        const auto name = std::string(1, orderOf(order++)) + commandOf(fillCommand, shown)
-                        + target(fill.at.x, fill.at.y, fill.at.width, fill.at.height) + ".txt";
-        return appendMember(out, name, std::vector<uint8_t>(text.begin(), text.end()));
-    };
-
     /**
      * the ground first and all of it, because a fill merged across rows has to be
      * down before any of the rows it spans paints, and because a mask written before
@@ -281,9 +299,7 @@ Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, c
      * anything by itself: the first picture to commit is what puts the page up.
      */
     const bool nothingPaints = std::ranges::all_of(flat.boxes, [](const Rect& box) { return box.width == 0; });
-    for (size_t at = 0; at < flat.fills.size(); at++) {
-        HAIO_CHECK(appendFill(flat.fills[at], nothingPaints && at + 1 == flat.fills.size()));
-    }
+    HAIO_CHECK(appendFills(out, order, flat.fills, nothingPaints));
     for (const auto& mask : flat.masks) {
         if (!mask.refine) HAIO_CHECK(appendMask(out, order, mask));
     }
@@ -387,14 +403,7 @@ Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img, const
 
     int order = 1;
     const bool nothingPaints = std::ranges::all_of(flat.boxes, [](const Rect& box) { return box.width == 0; });
-    for (size_t at = 0; at < flat.fills.size(); at++) {
-        const auto text = Zcis::spell(flat.fills[at].rgba);
-        const auto& where = flat.fills[at].at;
-        const auto name = std::string(1, orderOf(order++))
-                        + commandOf(fillCommand, nothingPaints && at + 1 == flat.fills.size())
-                        + target(where.x, where.y, where.width, where.height) + ".txt";
-        HAIO_CHECK(appendMember(out, name, std::vector<uint8_t>(text.begin(), text.end())));
-    }
+    HAIO_CHECK(appendFills(out, order, flat.fills, nothingPaints));
     for (const auto& mask : flat.masks) HAIO_CHECK(appendMask(out, order, mask));
 
     for (const auto& row : rowsOf(meta, img.width, img.height)) {

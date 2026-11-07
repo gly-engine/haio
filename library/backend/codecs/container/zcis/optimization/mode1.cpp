@@ -313,8 +313,13 @@ void lengthen(Image<Color::YUV420>& img, int sixteenths, const Flat& flat) {
 }
 
 std::string spell(uint32_t rgba) {
-    const auto part = [&](int shift) { return std::to_string((rgba >> shift) & 0xFFu); };
-    return part(16) + " " + part(8) + " " + part(0) + " " + part(24);
+    constexpr std::string_view hex = "0123456789ABCDEF";
+    std::string out;
+    for (const int shift : {16, 8, 0, 24}) {
+        out += hex[(rgba >> (shift + 4)) & 0xFu];
+        out += hex[(rgba >> shift) & 0xFu];
+    }
+    return out;
 }
 
 Flat flatten(const Image<Color::RGBA8888>& img, const std::vector<Rect>& cuts, size_t worth, int tolerance) {

@@ -70,6 +70,16 @@ std::optional<int> base62Pair(std::string_view text) {
     return static_cast<int>(high * 62 + low);
 }
 
+/** the RRGGBBAA a fill member is named by */
+std::optional<std::array<uint8_t, 4>> colourOf(std::string_view hex) {
+    std::array<uint8_t, 4> out{};
+    for (size_t at = 0; at < 4; at++) {
+        const auto parsed = std::from_chars(hex.data() + at * 2, hex.data() + at * 2 + 2, out[at], 16);
+        if (parsed.ec != std::errc{} || parsed.ptr != hex.data() + at * 2 + 2) return std::nullopt;
+    }
+    return out;
+}
+
 /** the decimal numbers of a text member, whatever spacing sits between them */
 std::vector<long> numbersOf(Haio::Bytes body) {
     std::vector<long> out;
@@ -233,10 +243,21 @@ Result<Image<Color::RGBA8888>> Decode<Format::ZCIS, Color::RGBA8888>(const Blob&
     Screen canvas(size);
     for (size_t at = 1; at < members.size(); at++) {
         const auto& member = members[at];
-        const auto dot = member.name.find('.');
-        if (dot != 10) HAIO_FAIL(InvalidInput, "malformed zcis member name: " + member.name);
-
         const std::string_view name(member.name);
+        if (name.find('.') != 10) HAIO_FAIL(InvalidInput, "malformed zcis member name: " + member.name);
+
+        const auto command = static_cast<char>(name[1] | 0x20);
+        if (command == 'f') {
+            const auto colour = colourOf(name.substr(2, 8));
+            const auto numbers = numbersOf(member.body);
+            if (!colour || numbers.size() % 4 != 0) HAIO_FAIL(InvalidInput, "malformed zcis fill: " + member.name);
+            for (size_t n = 0; n < numbers.size(); n += 4) {
+                canvas.fill(Rect{static_cast<int>(numbers[n]), static_cast<int>(numbers[n + 1]),
+                                 static_cast<int>(numbers[n + 2]), static_cast<int>(numbers[n + 3])}, *colour);
+            }
+            continue;
+        }
+
         const auto x = base62Pair(name.substr(2, 2));
         const auto y = base62Pair(name.substr(4, 2));
         const auto width = base62Pair(name.substr(6, 2));
@@ -244,17 +265,6 @@ Result<Image<Color::RGBA8888>> Decode<Format::ZCIS, Color::RGBA8888>(const Blob&
         if (!x || !y || !width || !height) HAIO_FAIL(InvalidInput, "malformed zcis member name: " + member.name);
         const Rect target{*x, *y, *width, *height};
         if (target.width == 0 || target.height == 0) continue;
-
-        const auto command = static_cast<char>(name[1] | 0x20);
-        if (command == 'f') {
-            const auto numbers = numbersOf(member.body);
-            if (numbers.size() != 4 || std::ranges::any_of(numbers, [](long n) { return n > 255; })) {
-                HAIO_FAIL(InvalidInput, "malformed zcis fill: " + member.name);
-            }
-            canvas.fill(target, {static_cast<uint8_t>(numbers[0]), static_cast<uint8_t>(numbers[1]),
-                                 static_cast<uint8_t>(numbers[2]), static_cast<uint8_t>(numbers[3])});
-            continue;
-        }
 
         if (command < 'a' || command > 'e') HAIO_FAIL(InvalidInput, "unknown zcis command: " + member.name);
         HAIO_TRY(chunk, decodeChunk(member));

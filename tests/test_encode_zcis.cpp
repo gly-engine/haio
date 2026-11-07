@@ -245,6 +245,47 @@ void testDecodeYuv() {
     assert(expected && decoded->data == expected->data);
 }
 
+void testFillIsOneMemberPerColour() {
+    // four cuts on the same ground, a gap between them so their fills cannot merge
+    const int width = 70;
+    const int height = 16;
+    std::vector<uint8_t> data(static_cast<size_t>(width) * height * 4, 0);
+    Haio::Metadata meta;
+    for (int cut = 0; cut < 4; cut++) {
+        const int left = cut * 18;
+        meta.cuts.push_back(Haio::Cut{Haio::Rect{left, 0, 16, height}, {}});
+        for (int y = 0; y < height; y++) {
+            for (int x = left; x < left + 16; x++) {
+                auto* px = data.data() + (static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4;
+                const bool inside = x >= left + 6 && x < left + 10 && y >= 6 && y < 10;
+                px[0] = inside ? static_cast<uint8_t>(cut * 60) : 240;
+                px[1] = inside ? 20 : 240;
+                px[2] = inside ? 90 : 240;
+                px[3] = 255;
+            }
+        }
+    }
+    const Haio::Image<Haio::Color::RGBA8888> source{width, height, data};
+
+    const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS, Haio::Color::RGBA8888>(
+        source, meta, Haio::Settings{Haio::Setting{"zcis:optimization", "1"}});
+    assert(encoded);
+
+    std::vector<Member> fills;
+    for (const auto& one : readArchive(encoded->data)) {
+        if ((one.name[1] | 0x20) == 'f') fills.push_back(one);
+    }
+    assert(fills.size() == 1);
+    assert(fills[0].name.substr(2) == "F0F0F0FF.txt");
+    const std::string body(fills[0].body.begin(), fills[0].body.end());
+    assert(body.starts_with("0 0 16 16\r\n"));
+    assert(body.find("54 0 16 16\r\n") != std::string::npos);
+
+    const auto decoded = Haio::Codecs::Decode<Haio::Format::ZCIS, Haio::Color::RGBA8888>(*encoded);
+    assert(decoded && decoded->width == width && decoded->height == height);
+    assert(decoded->data == source.data);
+}
+
 void testDecodeRefusesGarbage() {
     const std::string text = "!<arch>\n";
     Haio::Blob blob{Haio::Format::ZCIS};
@@ -266,6 +307,7 @@ int main() {
     testDecodeRebuildsEveryLevel();
     testDecodeKeepsTheSizeAtLowQuality();
     testDecodeYuv();
+    testFillIsOneMemberPerColour();
     testDecodeRefusesGarbage();
     return 0;
 }
