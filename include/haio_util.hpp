@@ -2,6 +2,7 @@
 
 #include "haio_codec.hpp"
 
+#include <array>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -54,6 +55,15 @@ Result<std::vector<uint8_t>> slice(Bytes data, size_t off, size_t len);
 std::optional<uint32_t> GetColorFromName(std::string_view name);
 
 /**
+ * the colour the edge of a picture is, when it is one: the median of the pixels all
+ * round its border, kept only when nine in ten of them are within a few levels of it.
+ * a product photographed on white answers white, a transparent edge answers
+ * transparent, and an edge that is busy answers nothing, leaving the caller to pick
+ * what stands in for a background it does not have.
+ */
+std::optional<std::array<uint8_t, 4>> edgeColour(const Image<Color::RGBA8888>& image);
+
+/**
  * what the gpu containers need to agree on. these always spoke about colour rather
  * than about files; the old single enum just made it look otherwise.
  */
@@ -101,14 +111,33 @@ namespace GPU {
 
 inline constexpr uint32_t GL_UNSIGNED_BYTE = 0x1401;
 inline constexpr uint32_t GL_UNSIGNED_SHORT_5_6_5 = 0x8363;
+inline constexpr uint32_t GL_RED = 0x1903;
 inline constexpr uint32_t GL_RGB = 0x1907;
 inline constexpr uint32_t GL_RGBA = 0x1908;
+inline constexpr uint32_t GL_RG = 0x8227;
 inline constexpr uint32_t GL_RGBA8 = 0x8058;
 inline constexpr uint32_t GL_RGB565 = 0x8d62;
 inline constexpr uint32_t GL_ETC1_RGB8_OES = 0x8d64;
+inline constexpr uint32_t GL_COMPRESSED_R11_EAC = 0x9270;
+inline constexpr uint32_t GL_COMPRESSED_RG11_EAC = 0x9272;
+inline constexpr uint32_t GL_COMPRESSED_RGB8_ETC2 = 0x9274;
+inline constexpr uint32_t GL_COMPRESSED_RGBA8_ETC2_EAC = 0x9278;
 inline constexpr uint32_t VK_FORMAT_R5G6B5_UNORM_PACK16 = 4;
 inline constexpr uint32_t VK_FORMAT_R8G8B8A8_UNORM = 37;
 inline constexpr uint32_t VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK = 147;
+inline constexpr uint32_t VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK = 151;
+inline constexpr uint32_t VK_FORMAT_EAC_R11_UNORM_BLOCK = 153;
+inline constexpr uint32_t VK_FORMAT_EAC_R11G11_UNORM_BLOCK = 155;
+
+/**
+ * what a pvr3 header calls a compressed payload: a number rather than four characters
+ * with their widths, which is what pvrRaw below builds for the uncompressed ones.
+ */
+inline constexpr uint64_t PVR_ETC1 = 6;
+inline constexpr uint64_t PVR_ETC2_RGB = 22;
+inline constexpr uint64_t PVR_ETC2_RGBA = 23;
+inline constexpr uint64_t PVR_EAC_R11 = 25;
+inline constexpr uint64_t PVR_EAC_RG11 = 26;
 
 struct Profile {
     uint32_t glType;
@@ -126,9 +155,26 @@ constexpr uint64_t pvrRaw(char a, char b, char c, char d, uint8_t ba, uint8_t bb
          | (static_cast<uint64_t>(bc) << 48) | (static_cast<uint64_t>(bd) << 56);
 }
 
-/** etc1 rounds up to whole 4x4 blocks, so the stored size is not width times height */
-constexpr size_t etc1Size(Size size) {
-    return static_cast<size_t>((size.width + 3) / 4) * static_cast<size_t>((size.height + 3) / 4) * 8;
+/**
+ * how many bytes one four by four block takes, or zero when the colour is not packed
+ * into blocks at all. colour alone is eight; an alpha block in front of it, or a
+ * second channel beside it, doubles that.
+ */
+constexpr size_t blockBytes(Color color) {
+    switch (color) {
+        case Color::ETC1:     return 8;
+        case Color::ETC2:     return 8;
+        case Color::EAC_R11:  return 8;
+        case Color::ETC2A:    return 16;
+        case Color::EAC_RG11: return 16;
+        default:              return 0;
+    }
+}
+
+/** a blocked colour rounds up to whole blocks, so its size is not width times height */
+constexpr size_t blockedSize(Color color, Size size) {
+    return static_cast<size_t>((size.width + 3) / 4) * static_cast<size_t>((size.height + 3) / 4)
+         * blockBytes(color);
 }
 
 Result<size_t> payloadSize(Color color, Size size);

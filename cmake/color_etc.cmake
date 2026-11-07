@@ -1,25 +1,26 @@
-# etc1 compresses and decompresses with etcpak, compiled into the library rather than
-# linked. Unlike a container, a colour conversion lives in two files -- one per
+# the etc family -- etc1, etc2, etc2 with an eac alpha, and the one and two channel
+# eacs -- compresses and decompresses with etcpak, compiled into the library rather
+# than linked. Unlike a container, a colour conversion lives in two files -- one per
 # direction -- so the dependency is attached by name instead of by directory.
 #
 # expects: HAIO_COLOR_SOURCES
 # appends: HAIO_CODEC_SOURCES_EXTRA
 
-option(HAIO_USE_ETCPAK "compress and decompress etc1 with etcpak" ON)
+option(HAIO_USE_ETCPAK "compress and decompress the etc colours with etcpak" ON)
 
-set(HAIO_ETC1_SOURCES "")
+set(HAIO_ETC_SOURCES "")
 foreach(source IN LISTS HAIO_COLOR_SOURCES)
-    if(source MATCHES "etc1")
-        list(APPEND HAIO_ETC1_SOURCES "${source}")
+    if(source MATCHES "etc1|etc2|eac_r")
+        list(APPEND HAIO_ETC_SOURCES "${source}")
     endif()
 endforeach()
 
 if(NOT HAIO_USE_ETCPAK)
-    foreach(source IN LISTS HAIO_ETC1_SOURCES)
+    foreach(source IN LISTS HAIO_ETC_SOURCES)
         list(REMOVE_ITEM HAIO_COLOR_SOURCES "${source}")
         list(REMOVE_ITEM HAIO_LIB_SOURCES "${source}")
     endforeach()
-    list(APPEND HAIO_CODECS_OFF "color/etc1")
+    list(APPEND HAIO_CODECS_OFF "color/etc1" "color/etc2" "color/etc2a" "color/eac_r11" "color/eac_rg11")
     return()
 endif()
 
@@ -44,6 +45,6 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64|i[3-6]86)$")
     endif()
 endif()
 
-set_source_files_properties(${HAIO_ETC1_SOURCES} PROPERTIES INCLUDE_DIRECTORIES "${ETCPAK_DIR}")
-add_library(etc1 "${ETCPAK_SOURCES}")
-target_link_libraries(${PROJECT_NAME} PRIVATE etc1)
+set_source_files_properties(${HAIO_ETC_SOURCES} PROPERTIES INCLUDE_DIRECTORIES "${ETCPAK_DIR}")
+add_library(etc "${ETCPAK_SOURCES}")
+target_link_libraries(${PROJECT_NAME} PRIVATE etc)

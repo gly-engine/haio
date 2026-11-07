@@ -567,11 +567,16 @@ concept Blendable = requires (BlendDst<Dst> d, const Image<Src>& s, int x) {
 
 namespace Stages {
 
+/** where a picture sits in the room it is given, which -composite and -grid both ask */
+inline constexpr Option gravityOption{
+    .spellings = {"gravity"}, .takes = "name", .help = "which edge or corner a picture is placed against",
+    .shape = Shape::Name, .names = namesOf<Gravity>(), .fallback = "northwest", .called = "gravity type",
+};
+
 inline constexpr Option compositeOptions[] = {
     {.spellings = {"geometry"}, .takes = "offset", .help = "how far the layer is moved from where gravity puts it, as +X+Y",
      .fallback = "+0+0"},
-    {.spellings = {"gravity"}, .takes = "name", .help = "which edge or corner the offset is measured from",
-     .shape = Shape::Name, .names = namesOf<Gravity>(), .fallback = "northwest", .called = "gravity type"},
+    gravityOption,
     {.spellings = {"compose"}, .takes = "name",
      .help = "how the layer and the picture under it are mixed",
      .shape = Shape::Name, .names = namesOf<Compose>(), .fallback = "over", .called = "compose operator"},
@@ -583,7 +588,7 @@ inline constexpr Stage composite{
     .rule = "composite",
     .options = compositeOptions,
     .help = "lay the picture after the first over it, or the second tinted by the third",
-    .merges = true,
+    .merges = {2, 4},
 };
 
 template <> Built build<&composite>(std::string_view value, const Given& given);

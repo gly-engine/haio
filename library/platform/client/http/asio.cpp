@@ -13,7 +13,10 @@
 
 #include <chrono>
 #include <iostream>
+#include <map>
+#include <memory>
 #include <string_view>
+#include <vector>
 
 namespace asio = boost::asio;
 namespace beast = boost::beast;
@@ -55,6 +58,39 @@ asio::ssl::context& tlsContext() {
 
 using Response = http::response<http::vector_body<uint8_t>>;
 
+constexpr size_t maxIdlePerHost = 4;
+
+/**
+ * connections kept open after a response that said so. a pooled one may have been
+ * closed by the other side while it waited, so the first use of one is allowed to
+ * fail and be tried again on a fresh connection.
+ */
+template <typename Stream>
+std::map<std::string, std::vector<std::unique_ptr<Stream>>>& idleFor() {
+    static std::map<std::string, std::vector<std::unique_ptr<Stream>>> pool;
+    return pool;
+}
+
+template <typename Stream>
+std::unique_ptr<Stream> takeIdle(const std::string& key) {
+    auto& pool = idleFor<Stream>();
+    const auto found = pool.find(key);
+    if (found == pool.end() || found->second.empty()) return nullptr;
+
+    auto stream = std::move(found->second.back());
+    found->second.pop_back();
+    return stream;
+}
+
+template <typename Stream>
+void keepIdle(const std::string& key, std::unique_ptr<Stream> stream) {
+    auto& kept = idleFor<Stream>()[key];
+    if (kept.size() >= maxIdlePerHost) return;
+
+    beast::get_lowest_layer(*stream).expires_never();
+    kept.push_back(std::move(stream));
+}
+
 template <typename Stream>
 asio::awaitable<Response> exchange(Stream& stream, std::string_view hostHeader, std::string_view target,
                                    const Haio::Platform::Headers& headers) {
@@ -71,12 +107,15 @@ asio::awaitable<Response> exchange(Stream& stream, std::string_view hostHeader, 
     co_return res;
 }
 
-asio::awaitable<Response> request(const Haio::Url& url, const Haio::Platform::Headers& headers) {
+using TlsStream = beast::ssl_stream<beast::tcp_stream>;
+
+asio::awaitable<Response> once(const Haio::Url& url, const Haio::Platform::Headers& headers, bool allowPool,
+                               bool& reused) {
     auto executor = co_await asio::this_coro::executor;
-    tcp::resolver resolver(executor);
 
     const auto host = url.hostName();
-    const auto results = co_await resolver.async_resolve(host, servicePort(url), asio::use_awaitable);
+    const auto port = servicePort(url);
+    const auto key = url.scheme + "://" + host + ":" + port;
     const auto hostHeader = url.authority();
     const auto target = url.target();
 
@@ -84,34 +123,72 @@ asio::awaitable<Response> request(const Haio::Url& url, const Haio::Platform::He
     beast::error_code ec;
 
     if (url.scheme == "https") {
-        beast::ssl_stream<beast::tcp_stream> stream(executor, tlsContext());
-        if (!SSL_set_tlsext_host_name(stream.native_handle(), host.c_str())) {
-            // the host may be a bucket's upstream, which the caller has no business
-            // learning from an error; it goes to the log instead
-            std::cerr << "could not set sni for " << host << "\n";
-            throw Refused(Haio::ErrorCode::Internal, "could not start a secure connection");
+        auto stream = allowPool ? takeIdle<TlsStream>(key) : nullptr;
+        reused = stream != nullptr;
+
+        if (!stream) {
+            stream = std::make_unique<TlsStream>(executor, tlsContext());
+            if (!SSL_set_tlsext_host_name(stream->native_handle(), host.c_str())) {
+                // the host may be a bucket's upstream, which the caller has no business
+                // learning from an error; it goes to the log instead
+                std::cerr << "could not set sni for " << host << "\n";
+                throw Refused(Haio::ErrorCode::Internal, "could not start a secure connection");
+            }
+            stream->set_verify_callback(asio::ssl::host_name_verification(host));
+
+            tcp::resolver resolver(executor);
+            const auto results = co_await resolver.async_resolve(host, port, asio::use_awaitable);
+            beast::get_lowest_layer(*stream).expires_after(httpTimeout);
+            co_await beast::get_lowest_layer(*stream).async_connect(results, asio::use_awaitable);
+            co_await stream->async_handshake(asio::ssl::stream_base::client, asio::use_awaitable);
+        } else {
+            beast::get_lowest_layer(*stream).expires_after(httpTimeout);
         }
-        stream.set_verify_callback(asio::ssl::host_name_verification(host));
 
-        beast::get_lowest_layer(stream).expires_after(httpTimeout);
-        co_await beast::get_lowest_layer(stream).async_connect(results, asio::use_awaitable);
-        co_await stream.async_handshake(asio::ssl::stream_base::client, asio::use_awaitable);
+        res = co_await exchange(*stream, hostHeader, target, headers);
 
-        res = co_await exchange(stream, hostHeader, target, headers);
-
-        // a truncated shutdown is the normal case for servers that just close
-        co_await stream.async_shutdown(asio::redirect_error(asio::use_awaitable, ec));
+        if (res.keep_alive()) {
+            keepIdle<TlsStream>(key, std::move(stream));
+        } else {
+            // a truncated shutdown is the normal case for servers that just close
+            co_await stream->async_shutdown(asio::redirect_error(asio::use_awaitable, ec));
+        }
     } else {
-        beast::tcp_stream stream(executor);
-        stream.expires_after(httpTimeout);
-        co_await stream.async_connect(results, asio::use_awaitable);
+        auto stream = allowPool ? takeIdle<beast::tcp_stream>(key) : nullptr;
+        reused = stream != nullptr;
 
-        res = co_await exchange(stream, hostHeader, target, headers);
+        if (!stream) {
+            stream = std::make_unique<beast::tcp_stream>(executor);
+            tcp::resolver resolver(executor);
+            const auto results = co_await resolver.async_resolve(host, port, asio::use_awaitable);
+            stream->expires_after(httpTimeout);
+            co_await stream->async_connect(results, asio::use_awaitable);
+        } else {
+            stream->expires_after(httpTimeout);
+        }
 
-        stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+        res = co_await exchange(*stream, hostHeader, target, headers);
+
+        if (res.keep_alive()) {
+            keepIdle<beast::tcp_stream>(key, std::move(stream));
+        } else {
+            stream->socket().shutdown(tcp::socket::shutdown_both, ec);
+        }
     }
 
     co_return res;
+}
+
+asio::awaitable<Response> request(const Haio::Url& url, const Haio::Platform::Headers& headers) {
+    bool reused = false;
+    try {
+        co_return co_await once(url, headers, true, reused);
+    } catch (const boost::system::system_error&) {
+        if (!reused) throw;
+    }
+
+    bool again = false;
+    co_return co_await once(url, headers, false, again);
 }
 
 /** a redirect may move between http and https in either direction */
@@ -173,7 +250,7 @@ Task<Result<HttpResponse>> httpGet(HttpRequest request) {
      */
     try {
         requireHttpScheme(*parsed);
-        co_return co_await Desktop::await(follow(*std::move(parsed), std::move(request.headers)));
+        co_return co_await Asio::await(follow(*std::move(parsed), std::move(request.headers)));
     } catch (const Refused& err) {
         co_return std::unexpected(Error{err.code, err.what()});
     } catch (const boost::system::system_error& err) {

@@ -95,8 +95,22 @@ inline constexpr Stages::Option outputFormat{
     .help = "the container to write, whatever the output is called",
 };
 
+inline constexpr Stages::Option outputEncoding{
+    .spellings = {"encoding"}, .takes = "name",
+    .help = "how the bytes are written, for a client that cannot take every one of them",
+    .shape = Stages::Shape::Name, .names = Stages::namesOf<BodyEncoding>(),
+    .fallback = "identity", .called = "body encoding",
+};
+
+inline constexpr Stages::Option outputName{
+    .spellings = {"name"}, .takes = "text",
+    .help = "what the answer is called, when it should not be the source's name",
+};
+
 inline constexpr Stages::Option outputOptions[] = {
     outputFormat,
+    outputEncoding,
+    outputName,
 };
 
 inline constexpr Stages::Stage output{
@@ -202,11 +216,18 @@ inline constexpr std::array leafRules = {
     Rule{"palette-spec", R"(palette-name , [ ":" , range , { "," , range } ])"},
     Rule{"range", R"(integer , [ ".." , integer ])"},
     Rule{"size", R"(integer , ( "x" | "X" ) , integer | integer , ( "%" | "pct" ))"},
+    Rule{"resize-geometry", R"(side , ( "x" | "X" | ":" ) , side , [ "!" | "^" | "p" ]
+| integer , ( "%" | "pct" ))"},
+    Rule{"side", R"([ [ "-" ] , integer ])"},
+    Rule{"blur-geometry", R"(number , [ ( "x" | "X" ) , number ] | ( "x" | "X" ) , number)"},
+    Rule{"number", R"(integer , [ "." , integer ])"},
     Rule{"crop-geometry", R"(integer , ( "x" | "X" ) , integer , [ signed-integer , signed-integer ] | rect)"},
     Rule{"rect", R"(integer , "," , integer , "," , integer , "," , integer)"},
     Rule{"offset", "signed-integer , signed-integer"},
+    Rule{"grid-geometry", R"([ integer ] , "@" , [ integer ] , [ "-" , integer , "-" , integer ] , [ plus , integer , plus , integer ])"},
+    Rule{"plus", R"("+" | " ")"},
     Rule{"integer", "digit , { digit }"},
-    Rule{"signed-integer", R"(( "+" | "-" ) , integer)"},
+    Rule{"signed-integer", R"(( "+" | "-" | " " ) , integer)"},
 };
 
 inline constexpr std::array notes = {
@@ -221,11 +242,15 @@ inline constexpr std::array notes = {
     Note{"a canvas such as `xc:white` is painted by a brush rather than read by a codec, so `-size` is one of its options; `canvas:` is `xc:` and `fractal:` is `plasma:` under another name, as they are for imagemagick."},
     Note{"`gradient:` and `radial-gradient:` draw the same pixels imagemagick 6 does, `-define gradient:*` included, except where imagemagick 6 slips: south by -define measured against the width, and a start pixel in the last column taking its neighbour's colour. `plasma:` is haio's own noise, so a `-seed` repeats haio's picture rather than imagemagick's."},
     Note{"every source puts a picture on a stack, the way imagemagick keeps a list: a file, an http url, `-` for stdin, or a canvas such as `xc:white`. the last word is always the output."},
-    Note{"a transform changes the picture on top of the stack, the one made last; imagemagick would change them all. a merge such as `-composite` wants two to four in its parenthesis and leaves one: with three the third tints the second, and with four the fourth tints the second's negative under it."},
+    Note{"a transform changes the picture on top of the stack, the one made last; imagemagick would change them all. a merge such as `-composite` wants two to four in its parenthesis and leaves one: with three the third tints the second, and with four the fourth tints the second's negative under it. `-grid` takes every picture in its parenthesis, however many."},
     Note{"a `qr:` or `text:` first of three in a `-composite` is the shape and not the background: `qr:x xc:red xc:blue` is read as `qr:x -pix_fmt nil qr:x xc:red xc:blue`, a clear background as big as the code, and `qr:x xc:red` as `qr:x xc:red null:` before that, unless a `-compose` other than over was asked for."},
     Note{"`-pix_fmt nil` keeps a picture's size and forgets its pixels, which is a clear canvas as big as it was."},
     Note{"a parenthesis only scopes the stack: what is inside sees only the pictures made inside, and they join the stack around it at the `)`. options do not cross it."},
     Note{"the output takes exactly one picture, so two left on the stack is an error rather than two files."},
+    Note{"on the command line the output name takes imagemagick's percent escapes, filled in from each picture as it is written: `%t` the source's name without folder or extension, `%f` with its extension, `%e` the extension, `%[directory]` its folder, `%i` or `%M` the source as written, `%w` and `%h` the size written, `%G` the size read, `%m` what it was read as, `%B` its bytes, `%A` whether it has an alpha, `%n` how many files there are, `%p`, `%s` or `%d` the file's place, and `%%` a percent sign. every escape is shaped the way printf shapes a field: `%-10t` left in ten columns, `%10B` right, `%010B` zero padded, which only a number takes, and `%.3t` cut to three characters."},
+    Note{"on the command line a source quoted so the shell leaves its pattern alone, as `'*.png'`, `'**.png'` for every folder below or `'**.png|jpeg'` for either, is expanded by haio and the whole line runs once per file, so `'*.png' -resize 50% %t.jpeg` resizes every one. the output has to name each file, holding `%t`, `%f`, `%i`, `%M`, `%p`, `%s` or `%d`; only one source may be a pattern, and two files landing on one name is an error. unquoted, the shell spreads the files into the stack of one run instead, so `*.png -grid @ sheet.png` is one sheet. the cdn reads neither patterns nor escapes."},
+    Note{"on the command line `print:` as the output writes no picture but the format after it, escapes filled in, for every picture, with `\\n`, `\\t` and `\\\\` as the characters they name: `'*.png' print:'%t\\t%wx%h\\n'` lists every file and its size, ready for sort."},
+    Note{"a space is a plus in a geometry, so `-crop 4x4 2 1` is `-crop 4x4+2+1` and `-geometry 3 4` is `-geometry +3+4`. a url writes a plus as a space, and reading it back is what lets `?crop=4x4+2+1` name the same rectangle a command line names. a minus is still a minus, so a sign still says which way the offset goes."},
     Note{"`-fx` is parsed but currently rejected during pipeline construction."},
     Note{"naming a colour a container cannot store is an error rather than a silent conversion."},
     Note{"`-pix_fmt` moves the picture on top into that colour, and written right before the output it is also the colour stored inside it."},

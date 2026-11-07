@@ -30,30 +30,42 @@ Result<Image<P>> decodePvr(const Blob& blob) {
  * @addtogroup decode
  * @{
  */
+
 template <>
 Result<Image<Color::ETC1>> Decode<Format::PVR, Color::ETC1>(const Blob& blob) {
     return decodePvr<Color::ETC1>(blob);
 }
-/** @} */
 
-/**
- * @addtogroup decode
- * @{
- */
+template <>
+Result<Image<Color::ETC2>> Decode<Format::PVR, Color::ETC2>(const Blob& blob) {
+    return decodePvr<Color::ETC2>(blob);
+}
+
+template <>
+Result<Image<Color::ETC2A>> Decode<Format::PVR, Color::ETC2A>(const Blob& blob) {
+    return decodePvr<Color::ETC2A>(blob);
+}
+
+template <>
+Result<Image<Color::EAC_R11>> Decode<Format::PVR, Color::EAC_R11>(const Blob& blob) {
+    return decodePvr<Color::EAC_R11>(blob);
+}
+
+template <>
+Result<Image<Color::EAC_RG11>> Decode<Format::PVR, Color::EAC_RG11>(const Blob& blob) {
+    return decodePvr<Color::EAC_RG11>(blob);
+}
+
 template <>
 Result<Image<Color::RGB565>> Decode<Format::PVR, Color::RGB565>(const Blob& blob) {
     return decodePvr<Color::RGB565>(blob);
 }
-/** @} */
 
-/**
- * @addtogroup decode
- * @{
- */
 template <>
 Result<Image<Color::RGBA8888>> Decode<Format::PVR, Color::RGBA8888>(const Blob& blob) {
     return decodePvr<Color::RGBA8888>(blob);
 }
+
 /** @} */
 
 }

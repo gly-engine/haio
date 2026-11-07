@@ -37,6 +37,27 @@ int cdnCommand(int argc, char* argv[]) {
     return 0;
 }
 
+Haio::Task<Haio::Platform::HttpServerResponse> refuse(std::string message) {
+    message += '\n';
+    co_return Haio::Platform::HttpServerResponse{
+        500, {{"content-type", "text/plain; charset=utf-8"}}, {message.begin(), message.end()}};
+}
+
+int cgiCommand() {
+    Haio::Platform::HttpHandler handler;
+    try {
+        const char* inlineToml = std::getenv("HAIO_CDN_TOML");
+        if (!inlineToml) throw std::runtime_error("cgi reads its config from HAIO_CDN_TOML, and it is not set");
+        handler = Haio::Cdn::makeHandler(Haio::Cdn::parseConfig(inlineToml));
+    } catch (const std::exception& err) {
+        std::cerr << "error: " << err.what() << "\n";
+        handler = [message = std::string(err.what())](Haio::Platform::HttpServerRequest) { return refuse(message); };
+    }
+
+    Haio::Platform::run(Haio::Platform::serveHttpCgi(std::move(handler)));
+    return 0;
+}
+
 int probeCommand(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << "usage: haio probe <file>...\n";
@@ -85,7 +106,10 @@ void printHelp() {
               << "  haio convert <input> [transforms] <output>   input may be an http url\n"
               << "                                            or a file inside an archive: foo.ipk/data.tar.gz/icon.png\n"
               << "  haio cdn [config.toml]        without a file, reads HAIO_CDN_TOML\n"
+              << "  haio cgi                      answer the one request in the cgi environment, from HAIO_CDN_TOML\n"
               << "  haio probe <file>...          report what the bytes actually are\n"
+              << "\n"
+              << "  a binary named convert is haio convert, and a bare haio with GATEWAY_INTERFACE set is haio cgi\n"
               << "\nconfig.toml:\n"
               << "  [cdn]\n"
               << "  host = \"0.0.0.0\"\n"
@@ -106,6 +130,11 @@ auto main(int argc, char* argv[]) -> int {
     ProfilerStart("haio.prof");
 #endif
     try {
+        if (argc > 0 && argv[0] && std::filesystem::path(argv[0]).stem() == "convert") {
+            return Haio::Cli::runCli(argc, argv);
+        }
+        if (argc < 2 && std::getenv("GATEWAY_INTERFACE")) return cgiCommand();
+
         if (argc < 2) {
             printHelp();
             return 1;

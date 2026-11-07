@@ -72,9 +72,9 @@ struct Image {
 };
 
 /**
- * how wide one pixel is, or zero when the colour has no such number: etc1 packs four
- * by four blocks and yuv420 splits into planes, so neither can be measured a pixel at
- * a time. sizeOf reads this too, so the widths are written down once.
+ * how wide one pixel is, or zero when the colour has no such number: the etc family
+ * packs four by four blocks and yuv420 splits into planes, so neither can be measured
+ * a pixel at a time. sizeOf reads this too, so the widths are written down once.
  */
 constexpr size_t strideOf(Color color) {
     switch (color) {
@@ -89,9 +89,13 @@ constexpr size_t strideOf(Color color) {
         case Color::GRAYALPHA88: return 2;
         // one byte per pixel, so a crop or a resize can index it like any other
         case Color::PALETTE:  return 1;
-        // tiled and planar, so no pixel has an address of its own
+        // tiled, blocked and planar, so no pixel has an address of its own
         case Color::CHR_NES:  break;
         case Color::ETC1:     break;
+        case Color::ETC2:     break;
+        case Color::ETC2A:    break;
+        case Color::EAC_R11:  break;
+        case Color::EAC_RG11: break;
         case Color::YUV420:   break;
         // no pixels at all
         case Color::NIL:      break;
@@ -122,9 +126,15 @@ constexpr int alphaOffsetOf(Color color) {
         case Color::RGBA5551: break;
         case Color::GRAY8:    break;
         case Color::GRAYALPHA88: return 1;
-        // tiled and planar, so no pixel has an address of its own
+        // tiled, blocked and planar, so no pixel has an address of its own. etc2a
+        // does carry an alpha, in a block of its own, and still has no byte here:
+        // there is no pixel to reach into without decoding the block first
         case Color::CHR_NES:  break;
         case Color::ETC1:     break;
+        case Color::ETC2:     break;
+        case Color::ETC2A:    break;
+        case Color::EAC_R11:  break;
+        case Color::EAC_RG11: break;
         case Color::YUV420:   break;
         case Color::NIL:      break;
     }
@@ -167,6 +177,25 @@ struct Blob {
 };
 
 /**
+ * how the bytes travel once the picture is encoded, for a client that cannot take
+ * every one of them. the ginga in some televisions hands a tcp read to lua as a c
+ * string, so everything after a zero byte is lost and a zcis with a black pixel never
+ * arrives whole.
+ *
+ * | encoding | the bytes                                                     |
+ * |----------|---------------------------------------------------------------|
+ * | `cobs`   | consistent overhead byte stuffing, with no delimiter after it |
+ * | `base64` | rfc 4648, with padding                                        |
+ * | `hex`    | two lowercase digits a byte                                   |
+ *
+ * the names the line accepts are the enumerators, lowered.
+ */
+enum class BodyEncoding { Identity, Cobs, Base64, Hex };
+
+/** the body as that encoding writes it; Identity hands the same bytes back */
+std::vector<uint8_t> encodeBody(const std::vector<uint8_t>& body, BodyEncoding encoding);
+
+/**
  * the verbs. they live apart from the vocabulary above because the runtime facade in
  * haio_registry.hpp offers Decode(const Blob&) and Detect(Bytes) with the very same
  * parameter lists: without a namespace between them, Decode(blob) and
@@ -198,6 +227,21 @@ template <Format F, Color P>                          Result<Blob>     Encode(Im
  */
 template <Format F, Color P> Result<Image<P>> Decode(const Blob&, const Settings&) = delete;
 template <Format F, Color P> Result<Blob>     Encode(Image<P>, const Settings&)    = delete;
+
+/**
+ * the way in for a container that keeps what a picture knows about itself besides
+ * its pixels, as zcis keeps the cuts in its index. one that defines it may still
+ * define the plain form too, for a picture that knows nothing; this one wins when
+ * both are there.
+ */
+template <Format F, Color P> Result<Blob> Encode(Image<P>, const Metadata&) = delete;
+
+/**
+ * both at once, for the container that keeps an index and is also told how to fill
+ * it: zcis knows its cuts from the picture and its optimization level from the
+ * command line, and neither can be read off the other.
+ */
+template <Format F, Color P> Result<Blob> Encode(Image<P>, const Metadata&, const Settings&) = delete;
 
 /**
  * a picture painted out of nothing by a Brush, in the colour it is painted in: the
@@ -288,7 +332,9 @@ template <Format F, Color P> concept Decodable  = DecodesPlain<F, P> || DecodesS
  */
 template <Format F, Color P> concept EncodesPlain    = requires (Image<P> i) { { Encode<F, P>(std::move(i)) } -> std::same_as<Result<Blob>>; };
 template <Format F, Color P> concept EncodesSettings = requires (Image<P> i, const Settings& s) { { Encode<F, P>(std::move(i), s) } -> std::same_as<Result<Blob>>; };
-template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P>;
+template <Format F, Color P> concept EncodesMetadata = requires (Image<P> i, const Metadata& m) { { Encode<F, P>(std::move(i), m) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept EncodesBoth     = requires (Image<P> i, const Metadata& m, const Settings& s) { { Encode<F, P>(std::move(i), m, s) } -> std::same_as<Result<Blob>>; };
+template <Format F, Color P> concept Encodable  = EncodesPlain<F, P> || EncodesSettings<F, P> || EncodesMetadata<F, P> || EncodesBoth<F, P>;
 /**
  * @ingroup generate
  * can this brush paint in this colour, asked of the pair rather than answered by hand.
@@ -321,8 +367,10 @@ Result<Image<P>> decode(const Blob& blob, const Settings& settings) {
 
 template <Format F, Color P>
     requires Encodable<F, P>
-Result<Blob> encode(Image<P> image, const Settings& settings) {
-    if constexpr (EncodesSettings<F, P>) return Encode<F, P>(std::move(image), settings);
+Result<Blob> encode(Image<P> image, const Settings& settings, const Metadata& meta = {}) {
+    if constexpr (EncodesBoth<F, P>) return Encode<F, P>(std::move(image), meta, settings);
+    else if constexpr (EncodesMetadata<F, P>) return Encode<F, P>(std::move(image), meta);
+    else if constexpr (EncodesSettings<F, P>) return Encode<F, P>(std::move(image), settings);
     else return Encode<F, P>(std::move(image));
 }
 

@@ -171,16 +171,33 @@ constexpr bool encodable(Format format, Color color) {
     return false;
 }
 
+/** every colour this build can write into that container, in the order the enum names them */
+inline std::vector<Color> encodableColors(Format to) {
+    std::vector<Color> colors;
+    HAIO_FOR_EACH_FORMAT(f) {
+        constexpr Format format = std::meta::extract<Format>(f);
+        if (format != to) continue;
+        HAIO_FOR_EACH_COLOR(c) {
+            constexpr Color color = std::meta::extract<Color>(c);
+            if constexpr (Codecs::Encodable<format, color>) colors.push_back(color);
+        }
+    }
+    return colors;
+}
+
 /**
  * the colour a container is written in when nobody names one: the one it declares as
- * its own, and failing that the first it can write at all.
+ * its own, and failing that the only one it can write.
  *
- * before this there was only the second half, so the colour a file came out in was
- * whichever one happened to be declared earliest in the enum. that is fine while a
- * container writes one colour and arbitrary the moment it writes six.
+ * a container that writes several and declares no favourite has no answer here on
+ * purpose. it used to get whichever colour the enum happened to name first, so
+ * "convert ico.png ico.ktx" quietly wrote rgba8888 -- four bytes a pixel, in the one
+ * container somebody reaches for because they want a compressed texture. now it is
+ * asked, and Encode below names the colours it could have meant.
  */
 constexpr std::optional<Color> encodeColorFor(Format to) {
-    std::optional<Color> first;
+    std::optional<Color> only;
+    size_t count = 0;
     HAIO_FOR_EACH_FORMAT(f) {
         constexpr Format format = std::meta::extract<Format>(f);
         if (format != to) continue;
@@ -190,11 +207,12 @@ constexpr std::optional<Color> encodeColorFor(Format to) {
                 if constexpr (Codecs::HasDefaultColor<format>) {
                     if (Codecs::DefaultColor<format>::value == color) return color;
                 }
-                if (!first) first = color;
+                count++;
+                if (!only) only = color;
             }
         }
     }
-    return first;
+    return count == 1 ? only : std::nullopt;
 }
 
 /**
@@ -353,11 +371,23 @@ inline Result<std::vector<uint8_t>> Convert(const Image<Color::RGBA8888>& image,
  * Codecs::Encode, with nothing but this bridge between it and a string.
  */
 inline Result<Blob> Encode(AnyImage image, Format to, std::optional<Color> as = std::nullopt,
-                           const Settings& settings = {}) {
+                           const Settings& settings = {}, const Metadata& meta = {}) {
     const auto wanted = as ? as : encodeColorFor(to);
     if (!wanted) {
-        return std::unexpected(Error{ErrorCode::UnsupportedFormat,
-                                     "cannot encode " + std::string(formatName(to))});
+        const auto choices = encodableColors(to);
+        if (choices.empty()) {
+            return std::unexpected(Error{ErrorCode::UnsupportedFormat,
+                                         "this build cannot write a " + std::string(formatName(to))});
+        }
+
+        std::string named;
+        for (const auto choice : choices) {
+            if (!named.empty()) named += ", ";
+            named += colorName(choice);
+        }
+        return std::unexpected(Error{ErrorCode::InvalidInput,
+                                     "a " + std::string(formatName(to)) + " holds more than one colour and none "
+                                     "was named; say which with -pix_fmt: " + named});
     }
 
     Result<Blob> out = std::unexpected(Error{ErrorCode::UnsupportedFormat,
@@ -378,7 +408,7 @@ inline Result<Blob> Encode(AnyImage image, Format to, std::optional<Color> as = 
                 auto converted = Convert(std::move(image), color);
                 out = converted ? Codecs::encode<format, color>(
                                       Image<color>{converted->width, converted->height, std::move(converted->data)},
-                                      settings)
+                                      settings, meta)
                                 : Result<Blob>{std::unexpected(converted.error())};
             }
         }

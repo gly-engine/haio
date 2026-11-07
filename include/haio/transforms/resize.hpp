@@ -19,6 +19,22 @@ enum class ResizeFilter {
     Point,   /**< nearest neighbour: no mixing, so it runs on anything addressable */
 };
 
+/**
+ * what a size of both sides means, the way imagemagick reads its geometry flags.
+ *
+ *   WxH   fit: the largest that fits inside, keeping the shape
+ *   WxH!  exact: both sides as written, the shape given up
+ *   WxH^  cover: the smallest that covers both, keeping the shape
+ *   WxHp  pad: fit inside, then centred on WxH exactly, the sides filled with the
+ *         background the edge of the picture shows, or left transparent when it shows none
+ */
+enum class ResizeFit {
+    Inside,
+    Exact,
+    Cover,
+    Pad,
+};
+
 /** the filter somebody typed, in any case, or nothing when no filter has that name */
 constexpr std::optional<ResizeFilter> resizeFilterNamed(std::string_view name) {
     return Stages::enumNamed<ResizeFilter>(name);
@@ -51,9 +67,9 @@ inline constexpr Option resizeOptions[] = {
 inline constexpr Stage resize{
     .spellings = {"resize"},
     .rule = "resize",
-    .takes = "size",
+    .takes = "resize-geometry",
     .options = resizeOptions,
-    .help = "resize, to WxH or to a share such as 30% or 30pct",
+    .help = "resize, to fit WxH, to WxH! exactly, to cover WxH^, to fit and pad to WxHp, to 100x or x100 keeping its shape, or to a share such as 30pct",
 };
 
 template <> Built build<&resize>(std::string_view value, const Given& given);

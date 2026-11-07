@@ -1,9 +1,4 @@
 #include <haio.hpp>
-#include <haio_string.hpp>
-
-#include <haio_url.hpp>
-
-#include <stdexcept>
 
 namespace Haio {
 
@@ -49,10 +44,11 @@ Token Crop(Rect rect) {
     return token;
 }
 
-Token Resize(Size size, ResizeFilter filter) {
+Token Resize(Size size, ResizeFilter filter, ResizeFit fit) {
     Token token{TokenKind::Resize};
     token.size = size;
     token.filter = filter;
+    token.fit = fit;
     return token;
 }
 
@@ -83,6 +79,15 @@ Token Composite(Compose compose, Gravity gravity, int x, int y) {
     return token;
 }
 
+Token Grid(Size cells, Size quantum, Size gap, Gravity gravity) {
+    Token token{TokenKind::Grid};
+    token.cells = cells;
+    token.quantum = quantum;
+    token.gap = gap;
+    token.gravity = gravity;
+    return token;
+}
+
 Token Fx(std::string expression) {
     Token token{TokenKind::Fx};
     token.expression = std::move(expression);
@@ -99,6 +104,12 @@ Token Close() {
 
 Token Radius(int radius) {
     Token token{TokenKind::Radius};
+    token.radius = radius;
+    return token;
+}
+
+Token Blur(int radius) {
+    Token token{TokenKind::Blur};
     token.radius = radius;
     return token;
 }
@@ -120,64 +131,13 @@ Token Encode(Format format, std::optional<Color> color, Settings settings) {
     token.settings = std::move(settings);
     return token;
 }
+
+Token Deliver(BodyEncoding encoding, std::string name) {
+    Token token{TokenKind::Deliver};
+    token.encoding = encoding;
+    token.name = std::move(name);
+    return token;
 }
-
-std::unordered_map<std::string, std::string> parseQueryMap(std::string_view query) {
-    std::unordered_map<std::string, std::string> out;
-    if (!query.empty() && query.front() == '?') query.remove_prefix(1);
-    if (query.empty()) return out;
-
-    const auto parsed = Url::parse("/?" + std::string(query));
-    if (!parsed) throw std::runtime_error("invalid query: " + std::string(query));
-
-    for (auto& [key, value] : parsed->params(true)) {
-        if (!key.empty()) out[key] = std::move(value);
-    }
-    return out;
-}
-
-std::vector<Token> parseQueryTokens(std::string_view query) {
-    const auto values = parseQueryMap(query);
-    std::vector<Token> tokens;
-
-    if (auto it = values.find("crop"); it != values.end()) tokens.push_back(Tokens::Crop(String::getRect(it->second)));
-    /**
-     * a url cannot carry a percent sign: "%" opens an escape, so "?resize=30%" is a
-     * broken request rather than a small picture. "30pct" says the same thing and
-     * survives, and both spellings are read here so a query and a command line can
-     * be written the same way.
-     */
-    const auto resizeToken = [](const std::string& value) {
-        const auto share = String::getPercent(value);
-        return share != 0 ? Tokens::ResizeByPercent(share) : Tokens::Resize(String::getSize(value));
-    };
-
-    if (auto it = values.find("size"); it != values.end()) tokens.push_back(resizeToken(it->second));
-    if (auto it = values.find("resize"); it != values.end()) tokens.push_back(resizeToken(it->second));
-    if (auto it = values.find("radius"); it != values.end()) tokens.push_back(Tokens::Radius(String::getInt(it->second)));
-    /**
-     * the colour inside the container, spelled the way ffmpeg spells it.
-     *
-     * it can arrive without a format, and that is a request rather than a mistake:
-     * "?pix_fmt=rgb565" with nothing to wrap it is raw pixels in that colour, which
-     * is what a caller loading a texture straight into a gpu is asking for.
-     */
-    auto pixelFormat = values.find("pix_fmt");
-    if (pixelFormat == values.end()) pixelFormat = values.find("pix_format");
-
-    std::optional<Color> color;
-    if (pixelFormat != values.end()) {
-        color = colorNamed(pixelFormat->second);
-        if (!color) throw std::runtime_error("unknown pixel format: " + pixelFormat->second);
-    }
-
-    if (auto it = values.find("format"); it != values.end()) {
-        tokens.push_back(Tokens::Encode(formatFromName(it->second), color));
-    } else if (color) {
-        tokens.push_back(Tokens::Encode(Format::RAW, color));
-    }
-
-    return tokens;
 }
 
 }

@@ -1,3 +1,4 @@
+#include <haio/internal/codecs/yuv.hpp>
 #include <haio_convert.hpp>
 
 namespace Haio::Codecs {
@@ -8,27 +9,27 @@ namespace Haio::Codecs {
  * washed out rather than obviously wrong, which is the sort of mistake that ships.
  *
  * the two chroma planes are half size in both directions, so each of their samples
- * covers a two by two block of luma.
+ * covers a two by two block of luma. an odd sided picture sits in planes grown to the
+ * next even number, so the row being read is wider than the row being written.
  */
 template <>
 Result<void> Move<Color::YUV420, Color::RGBA8888>(Bytes src, std::span<uint8_t> dst, Size size) {
-    if (size.width % 2 != 0 || size.height % 2 != 0) {
-        HAIO_FAIL(InvalidInput, "yuv420 needs even width and height");
-    }
-
+    const auto planes = Yuv420::planesOf(size);
     const auto width = static_cast<size_t>(size.width);
     const auto height = static_cast<size_t>(size.height);
     const auto pixels = width * height;
-    const auto half = width / 2;
-    const auto chroma = half * (height / 2);
 
-    if (src.size() < pixels + chroma * 2 || dst.size() < pixels * 4) {
+    if (src.size() < planes.bytes || dst.size() < pixels * 4) {
         HAIO_FAIL(InvalidInput, "yuv420 to rgba8888 got a buffer that is too small");
     }
 
+    // the planes are as wide as the rounded up size; the picture inside them is not
+    const auto stride = static_cast<size_t>(planes.lumaWidth);
+    const auto half = static_cast<size_t>(planes.chromaWidth);
+
     const auto* luma = src.data();
-    const auto* blue = luma + pixels;
-    const auto* red = blue + chroma;
+    const auto* blue = luma + planes.luma;
+    const auto* red = blue + planes.chroma;
 
     const auto clamp = [](int value) {
         return static_cast<uint8_t>(value < 0 ? 0 : value > 255 ? 255 : value);
@@ -37,7 +38,7 @@ Result<void> Move<Color::YUV420, Color::RGBA8888>(Bytes src, std::span<uint8_t> 
     for (size_t y = 0; y < height; y++) {
         const auto chromaRow = (y / 2) * half;
         for (size_t x = 0; x < width; x++) {
-            const int Y = luma[y * width + x];
+            const int Y = luma[y * stride + x];
             const int Cb = blue[chromaRow + x / 2] - 128;
             const int Cr = red[chromaRow + x / 2] - 128;
 

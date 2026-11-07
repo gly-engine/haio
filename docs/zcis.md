@@ -39,6 +39,7 @@ OTXXYYWWHH.EXT
 | `WW` | `WIDTH`   | width in px (can be stretched to the original image)
 | `HH` | `HEIGHT`  | height in px (can be stretched to the original image)
 
+- **NOTE:** a fill names a colour rather than a place, so its filename is laid out differently; see [Fill](#commands).
 - **NOTE:** that the `ORDER` attribute limits you to 62 files, but this is just a convenience for debugging; filenames can be repeated without issues.
 
 #### Base 62
@@ -66,6 +67,24 @@ Image names may specify `WIDTH` and `HEIGHT` independently. When the target dime
 | c    | C      | `⠉` Horizontal interlaced tint
 | d    | D      | `⠁` Stippled tint
 | e    | E      | Erase Masking
+| f    | F      | Fill
+
+- **Fill:** paints rectangles one colour. The colour is in the filename instead of a
+  target, as `OTRRGGBBAA.txt`, where `RR`, `GG`, `BB` and `AA` are red, green, blue and
+  alpha in hex from `00` to `FF`. A picture without an alpha channel writes `FF`. The
+  `.txt` holds every rectangle of that colour, one per `\r\n` line, written in decimal
+  as `x y width height` exactly like the [header](#header). Every rectangle of a colour
+  goes in one member, so a picture whose cuts share a background has one fill, not one
+  per cut. It is the cheapest command there is: one colour, whatever the size and the
+  number of rectangles.
+
+  ```
+  1fF0F0F0FF.txt
+  ```
+  ```
+  0 0 64 64
+  64 0 64 64
+  ```
 
 - **Erase Masking:** Is a `solid tint` of the alpha channel that permanently applies transparency. uses a 1-bit monochrome PCX bitmap, where `1` represents opaque and `0` represents transparent.
 - **Interlaced phase:** the dots of the glyph are what is painted in every 2x2 cell, counted from the chunk's own `POSX` and `POSY`. `B` paints the first column of every pair, `C` the first row and `D` the first pixel; the rest keeps what was already there. The other phase is reached by sending it first as the stretched base, or by moving the chunk one pixel.
@@ -122,11 +141,107 @@ The same split holds for a future interlaced `4:2:0` payload: each layer keeps `
 both halves stay decodable on their own and together they restore the original chroma plane
 untouched. That needs `height` to be a multiple of 4.
 
+### What `haio convert a.png b.png -pack zcis out.zcis` emits today
+
+The pictures are laid out on one canvas and that canvas is written exactly as a single
+one is, so the two layers and their progressive split are unchanged. What differs is the
+index, which gains a line per picture saying where to cut it back out:
+
+| member | content |
+| :--- | :--- |
+| `0000000000.txt` | `0 0 32 32\r\n32 0 32 32\r\n` — one line per picture, in the order given |
+| `1A0000WWHH.ppm` | the whole canvas, rows 2, 4, 6… |
+| `2C0000WWHH.ppm` | the whole canvas, rows 1, 3, 5… |
+
+The grid unit is the smallest picture, each side rounded up on its own to a multiple of
+eight; a bigger picture spans as many cells as it needs. They are placed tallest first,
+filling a row until it runs out of width and starting another underneath. What is left
+between them stays transparent, so a cut never picks up its neighbour.
+
+Packing is offered only by a container that can say where each picture is, which today
+is zcis alone: `-pack png` is refused rather than silently dropping the index.
+
+### What `-define zcis:optimization=` adds
+
+The level says which commands the file may carry and how the layers are laid out.
+Nothing below happens at `0`, which is what the format did before any of it.
+
+| level | adds | what it does |
+| :---: | :--- | :--- |
+| 0 | | every cut travels whole |
+| 1 | `f` | the flat ground of a cut is named once and stops travelling |
+| 2 | `e` | masks, so that nothing is painted over what already shows it |
+
+At `1` the encoder finds the commonest colour of each cut, writes it as a fill over
+the whole cut, and shrinks the picture chunk to the rectangle where pixels differ
+from it. Fills of the same colour in touching cuts are merged, so a row of
+thumbnails on the same background is one rectangle rather than eight.
+
+At `2` two masks go out per box. The first says which pixels are already the colour
+of the ground beneath them and goes down before anything is painted, so it spares
+both layers. The second says which rows of the sharp layer the stretched one already
+got right -- wherever the two rows of a pair ended up the same -- and goes down
+between the layers, so it spares the sharp one alone. A mask is only written when it
+spares more drawing than it costs to arrive, which is decided by writing the bitmap
+out and measuring it.
+
+The rate between a draw and a byte, which decides whether a mask is worth sending,
+is in `include/haio/internal/codecs/zcis.hpp` -- derived from a television rather
+than chosen.
+
+### What `-define zcis:lazy=` changes
+
+How the two layers of an RGB picture share its rows. It is not an optimization and
+is not a level of one: it changes what somebody sees while the page is loading.
+
+| value | the first layer | rows painted |
+| :--- | :--- | :---: |
+| `whole` | the odd rows, stretched over both rows of every pair — the whole picture at half the height | `1.5` each |
+| `half` | the even rows only, with the second layer carrying the odd rows one pixel further down | `1` each |
+
+`whole` is the default and is what the format did before. The stretched layer paints
+every row of the box and the sharp one then paints half of them again, so one row in
+three is drawn twice for nothing. `half` uses the phase shift the standard describes
+under *Interlaced phase* -- the same chunk moved one pixel down -- so each row is
+painted once. The finished picture is identical either way.
+
+Measured over twelve photographs, `half` removes a third of all the drawing at
+`quality=100`, where no colour is given up at all:
+
+| | `lazy=whole` | `lazy=half` |
+| :--- | ---: | ---: |
+| `optimization=1 quality=100` | −0.7% | −33.8% |
+| `optimization=2 quality=100` | −10.1% | −36.3% |
+| `optimization=1 quality=60` | −40.3% | −60.1% |
+| `optimization=2 quality=60` | −46.6% | −62.3% |
+
+A 4:2:0 picture ignores the setting: it travels as a single frame, so there is no
+second layer to shift and nothing being painted twice.
+
+### What `-define quality=` gives up
+
+A number from 0 to 100, as in webp, naming the share of the drawing to keep, measured against the
+picture with nothing done to it. The encoder searches for the least colour slack that
+reaches it, spending the ground of each cut first since that costs no colour at all.
+`100`, the default, is the picture to the bit; `0` asks for every draw to go and gets as
+few as the picture allows. Anything outside 0 to 100 is an error.
+
+The number is measured at level `1` however high the level goes, so whatever the
+higher levels find is added on top rather than spent reaching it. The same number
+gives up the same colour at every level; the higher ones simply draw less. The same
+holds for `zcis:lazy`, which costs no colour either. Measured over twelve
+photographs at `quality=60`, level `1` removes 40.3% of the drawing and level
+`2` removes 46.6%, both at the same error.
+
 ### Open items
 
-- **Commands `b`, `d` and `e` are not emitted**, so there is no erase masking and no
-  vertical or stippled refinement yet. Only `A` and `C` are emitted.
-- **`POSX` and `POSY` are always zero** — no tiling, one image per container.
-- **No decoder.** Nothing in this repository reads a `.zcis` back; `haio convert x.zcis y.png`
-  fails with `unsupported decode format: zcis`.
+- **Commands `b` and `d` are not emitted**, so there is no vertical or stippled
+  refinement yet.
+- **`POSX` and `POSY` are always zero.** Packing puts several pictures in one container
+  through the index rather than through the chunks, so every chunk still covers the
+  whole canvas. Per-picture chunks, which is what those two fields are for, would make
+  the stream arrive a picture at a time instead of all of them at once.
+- **The decoder returns the canvas only.** `haio convert x.zcis y.png` rebuilds the
+  whole canvas, but the cuts in the index are not handed back as metadata, and a canvas
+  with empty space past its last cut comes back cropped to the cuts.
 - The `POSY` row of the filename table is labelled `HH` instead of `YY`.
