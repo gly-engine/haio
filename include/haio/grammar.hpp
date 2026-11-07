@@ -219,6 +219,8 @@ inline constexpr std::array leafRules = {
     Rule{"resize-geometry", R"(side , ( "x" | "X" | ":" ) , side , [ "!" | "^" | "p" ]
 | integer , ( "%" | "pct" ))"},
     Rule{"side", R"([ [ "-" ] , integer ])"},
+    Rule{"blur-geometry", R"(number , [ ( "x" | "X" ) , number ] | ( "x" | "X" ) , number)"},
+    Rule{"number", R"(integer , [ "." , integer ])"},
     Rule{"crop-geometry", R"(integer , ( "x" | "X" ) , integer , [ signed-integer , signed-integer ] | rect)"},
     Rule{"rect", R"(integer , "," , integer , "," , integer , "," , integer)"},
     Rule{"offset", "signed-integer , signed-integer"},

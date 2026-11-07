@@ -108,6 +108,12 @@ Token Radius(int radius) {
     return token;
 }
 
+Token Blur(int radius) {
+    Token token{TokenKind::Blur};
+    token.radius = radius;
+    return token;
+}
+
 Token Negate() {
     return Token{TokenKind::Negate};
 }

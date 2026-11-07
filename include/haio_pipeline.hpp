@@ -22,6 +22,7 @@ enum class TokenKind {
     Crop,
     Resize,
     Radius,
+    Blur,
     Negate,
     Palette,
     PixFmt,     /**< the picture moved into the colour in color */
@@ -60,7 +61,7 @@ struct Token {
      */
     ResizeFit fit = ResizeFit::Inside;
     ResizeFilter filter = ResizeFilter::Point;   /**< and how the pixels are picked */
-    int radius = 0;
+    int radius = 0;   /**< Radius: the corner; Blur: the radius of the box passes, worked out from the sigma */
 
     /** Palette only: which colours, how to fit into them, and how many to keep */
     std::string palette;
@@ -114,6 +115,7 @@ Token Crop(Rect rect);
 Token Resize(Size size, ResizeFilter filter = ResizeFilter::Point, ResizeFit fit = ResizeFit::Inside);
 Token ResizeByPercent(int percent, ResizeFilter filter = ResizeFilter::Point);
 Token Radius(int radius);
+Token Blur(int radius);
 Token Negate();
 Token Palette(std::string palette, Dither dither, size_t limit, Limit limitHow);
 Token PixFmt(Color color);

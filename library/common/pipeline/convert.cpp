@@ -256,6 +256,31 @@ std::optional<Error> radius(Picture& picture, const Token& token) {
     return keep(picture.image, Transforms::Radius<Color::RGBA8888>(std::move(picture.image), token.radius));
 }
 
+/** a jpeg is blurred in yuv, and anything without a blur of its own in rgba */
+std::optional<Error> blur(Picture& picture, const Token& token) {
+    picture.indexed.reset();
+    if (picture.native) {
+        auto& native = *picture.native;
+        std::optional<Error> out;
+        bool done = false;
+        HAIO_FOR_EACH_COLOR(c) {
+            constexpr Color colour = std::meta::extract<Color>(c);
+            if constexpr (colour != Color::PALETTE && Transforms::Blurrable<colour>) {
+                if (!done && colour == native.color) {
+                    done = true;
+                    auto blurred = Transforms::Blur<colour>(Image<colour>{native.width, native.height, std::move(native.data)},
+                                                            token.radius);
+                    if (blurred) native.data = std::move(blurred->data);
+                    else out = blurred.error();
+                }
+            }
+        }
+        if (done) return out;
+    }
+    if (auto failed = picture.rgba()) return failed;
+    return keep(picture.image, Transforms::Blur<Color::RGBA8888>(std::move(picture.image), token.radius));
+}
+
 /** a grey stays grey, so the ones negate runs on as they are are not widened first */
 std::optional<Error> negate(Picture& picture, const Token&) {
     picture.indexed.reset();
@@ -549,6 +574,7 @@ Result<Written> run(std::vector<Blob> inputs, const Pipeline& pipeline,
             case TokenKind::Crop: failure = onTop(crop, token); break;
             case TokenKind::Resize: failure = onTop(resize, token); break;
             case TokenKind::Radius: failure = onTop(radius, token); break;
+            case TokenKind::Blur: failure = onTop(blur, token); break;
             case TokenKind::Negate: failure = onTop(negate, token); break;
             case TokenKind::Palette: failure = onTop(palette, token); break;
             case TokenKind::PixFmt: failure = onTop(pixFmt, token); break;

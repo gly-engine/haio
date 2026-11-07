@@ -36,7 +36,8 @@ void boxPass(uint8_t* data, int width, int height, size_t rowBytes, int radius, 
             for (size_t c = 0; c < Stride; c++) sum[c] += row[clamped(k) + c];
         }
         for (int i = 0; i < length; i++) {
-            for (size_t c = 0; c < Stride; c++) data[at(line, i) + c] = static_cast<uint8_t>(sum[c] / window);
+            // rounded rather than cut: six passes of cutting leave the picture darker
+            for (size_t c = 0; c < Stride; c++) data[at(line, i) + c] = static_cast<uint8_t>((sum[c] + window / 2) / window);
             const auto in = clamped(i + radius + 1);
             const auto out = clamped(i - radius);
             for (size_t c = 0; c < Stride; c++) sum[c] += row[in + c] - row[out + c];
