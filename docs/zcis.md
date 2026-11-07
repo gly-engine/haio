@@ -229,6 +229,7 @@ photographs at `quality=60`, level `1` removes 40.3% of the drawing and level
   through the index rather than through the chunks, so every chunk still covers the
   whole canvas. Per-picture chunks, which is what those two fields are for, would make
   the stream arrive a picture at a time instead of all of them at once.
-- **No decoder.** Nothing in this repository reads a `.zcis` back; `haio convert x.zcis y.png`
-  fails with `unsupported decode format: zcis`.
+- **The decoder returns the canvas only.** `haio convert x.zcis y.png` rebuilds the
+  whole canvas, but the cuts in the index are not handed back as metadata, and a canvas
+  with empty space past its last cut comes back cropped to the cuts.
 - The `POSY` row of the filename table is labelled `HH` instead of `YY`.

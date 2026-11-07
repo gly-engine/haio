@@ -188,7 +188,70 @@ void testFormatWiring() {
     assert(Haio::formatName(Haio::Format::ZCIS) == "zcis");
     static_assert(Haio::Codecs::Encodable<Haio::Format::ZCIS, Haio::Color::RGBA8888>);
     static_assert(Haio::Codecs::Encodable<Haio::Format::ZCIS, Haio::Color::YUV420>);
-    static_assert(!Haio::Codecs::Decodable<Haio::Format::ZCIS, Haio::Color::RGBA8888>);
+    static_assert(Haio::Codecs::Decodable<Haio::Format::ZCIS, Haio::Color::RGBA8888>);
+}
+
+/** a plain ground with a square on it and a speckled band, so fills and both masks have work */
+Haio::Image<Haio::Color::RGBA8888> makeScene(int width, int height) {
+    std::vector<uint8_t> data(static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            auto* px = data.data() + (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 4;
+            px[0] = 240, px[1] = 240, px[2] = 240, px[3] = 255;
+            if (x >= width / 4 && x < width / 2 && y >= height / 4 && y < height / 2) px[0] = 200, px[1] = 10, px[2] = 30;
+            if (y >= height * 2 / 3 && (x * 7 + y * 3) % 5 == 0) px[1] = static_cast<uint8_t>(x * 11 + y);
+        }
+    }
+    return Haio::Image<Haio::Color::RGBA8888>{width, height, std::move(data)};
+}
+
+Haio::Image<Haio::Color::RGBA8888> roundTrip(const Haio::Image<Haio::Color::RGBA8888>& source, const Haio::Settings& settings) {
+    const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS, Haio::Color::RGBA8888>(source, Haio::Metadata{}, settings);
+    assert(encoded);
+    const auto decoded = Haio::Codecs::Decode<Haio::Format::ZCIS, Haio::Color::RGBA8888>(*encoded);
+    assert(decoded);
+    return *decoded;
+}
+
+void testDecodeRebuildsEveryLevel() {
+    for (const auto* lazy : {"whole", "half"}) {
+        for (const auto* level : {"0", "1", "2"}) {
+            for (const auto& source : {makeImage(7, 5), makeImage(8, 1), makeScene(64, 48), makeScene(33, 29)}) {
+                const auto decoded = roundTrip(source, Haio::Settings{
+                    Haio::Setting{"zcis:optimization", level}, Haio::Setting{"zcis:lazy", lazy}});
+                assert(decoded.width == source.width && decoded.height == source.height);
+                assert(decoded.data == source.data);
+            }
+        }
+    }
+}
+
+void testDecodeKeepsTheSizeAtLowQuality() {
+    const auto source = makeScene(64, 48);
+    const auto decoded = roundTrip(source, Haio::Settings{
+        Haio::Setting{"zcis:optimization", "2"}, Haio::Setting{"quality", "40"}});
+    assert(decoded.width == source.width && decoded.height == source.height);
+}
+
+void testDecodeYuv() {
+    const auto source = makeScene(16, 8);
+    const auto yuv = Haio::Codecs::Convert<Haio::Color::RGBA8888, Haio::Color::YUV420>(Haio::Image<Haio::Color::RGBA8888>{source});
+    assert(yuv);
+    const auto encoded = Haio::Codecs::Encode<Haio::Format::ZCIS, Haio::Color::YUV420>(*yuv);
+    assert(encoded);
+    const auto decoded = Haio::Codecs::Decode<Haio::Format::ZCIS, Haio::Color::RGBA8888>(*encoded);
+    assert(decoded);
+    const auto expected = Haio::Codecs::Convert<Haio::Color::YUV420, Haio::Color::RGBA8888>(*yuv);
+    assert(expected && decoded->data == expected->data);
+}
+
+void testDecodeRefusesGarbage() {
+    const std::string text = "!<arch>\n";
+    Haio::Blob blob{Haio::Format::ZCIS};
+    blob.data.assign(text.begin(), text.end());
+    assert((!Haio::Codecs::Decode<Haio::Format::ZCIS, Haio::Color::RGBA8888>(blob)));
+    blob.data = {1, 2, 3};
+    assert((!Haio::Codecs::Decode<Haio::Format::ZCIS, Haio::Color::RGBA8888>(blob)));
 }
 
 }
@@ -200,5 +263,9 @@ int main() {
     testYuvIsOneCommittedImage();
     testRejectsOversizedCanvas();
     testFormatWiring();
+    testDecodeRebuildsEveryLevel();
+    testDecodeKeepsTheSizeAtLowQuality();
+    testDecodeYuv();
+    testDecodeRefusesGarbage();
     return 0;
 }
