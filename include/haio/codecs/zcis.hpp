@@ -23,7 +23,7 @@ namespace Codecs {
  *   1  flat ground becomes a fill command and only the part that varies travels
  *   2  a mask on top of it, so that a pixel the ground already shows is not drawn
  *
- * it is not a measure of how hard the encoder tries -- that is minification -- but
+ * it is not a measure of how hard the encoder tries -- that is quality -- but
  * of what the reader on the other end has to understand. it is off by default
  * because a decoder that does not know a command cannot read what it produces.
  *
@@ -71,16 +71,16 @@ inline constexpr Stages::Option zcisLazy{
 };
 
 /**
- * how much lighter to make the picture, as the share of its drawing that goes away.
+ * how much of the drawing to keep, as a share of what the plain picture costs.
  *
  * it names the saving rather than the means. a television draws a run of one colour
  * and a run of a hundred for the same price, so what a picture costs to put up is
- * the number of runs in it, and that is what this counts: minification fifty asks
- * for a file that costs half the draws the plain picture would.
+ * the number of runs in it, and that is what this counts: quality fifty asks for a
+ * file that costs half the draws the plain picture would.
  *
- *   0   the picture to the bit
- *   25  a quarter of the drawing gone
- *   50  half
+ *   100  the picture to the bit
+ *   75   a quarter of the drawing gone
+ *   50   half
  *
  * the encoder reaches the number by spending what is cheap before what is dear. the
  * flat ground of a cut goes first, which removes draws without moving a single pixel
@@ -100,16 +100,15 @@ inline constexpr Stages::Option zcisLazy{
  *
  * a picture can run out of room before the number does -- a photograph of leaves has
  * no runs to join -- and then the encoder gives what it could reach rather than
- * ruining it, which is why the ceiling exists and why ninety nine is a wish and not
- * a promise.
+ * ruining it, which is why nought is a wish and not a promise.
  */
-inline constexpr Stages::Option zcisMinification{
-    .spellings = {"zcis:minification"}, .takes = "number",
-    .help = "the share of the drawing to remove, nought to ninety nine",
-    .shape = Stages::Shape::Integer, .least = 0, .most = 99, .fallback = "0",
+inline constexpr Stages::Option zcisQuality{
+    .spellings = {"quality"}, .takes = "number",
+    .help = "the share of the drawing to keep, nought to a hundred",
+    .shape = Stages::Shape::Integer, .least = 0, .most = 100, .fallback = "100",
 };
 
-inline constexpr Stages::Option zcisEncodes[] = {zcisOptimization, zcisMinification, zcisLazy};
+inline constexpr Stages::Option zcisEncodes[] = {zcisOptimization, zcisQuality, zcisLazy};
 
 template <> inline constexpr Reads reads<Format::ZCIS>{.encode = zcisEncodes};
 

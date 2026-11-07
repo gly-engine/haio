@@ -236,7 +236,7 @@ namespace Haio::Codecs {
 template <>
 Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, const Metadata& meta, const Settings& settings) {
     HAIO_TRY(level, settingInt(settings, zcisOptimization));
-    HAIO_TRY(minification, settingInt(settings, zcisMinification));
+    HAIO_TRY(quality, settingInt(settings, zcisQuality));
     auto lazy = ZcisLazy::Whole;
     if (const auto* named = settingNamed(settings, zcisLazy.name())) {
         if (const auto chosen = Stages::enumNamed<ZcisLazy>(named->value)) lazy = *chosen;
@@ -251,7 +251,7 @@ Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img, c
     // the cuts have to be known before the colour is chosen, since the flat ground
     // the choice counts on is found a cut at a time
     const auto cuts = cutsOf(meta, img.width, img.height);
-    const auto slack = Zcis::minify(img, cuts, fillWorth, level, minification);
+    const auto slack = Zcis::minify(img, cuts, fillWorth, level, 100 - quality);
     auto plan = Zcis::planOf(img, cuts, fillWorth, level, slack, stretched);
     img = std::move(plan.img);
     const auto& flat = plan.flat;
@@ -368,14 +368,14 @@ Result<Blob> Encode<Format::ZCIS, Color::RGBA8888>(Image<Color::RGBA8888> img) {
 template <>
 Result<Blob> Encode<Format::ZCIS, Color::YUV420>(Image<Color::YUV420> img, const Metadata& meta, const Settings& settings) {
     HAIO_TRY(level, settingInt(settings, zcisOptimization));
-    HAIO_TRY(minification, settingInt(settings, zcisMinification));
+    HAIO_TRY(quality, settingInt(settings, zcisQuality));
     if (img.width <= 0 || img.height <= 0) HAIO_FAIL(InvalidInput, "invalid yuv420 image for zcis encode");
     HAIO_TRY(expected, sizeOf(Color::YUV420, Size{img.width, img.height}));
     if (img.data.size() != expected) HAIO_FAIL(InvalidInput, "invalid yuv420 image for zcis encode");
     HAIO_CHECK(checkCanvas(img.width, img.height));
 
     const auto cuts = cutsOf(meta, img.width, img.height);
-    const auto slack = Zcis::minifyYuv(img, cuts, fillWorth, true, level, minification);
+    const auto slack = Zcis::minifyYuv(img, cuts, fillWorth, true, level, 100 - quality);
     auto plan = Zcis::planOfYuv(img, cuts, fillWorth, true, level, slack);
     img = std::move(plan.img);
     const auto& flat = plan.flat;

@@ -194,30 +194,31 @@ under *Interlaced phase* -- the same chunk moved one pixel down -- so each row i
 painted once. The finished picture is identical either way.
 
 Measured over twelve photographs, `half` removes a third of all the drawing at
-`minification=0`, where no colour is given up at all:
+`quality=100`, where no colour is given up at all:
 
 | | `lazy=whole` | `lazy=half` |
 | :--- | ---: | ---: |
-| `optimization=1 minification=0` | −0.7% | −33.8% |
-| `optimization=2 minification=0` | −10.1% | −36.3% |
-| `optimization=1 minification=40` | −40.3% | −60.1% |
-| `optimization=2 minification=40` | −46.6% | −62.3% |
+| `optimization=1 quality=100` | −0.7% | −33.8% |
+| `optimization=2 quality=100` | −10.1% | −36.3% |
+| `optimization=1 quality=60` | −40.3% | −60.1% |
+| `optimization=2 quality=60` | −46.6% | −62.3% |
 
 A 4:2:0 picture ignores the setting: it travels as a single frame, so there is no
 second layer to shift and nothing being painted twice.
 
-### What `-define zcis:minification=` gives up
+### What `-define quality=` gives up
 
-A number from 0 to 99 naming the share of the drawing to remove, measured against the
+A number from 0 to 100, as in webp, naming the share of the drawing to keep, measured against the
 picture with nothing done to it. The encoder searches for the least colour slack that
 reaches it, spending the ground of each cut first since that costs no colour at all.
-`0` is the picture to the bit.
+`100`, the default, is the picture to the bit; `0` asks for every draw to go and gets as
+few as the picture allows. Anything outside 0 to 100 is an error.
 
 The number is measured at level `1` however high the level goes, so whatever the
 higher levels find is added on top rather than spent reaching it. The same number
 gives up the same colour at every level; the higher ones simply draw less. The same
 holds for `zcis:lazy`, which costs no colour either. Measured over twelve
-photographs at `minification=40`, level `1` removes 40.3% of the drawing and level
+photographs at `quality=60`, level `1` removes 40.3% of the drawing and level
 `2` removes 46.6%, both at the same error.
 
 ### Open items
