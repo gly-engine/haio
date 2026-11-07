@@ -172,22 +172,50 @@ Image<Color::RGBA8888> padded(const Image<Color::RGBA8888>& image, Image<Color::
 }
 
 std::optional<Error> resize(Picture& picture, const Token& token) {
-    // a picture still in 4:2:0 came from a photograph or video, which has no
-    // transparency to pad with, so its sides are filled with itself, blurred
-    const bool fromYuv = picture.native && picture.native->color == Color::YUV420;
-    if (auto failed = picture.rgba()) return failed;
     const bool pad = token.fit == ResizeFit::Pad && token.percent == 0;
-    std::optional<Image<Color::RGBA8888>> source;
-    if (pad && fromYuv) source = picture.image;
 
     // a share is worked out here and not at parsing, because this is the first
     // moment anybody knows what it is a share of
     const auto before = sizeOf(picture);
     auto wanted = fitted(before, token.size, token.fit);
     if (token.percent != 0) {
-        wanted = Size{std::max(1, picture.image.width * token.percent / 100),
-                      std::max(1, picture.image.height * token.percent / 100)};
+        wanted = Size{std::max(1, before.width * token.percent / 100), std::max(1, before.height * token.percent / 100)};
     }
+
+    // a picture is resized in the colour it already is when that colour has a resize
+    // of its own, so a jpeg stays in yuv rather than going through rgba and back. the
+    // pad is the exception: its sides are built and laid in rgba
+    if (picture.native && !pad) {
+        auto& native = *picture.native;
+        std::optional<Error> out;
+        bool done = false;
+        HAIO_FOR_EACH_COLOR(c) {
+            constexpr Color colour = std::meta::extract<Color>(c);
+            if constexpr (colour != Color::PALETTE && Transforms::Resizable<colour>) {
+                if (!done && colour == native.color) {
+                    done = true;
+                    auto resized = Transforms::Resize<colour>(Image<colour>{native.width, native.height, std::move(native.data)},
+                                                              wanted, token.filter);
+                    if (resized) native = AnyImage{colour, resized->width, resized->height, std::move(resized->data)};
+                    else out = resized.error();
+                }
+            }
+        }
+        if (done) {
+            if (out) return out;
+            picture.meta.cuts = scaledCuts(std::move(picture.meta.cuts), before, sizeOf(picture));
+            picture.indexed.reset();
+            return std::nullopt;
+        }
+    }
+
+    // a picture still in 4:2:0 came from a photograph or video, which has no
+    // transparency to pad with, so its sides are filled with itself, blurred
+    const bool fromYuv = picture.native && picture.native->color == Color::YUV420;
+    if (auto failed = picture.rgba()) return failed;
+    std::optional<Image<Color::RGBA8888>> source;
+    if (pad && fromYuv) source = picture.image;
+
     if (auto failed = keep(picture.image, Transforms::Resize<Color::RGBA8888>(std::move(picture.image), wanted, token.filter))) {
         return failed;
     }
